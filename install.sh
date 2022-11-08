@@ -1364,7 +1364,7 @@ installCronTLS() {
 updateRedirectNginxConf() {
 	echoContent skyBlue "\n进度  $1/${totalProgress} : 配置镜像站点，默认使用kaggle官网"
 
-	cat <<EOF >>${nginxConfigPath}alone.conf
+	cat <<EOF >${nginxConfigPath}alone.conf
 server {
 	listen 127.0.0.1:31302 http2 so_keepalive=on;
 	server_name ${domain};
