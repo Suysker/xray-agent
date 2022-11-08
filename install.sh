@@ -1775,8 +1775,6 @@ backupNginxConfig() {
 		echoContent green " ---> nginx配置文件备份成功"
 	fi
 
-	echoContent red "\n=============================================================="
-
 	if [[ "$1" == "restoreBackup" ]] && [[ -f "/etc/v2ray-agent/alone_backup.conf" ]]; then
 		cp /etc/v2ray-agent/alone_backup.conf /etc/nginx/conf.d/alone.conf
 		echoContent green " ---> nginx配置文件恢复备份成功"
@@ -1801,8 +1799,7 @@ updateNginxBlog() {
     	handleNginx stop
 		handleNginx start
 		sleep 2
-		if [[ -z $(pgrep -f nginx) ]]; then
-			echoContent skyBlue "\n=============================================================="
+		if [[ -z "$(pgrep -f nginx)" ]]; then
 			backupNginxConfig restoreBackup
 			handleNginx start
 			exit 0
