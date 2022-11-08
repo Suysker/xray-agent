@@ -2464,17 +2464,6 @@ xrayCoreInstall() {
 	showAccounts 13
 }
 
-# 核心管理
-coreVersionManageMenu() {
-
-	if [[ "${coreInstallType}" != "1" ]]; then
-		echoContent red "\n ---> 没有检测到安装目录，请执行脚本安装内容"
-		menu
-		exit 0
-	fi
-
-	xrayVersionManageMenu 1
-}
 # 定时任务检查证书
 cronRenewTLS() {
 	if [[ "${renewTLS}" == "RenewTLS" ]]; then
@@ -2718,7 +2707,7 @@ menu() {
 		addCorePort 1
 		;;
 	15)
-		coreVersionManageMenu 1
+		xrayVersionManageMenu 1
 		;;
 	16)
 		updateV2RayAgent 1
