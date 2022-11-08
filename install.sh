@@ -179,13 +179,13 @@ readInstallType() {
 	configPath=
 
 	# 1.检测安装目录
-	if [[ -d "/etc/v2ray-agent" ]]; then
-		if [[ -d "/etc/v2ray-agent/xray" && -f "/etc/v2ray-agent/xray/xray" ]]; then
+	if [[ -d "/etc/xray-agent" ]]; then
+		if [[ -d "/etc/xray-agent/xray" && -f "/etc/xray-agent/xray/xray" ]]; then
 			# 这里检测xray-core
-			if [[ -d "/etc/v2ray-agent/xray/conf" ]] && [[ -f "/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json" ]]; then
+			if [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "/etc/xray-agent/xray/conf/02_VLESS_TCP_inbounds.json" ]]; then
 				# xray-core
-				configPath=/etc/v2ray-agent/xray/conf/
-				ctlPath=/etc/v2ray-agent/xray/xray
+				configPath=/etc/xray-agent/xray/conf/
+				ctlPath=/etc/xray-agent/xray/xray
 				coreInstallType=1
 			fi
 		fi
@@ -333,26 +333,23 @@ showInstallStatus() {
 
 # 初始化安装目录
 mkdirTools() {
-	mkdir -p /etc/v2ray-agent/tls
-	mkdir -p /etc/v2ray-agent/subscribe
-	mkdir -p /etc/v2ray-agent/subscribe_tmp
-	mkdir -p /etc/v2ray-agent/xray/conf
-	mkdir -p /etc/v2ray-agent/xray/tmp
-	mkdir -p /etc/v2ray-agent/trojan
-	#	mkdir -p /etc/v2ray-agent/hysteria/conf
+	mkdir -p /etc/xray-agent/tls
+	mkdir -p /etc/xray-agent/subscribe
+	mkdir -p /etc/xray-agent/subscribe_tmp
+	mkdir -p /etc/xray-agent/xray/conf
 	mkdir -p /etc/systemd/system/
-	mkdir -p /tmp/v2ray-agent-tls/
+	mkdir -p /tmp/xray-agent-tls/
 }
 
 # 脚本快捷方式
 aliasInstall() {
 
-	if [[ -f "$HOME/install.sh" ]] && [[ -d "/etc/v2ray-agent" ]] && grep <"$HOME/install.sh" -q "作者:mack-a"; then
-		mv "$HOME/install.sh" /etc/v2ray-agent/install.sh
+	if [[ -f "$HOME/install.sh" ]] && [[ -d "/etc/xray-agent" ]] && grep <"$HOME/install.sh" -q "作者:mack-a"; then
+		mv "$HOME/install.sh" /etc/xray-agent/install.sh
 		local vasmaType=
 		if [[ -d "/usr/bin/" ]]; then
 			if [[ ! -f "/usr/bin/vasma" ]]; then
-				ln -s /etc/v2ray-agent/install.sh /usr/bin/vasma
+				ln -s /etc/xray-agent/install.sh /usr/bin/vasma
 				chmod 700 /usr/bin/vasma
 				vasmaType=true
 			fi
@@ -360,7 +357,7 @@ aliasInstall() {
 			rm -rf "$HOME/install.sh"
 		elif [[ -d "/usr/sbin" ]]; then
 			if [[ ! -f "/usr/sbin/vasma" ]]; then
-				ln -s /etc/v2ray-agent/install.sh /usr/sbin/vasma
+				ln -s /etc/xray-agent/install.sh /usr/sbin/vasma
 				chmod 700 /usr/sbin/vasma
 				vasmaType=true
 			fi
@@ -433,8 +430,8 @@ installTools() {
 
 	echoContent green " ---> 检查、安装更新【新机器会很慢，如长时间无反应，请手动停止后重新执行】"
 
-	${upgrade} >/etc/v2ray-agent/install.log 2>&1
-	if grep <"/etc/v2ray-agent/install.log" -q "changed"; then
+	${upgrade} >/etc/xray-agent/install.log 2>&1
+	if grep <"/etc/xray-agent/install.log" -q "changed"; then
 		${updateReleaseInfoChange} >/dev/null 2>&1
 	fi
 
@@ -563,12 +560,12 @@ installTools() {
 
 	if [[ ! -d "$HOME/.acme.sh" ]] || [[ -d "$HOME/.acme.sh" && -z $(find "$HOME/.acme.sh/acme.sh") ]]; then
 		echoContent green " ---> 安装acme.sh"
-		curl -s https://get.acme.sh | sh >/etc/v2ray-agent/tls/acme.log 2>&1
+		curl -s https://get.acme.sh | sh >/etc/xray-agent/tls/acme.log 2>&1
 		sudo "$HOME/.acme.sh/acme.sh" --upgrade --auto-upgrade
 
 		if [[ ! -d "$HOME/.acme.sh" ]] || [[ -z $(find "$HOME/.acme.sh/acme.sh") ]]; then
 			echoContent red "  acme安装失败--->"
-			tail -n 100 /etc/v2ray-agent/tls/acme.log
+			tail -n 100 /etc/xray-agent/tls/acme.log
 			echoContent yellow "错误排查:"
 			echoContent red "  1.获取Github文件失败，请等待Github恢复后尝试，恢复进度可查看 [https://www.githubstatus.com/]"
 			echoContent red "  2.acme.sh脚本出现bug，可查看[https://github.com/acmesh-official/acme.sh] issues"
@@ -584,7 +581,7 @@ installTools() {
 handleNginx() {
 
 	if [[ -z $(pgrep -f "nginx") ]] && [[ "$1" == "start" ]]; then
-		systemctl start nginx 2>/etc/v2ray-agent/nginx_error.log
+		systemctl start nginx 2>/etc/xray-agent/nginx_error.log
 
 		sleep 0.5
 
@@ -663,12 +660,12 @@ initTLSNginxConfig() {
 			echoContent yellow "\n ---> 域名: ${domain}"
 		else
 			echo
-			echoContent yellow "请输入要配置的域名 例: www.v2ray-agent.com --->"
+			echoContent yellow "请输入要配置的域名 例: www.xray-agent.com --->"
 			read -r -p "域名:" domain
 		fi
 	else
 		echo
-		echoContent yellow "请输入要配置的域名 例: www.v2ray-agent.com --->"
+		echoContent yellow "请输入要配置的域名 例: www.xray-agent.com --->"
 		read -r -p "域名:" domain
 	fi
 
@@ -711,8 +708,8 @@ switchSSLType() {
 			sslType="letsencrypt"
 			;;
 		esac
-		touch /etc/v2ray-agent/tls
-		echo "${sslType}" >/etc/v2ray-agent/tls/ssl_type
+		touch /etc/xray-agent/tls
+		echo "${sslType}" >/etc/xray-agent/tls/ssl_type
 
 	fi
 }
@@ -769,7 +766,7 @@ acmeInstallSSL() {
 
 	echoContent green " ---> 生成证书中"
 	#暂时只支持Cloudflare
-	sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns dns_cf -k ec-256 --server "${sslType}" --force 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
+	sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns dns_cf -k ec-256 --server "${sslType}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
 
 	readAcmeTLS
 }
@@ -808,7 +805,7 @@ renewalTLS() {
 			echoContent yellow " ---> 重新生成证书"
 			handleNginx stop
 			sudo "$HOME/.acme.sh/acme.sh" --cron --home "$HOME/.acme.sh"
-			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath /etc/v2ray-agent/tls/"${TLSDomain}.crt" --keypath /etc/v2ray-agent/tls/"${TLSDomain}.key" --ecc
+			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath /etc/xray-agent/tls/"${TLSDomain}.crt" --keypath /etc/xray-agent/tls/"${TLSDomain}.key" --ecc
 			reloadCore
 			handleNginx start
 		else
@@ -824,17 +821,17 @@ installTLS() {
 	echoContent skyBlue "\n进度  $1/${totalProgress} : 申请TLS证书\n"
 
 	# 安装tls
-	if [[ -f "/etc/v2ray-agent/tls/${TLSDomain}.crt" && -f "/etc/v2ray-agent/tls/${TLSDomain}.key" && -n $(cat "/etc/v2ray-agent/tls/${TLSDomain}.crt") ]] || [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
+	if [[ -f "/etc/xray-agent/tls/${TLSDomain}.crt" && -f "/etc/xray-agent/tls/${TLSDomain}.key" && -n $(cat "/etc/xray-agent/tls/${TLSDomain}.crt") ]] || [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
 		echoContent green " ---> 检测到证书"
 		renewalTLS
 
-		if [[ -z $(find /etc/v2ray-agent/tls/ -name "${TLSDomain}.crt") ]] || [[ -z $(find /etc/v2ray-agent/tls/ -name "${TLSDomain}.key") ]] || [[ -z $(cat "/etc/v2ray-agent/tls/${TLSDomain}.crt") ]]; then
-			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/v2ray-agent/tls/${TLSDomain}.crt" --keypath "/etc/v2ray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
+		if [[ -z $(find /etc/xray-agent/tls/ -name "${TLSDomain}.crt") ]] || [[ -z $(find /etc/xray-agent/tls/ -name "${TLSDomain}.key") ]] || [[ -z $(cat "/etc/xray-agent/tls/${TLSDomain}.crt") ]]; then
+			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
 		else
 			echoContent yellow " ---> 如未过期或者自定义证书请选择[n]\n"
 			read -r -p "是否重新安装？[y/n]:" reInstallStatus
 			if [[ "${reInstallStatus}" == "y" ]]; then
-				rm -rf /etc/v2ray-agent/tls/*
+				rm -rf /etc/xray-agent/tls/*
 				installTLS "$1"
 			fi
 		fi
@@ -843,16 +840,16 @@ installTLS() {
 		echoContent green " ---> 安装TLS证书"
 
 		if [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
-			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/v2ray-agent/tls/${TLSDomain}.crt" --keypath "/etc/v2ray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
+			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
 		else
 			switchSSLType
 			customSSLEmail
 			acmeInstallSSL
-			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/v2ray-agent/tls/${TLSDomain}.crt" --keypath "/etc/v2ray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
+			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
 		fi
 
-		if [[ ! -f "/etc/v2ray-agent/tls/${TLSDomain}.crt" || ! -f "/etc/v2ray-agent/tls/${TLSDomain}.key" ]] || [[ -z $(cat "/etc/v2ray-agent/tls/${TLSDomain}.key") || -z $(cat "/etc/v2ray-agent/tls/${TLSDomain}.crt") ]]; then
-			tail -n 10 /etc/v2ray-agent/tls/acme.log
+		if [[ ! -f "/etc/xray-agent/tls/${TLSDomain}.crt" || ! -f "/etc/xray-agent/tls/${TLSDomain}.key" ]] || [[ -z $(cat "/etc/xray-agent/tls/${TLSDomain}.key") || -z $(cat "/etc/xray-agent/tls/${TLSDomain}.crt") ]]; then
+			tail -n 10 /etc/xray-agent/tls/acme.log
 			if [[ ${installTLSCount} == "1" ]]; then
 				echoContent red " ---> TLS安装失败，请检查acme日志"
 				exit 0
@@ -862,7 +859,7 @@ installTLS() {
 			echo
 			echoContent yellow " ---> 重新尝试安装TLS证书"
 
-			if tail -n 10 /etc/v2ray-agent/tls/acme.log | grep -q "Could not validate email address as valid"; then
+			if tail -n 10 /etc/xray-agent/tls/acme.log | grep -q "Could not validate email address as valid"; then
 				echoContent red " ---> 邮箱无法通过SSL厂商验证，请重新输入"
 				echo
 				customSSLEmail "validate email"
@@ -923,7 +920,7 @@ handleXray() {
 			echoContent green " ---> Xray启动成功"
 		else
 			echoContent red "Xray启动失败"
-			echoContent red "请手动执行【/etc/v2ray-agent/xray/xray -confdir /etc/v2ray-agent/xray/conf】，查看错误日志"
+			echoContent red "请手动执行【/etc/xray-agent/xray/xray -confdir /etc/xray-agent/xray/conf】，查看错误日志"
 			exit 0
 		fi
 	elif [[ "$1" == "stop" ]]; then
@@ -948,19 +945,19 @@ installXray() {
 
 		echoContent green " ---> Xray-core版本:${version}"
 		if wget --help | grep -q show-progress; then
-			wget -c -q --show-progress -P /etc/v2ray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip"
+			wget -c -q --show-progress -P /etc/xray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip"
 		else
-			wget -c -P /etc/v2ray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip" >/dev/null 2>&1
+			wget -c -P /etc/xray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip" >/dev/null 2>&1
 		fi
 
-		unzip -o "/etc/v2ray-agent/xray/${xrayCoreCPUVendor}.zip" -d /etc/v2ray-agent/xray >/dev/null
-		rm -rf "/etc/v2ray-agent/xray/${xrayCoreCPUVendor}.zip"
-		chmod 655 /etc/v2ray-agent/xray/xray
+		unzip -o "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip" -d /etc/xray-agent/xray >/dev/null
+		rm -rf "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip"
+		chmod 655 /etc/xray-agent/xray/xray
 	else
-		echoContent green " ---> Xray-core版本:$(/etc/v2ray-agent/xray/xray --version | awk '{print $2}' | head -1)"
+		echoContent green " ---> Xray-core版本:$(/etc/xray-agent/xray/xray --version | awk '{print $2}' | head -1)"
 		read -r -p "是否更新、升级？[y/n]:" reInstallXrayStatus
 		if [[ "${reInstallXrayStatus}" == "y" ]]; then
-			rm -f /etc/v2ray-agent/xray/xray
+			rm -f /etc/xray-agent/xray/xray
 			installXray "$1"
 		fi
 	fi
@@ -972,7 +969,7 @@ installXrayService() {
 	if [[ -n $(find /bin /usr/bin -name "systemctl") ]]; then
 		rm -rf /etc/systemd/system/xray.service
 		touch /etc/systemd/system/xray.service
-		execStart='/etc/v2ray-agent/xray/xray run -confdir /etc/v2ray-agent/xray/conf'
+		execStart='/etc/xray-agent/xray/xray run -confdir /etc/xray-agent/xray/conf'
 		cat <<EOF >/etc/systemd/system/xray.service
 [Unit]
 Description=Xray Service
@@ -1019,22 +1016,22 @@ initXrayConfig() {
 
 	if [[ -z "${currentUUID}" ]]; then
 		echoContent red "\n ---> uuid读取错误，重新生成"
-		currentUUID=$(/etc/v2ray-agent/xray/xray uuid)
+		currentUUID=$(/etc/xray-agent/xray/xray uuid)
 	fi
 
 	echoContent yellow "\n ${currentUUID}"
 
 	# log
-	cat <<EOF >/etc/v2ray-agent/xray/conf/00_log.json
+	cat <<EOF >/etc/xray-agent/xray/conf/00_log.json
 {
   "log": {
-    "error": "/etc/v2ray-agent/xray/error.log",
+    "error": "/etc/xray-agent/xray/error.log",
     "loglevel": "warning"
   }
 }
 EOF
 
-	cat <<EOF >/etc/v2ray-agent/xray/conf/10_ipv4_outbounds.json
+	cat <<EOF >/etc/xray-agent/xray/conf/10_ipv4_outbounds.json
 {
     "outbounds":[
         {
@@ -1059,8 +1056,11 @@ EOF
 }
 EOF
 
+	# routing
+	rm -f /etc/xray-agent/xray/conf/09_routing.json
+
 	# dns
-	cat <<EOF >/etc/v2ray-agent/xray/conf/11_dns.json
+	cat <<EOF >/etc/xray-agent/xray/conf/11_dns.json
 {
     "dns": {
         "servers": [
@@ -1073,7 +1073,7 @@ EOF
 	# VLESS_TCP_TLS/XTLS
 	# 回落nginx
 	fallbacksList='{"dest":31296,"xver":1},{"alpn":"h2","dest":31302,"xver":0}'
-	cat <<EOF >/etc/v2ray-agent/xray/conf/04_trojan_TCP_inbounds.json
+	cat <<EOF >/etc/xray-agent/xray/conf/04_trojan_TCP_inbounds.json
 {
 "inbounds":[
 	{
@@ -1113,7 +1113,7 @@ EOF
 
 	# VLESS_WS_TLS
 	fallbacksList=${fallbacksList}',{"path":"/'${currentPath}'ws","dest":31297,"xver":1}'
-	cat <<EOF >/etc/v2ray-agent/xray/conf/03_VLESS_WS_inbounds.json
+	cat <<EOF >/etc/xray-agent/xray/conf/03_VLESS_WS_inbounds.json
 {
 "inbounds":[
     {
@@ -1151,7 +1151,7 @@ EOF
 EOF
 
 	# trojan_grpc
-	cat <<EOF >/etc/v2ray-agent/xray/conf/04_trojan_gRPC_inbounds.json
+	cat <<EOF >/etc/xray-agent/xray/conf/04_trojan_gRPC_inbounds.json
 {
 "inbounds": [
     {
@@ -1192,7 +1192,7 @@ EOF
 
 	# VMess_WS
 	fallbacksList=${fallbacksList}',{"path":"/'${currentPath}'vws","dest":31299,"xver":1}'
-	cat <<EOF >/etc/v2ray-agent/xray/conf/05_VMess_WS_inbounds.json
+	cat <<EOF >/etc/xray-agent/xray/conf/05_VMess_WS_inbounds.json
 {
 "inbounds":[
     {
@@ -1231,7 +1231,7 @@ EOF
 EOF
 
 	#VLESS_GRCP
-	cat <<EOF >/etc/v2ray-agent/xray/conf/06_VLESS_gRPC_inbounds.json
+	cat <<EOF >/etc/xray-agent/xray/conf/06_VLESS_gRPC_inbounds.json
 {
 "inbounds":[
     {
@@ -1273,7 +1273,7 @@ EOF
 		defaultPort=${customPort}
 	fi
 
-	cat <<EOF >/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json
+	cat <<EOF >/etc/xray-agent/xray/conf/02_VLESS_TCP_inbounds.json
 {
 "inbounds":[
 {
@@ -1306,8 +1306,8 @@ EOF
       ],
       "certificates": [
         {
-          "certificateFile": "/etc/v2ray-agent/tls/${TLSDomain}.crt",
-          "keyFile": "/etc/v2ray-agent/tls/${TLSDomain}.key",
+          "certificateFile": "/etc/xray-agent/tls/${TLSDomain}.crt",
+          "keyFile": "/etc/xray-agent/tls/${TLSDomain}.key",
           "ocspStapling": 3600,
           "usage":"encipherment"
         }
@@ -1323,12 +1323,12 @@ EOF
 # 定时任务更新tls证书
 installCronTLS() {
 	echoContent skyBlue "\n进度 $1/${totalProgress} : 添加定时维护证书"
-	crontab -l >/etc/v2ray-agent/backup_crontab.cron
+	crontab -l >/etc/xray-agent/backup_crontab.cron
 	local historyCrontab
-	historyCrontab=$(sed '/install.sh/d;/acme.sh/d' /etc/v2ray-agent/backup_crontab.cron)
-	echo "${historyCrontab}" >/etc/v2ray-agent/backup_crontab.cron
-	echo "30 1 * * * /bin/bash /etc/v2ray-agent/install.sh RenewTLS >> /etc/v2ray-agent/crontab_tls.log 2>&1" >>/etc/v2ray-agent/backup_crontab.cron
-	crontab /etc/v2ray-agent/backup_crontab.cron
+	historyCrontab=$(sed '/install.sh/d;/acme.sh/d' /etc/xray-agent/backup_crontab.cron)
+	echo "${historyCrontab}" >/etc/xray-agent/backup_crontab.cron
+	echo "30 1 * * * /bin/bash /etc/xray-agent/install.sh RenewTLS >> /etc/xray-agent/crontab_tls.log 2>&1" >>/etc/xray-agent/backup_crontab.cron
+	crontab /etc/xray-agent/backup_crontab.cron
 	echoContent green "\n ---> 添加定时维护证书成功"
 }
 
@@ -1346,7 +1346,7 @@ server {
 
 	location /s/ {
     	add_header Content-Type text/plain;
-    	alias /etc/v2ray-agent/subscribe/;
+    	alias /etc/xray-agent/subscribe/;
     }
 
     location /${currentPath}grpc {
@@ -1392,7 +1392,7 @@ server {
 
 	location /s/ {
 		add_header Content-Type text/plain;
-		alias /etc/v2ray-agent/subscribe/;
+		alias /etc/xray-agent/subscribe/;
 	}
 
 	location / {
@@ -1415,20 +1415,20 @@ EOF
 
 # 更新geoip和geosite
 auto_update_geodata() {
-	cat > /etc/v2ray-agent/auto_update_geodata.sh << EOF
+	cat > /etc/xray-agent/auto_update_geodata.sh << EOF
 #!/bin/sh
-wget -O /etc/v2ray-agent/xray/geosite.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat && wget -O /etc/v2ray-agent/xray/geoip.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat && systemctl restart xray
+wget -O /etc/xray-agent/xray/geosite.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat && wget -O /etc/xray-agent/xray/geoip.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat && systemctl restart xray
 EOF
 
-	chmod +x /etc/v2ray-agent/auto_update_geodata.sh
+	chmod +x /etc/xray-agent/auto_update_geodata.sh
 
 	echoContent skyBlue "添加定时更新GeoData"
-	crontab -l >/etc/v2ray-agent/backup_crontab.cron
+	crontab -l >/etc/xray-agent/backup_crontab.cron
 	local historyCrontab
-	historyCrontab=$(sed '/auto_update_geodata.sh/d' /etc/v2ray-agent/backup_crontab.cron)
-	echo "${historyCrontab}" >/etc/v2ray-agent/backup_crontab.cron
-	echo "30 1 * * * /bin/bash /etc/v2ray-agent/auto_update_geodata.sh >> /etc/v2ray-agent/crontab_geo.log 2>&1" >>/etc/v2ray-agent/backup_crontab.cron
-	crontab /etc/v2ray-agent/backup_crontab.cron
+	historyCrontab=$(sed '/auto_update_geodata.sh/d' /etc/xray-agent/backup_crontab.cron)
+	echo "${historyCrontab}" >/etc/xray-agent/backup_crontab.cron
+	echo "30 1 * * * /bin/bash /etc/xray-agent/auto_update_geodata.sh >> /etc/xray-agent/crontab_geo.log 2>&1" >>/etc/xray-agent/backup_crontab.cron
+	crontab /etc/xray-agent/backup_crontab.cron
 	echoContent green "\n ---> 添加定时更新GeoData成功"
 
 }
@@ -1462,7 +1462,7 @@ defaultBase64Code() {
 
 		echoContent yellow " ---> 格式化明文(VLESS+TCP+TLS/xtls-rprx-vision)"
 		echoContent green "协议类型:VLESS，地址:${domain}，端口:${currentDefaultPort}，用户ID:${id}，安全:tls，传输方式:tcp，flow:xtls-rprx-vision，账户名:${email}\n"
-		cat <<EOF >>"/etc/v2ray-agent/subscribe_tmp/${subAccount}"
+		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
 vless://${id}@${domain}:${currentDefaultPort}?encryption=none&security=tls&type=tcp&host=${domain}&headerType=none&sni=${domain}&flow=xtls-rprx-vision#${email}
 EOF
 
@@ -1475,7 +1475,7 @@ EOF
 		echoContent yellow " ---> 通用vmess(VMess+WS+TLS)链接"
 		echoContent green "    vmess://${qrCodeBase64Default}\n"
 
-		cat <<EOF >>"/etc/v2ray-agent/subscribe_tmp/${subAccount}"
+		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
 vmess://${qrCodeBase64Default}
 EOF
 
@@ -1487,7 +1487,7 @@ EOF
 		echoContent yellow " ---> 格式化明文(VLESS+WS+TLS)"
 		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${currentDefaultPort}，用户ID:${id}，安全:tls，传输方式:ws，路径:/${currentPath}ws，账户名:${email}\n"
 
-		cat <<EOF >>"/etc/v2ray-agent/subscribe_tmp/${subAccount}"
+		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
 vless://${id}@${domain}:${currentDefaultPort}?encryption=none&security=tls&type=ws&host=${domain}&sni=${domain}&path=/${currentPath}ws#${email}
 EOF
 
@@ -1499,7 +1499,7 @@ EOF
 		echoContent yellow " ---> 格式化明文(VLESS+gRPC+TLS)"
 		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${currentDefaultPort}，用户ID:${id}，安全:tls，传输方式:gRPC，alpn:h2，serviceName:${currentPath}grpc，账户名:${email}\n"
 
-		cat <<EOF >>"/etc/v2ray-agent/subscribe_tmp/${subAccount}"
+		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
 vless://${id}@${domain}:${currentDefaultPort}?encryption=none&security=tls&type=grpc&host=${domain}&path=${currentPath}grpc&serviceName=${currentPath}grpc&alpn=h2&sni=${domain}#${email}
 EOF
 	elif [[ "${type}" == "trojan" ]]; then
@@ -1507,7 +1507,7 @@ EOF
 		echoContent yellow " ---> Trojan(TLS)"
 		echoContent green "    trojan://${id}@${domain}:${currentDefaultPort}?peer=${domain}&sni=${domain}&alpn=http/1.1#${domain}_Trojan\n"
 
-		cat <<EOF >>"/etc/v2ray-agent/subscribe_tmp/${subAccount}"
+		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
 trojan://${id}@${domain}:${currentDefaultPort}?peer=${domain}&sni=${domain}&alpn=http/1.1#${email}_Trojan
 EOF
 	elif [[ "${type}" == "trojangrpc" ]]; then
@@ -1515,7 +1515,7 @@ EOF
 
 		echoContent yellow " ---> Trojan gRPC(TLS)"
 		echoContent green "    trojan://${id}@${domain}:${currentDefaultPort}?encryption=none&peer=${domain}&security=tls&type=grpc&sni=${domain}&alpn=h2&path=${currentPath}trojangrpc&serviceName=${currentPath}trojangrpc#${email}\n"
-		cat <<EOF >>"/etc/v2ray-agent/subscribe_tmp/${subAccount}"
+		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
 trojan://${id}@${domain}:${currentDefaultPort}?encryption=none&peer=${domain}&security=tls&type=grpc&sni=${domain}&alpn=h2&path=${currentPath}trojangrpc&serviceName=${currentPath}trojangrpc#${email}
 EOF
 	fi
@@ -1622,7 +1622,7 @@ showAccounts() {
 # xray版本管理
 xrayVersionManageMenu() {
 	echoContent skyBlue "\n进度  $1/${totalProgress} : Xray版本管理"
-	if [[ ! -d "/etc/v2ray-agent/xray/" ]]; then
+	if [[ ! -d "/etc/xray-agent/xray/" ]]; then
 		echoContent red " ---> 没有检测到安装目录，请执行脚本安装内容"
 		menu
 		exit 0
@@ -1681,18 +1681,18 @@ updateXray() {
 		echoContent green " ---> Xray-core版本:${version}"
 
 		if wget --help | grep -q show-progress; then
-			wget -c -q --show-progress -P /etc/v2ray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip"
+			wget -c -q --show-progress -P /etc/xray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip"
 		else
-			wget -c -P /etc/v2ray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip" >/dev/null 2>&1
+			wget -c -P /etc/xray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip" >/dev/null 2>&1
 		fi
 
-		unzip -o "/etc/v2ray-agent/xray/${xrayCoreCPUVendor}.zip" -d /etc/v2ray-agent/xray >/dev/null
-		rm -rf "/etc/v2ray-agent/xray/${xrayCoreCPUVendor}.zip"
-		chmod 655 /etc/v2ray-agent/xray/xray
+		unzip -o "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip" -d /etc/xray-agent/xray >/dev/null
+		rm -rf "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip"
+		chmod 655 /etc/xray-agent/xray/xray
 		handleXray stop
 		handleXray start
 	else
-		echoContent green " ---> 当前Xray-core版本:$(/etc/v2ray-agent/xray/xray --version | awk '{print $2}' | head -1)"
+		echoContent green " ---> 当前Xray-core版本:$(/etc/xray-agent/xray/xray --version | awk '{print $2}' | head -1)"
 
 		if [[ -n "$1" ]]; then
 			version=$1
@@ -1703,20 +1703,20 @@ updateXray() {
 		if [[ -n "$1" ]]; then
 			read -r -p "回退版本为${version}，是否继续？[y/n]:" rollbackXrayStatus
 			if [[ "${rollbackXrayStatus}" == "y" ]]; then
-				echoContent green " ---> 当前Xray-core版本:$(/etc/v2ray-agent/xray/xray --version | awk '{print $2}' | head -1)"
+				echoContent green " ---> 当前Xray-core版本:$(/etc/xray-agent/xray/xray --version | awk '{print $2}' | head -1)"
 
 				handleXray stop
-				rm -f /etc/v2ray-agent/xray/xray
+				rm -f /etc/xray-agent/xray/xray
 				updateXray "${version}"
 			else
 				echoContent green " ---> 放弃回退版本"
 			fi
-		elif [[ "${version}" == "v$(/etc/v2ray-agent/xray/xray --version | awk '{print $2}' | head -1)" ]]; then
+		elif [[ "${version}" == "v$(/etc/xray-agent/xray/xray --version | awk '{print $2}' | head -1)" ]]; then
 			read -r -p "当前版本与最新版相同，是否重新安装？[y/n]:" reInstallXrayStatus
 			if [[ "${reInstallXrayStatus}" == "y" ]]; then
 				handleXray stop
-				rm -f /etc/v2ray-agent/xray/xray
-				rm -f /etc/v2ray-agent/xray/xray
+				rm -f /etc/xray-agent/xray/xray
+				rm -f /etc/xray-agent/xray/xray
 				updateXray
 			else
 				echoContent green " ---> 放弃重新安装"
@@ -1724,7 +1724,7 @@ updateXray() {
 		else
 			read -r -p "最新版本为:${version}，是否更新？[y/n]:" installXrayStatus
 			if [[ "${installXrayStatus}" == "y" ]]; then
-				rm -f /etc/v2ray-agent/xray/xray
+				rm -f /etc/xray-agent/xray/xray
 				updateXray
 			else
 				echoContent green " ---> 放弃更新"
@@ -1734,23 +1734,18 @@ updateXray() {
 	fi
 }
 
-# 初始化Hysteria配置
-initHysteriaConfig() {
-	echoContent skyBlue "\n进度 $2/${totalProgress} : 初始化Hysteria配置"
-}
-
 
 # 备份恢复nginx文件
 backupNginxConfig() {
 	if [[ "$1" == "backup" ]]; then
-		cp /etc/nginx/conf.d/alone.conf /etc/v2ray-agent/alone_backup.conf
+		cp /etc/nginx/conf.d/alone.conf /etc/xray-agent/alone_backup.conf
 		echoContent green " ---> nginx配置文件备份成功"
 	fi
 
-	if [[ "$1" == "restoreBackup" ]] && [[ -f "/etc/v2ray-agent/alone_backup.conf" ]]; then
-		cp /etc/v2ray-agent/alone_backup.conf /etc/nginx/conf.d/alone.conf
+	if [[ "$1" == "restoreBackup" ]] && [[ -f "/etc/xray-agent/alone_backup.conf" ]]; then
+		cp /etc/xray-agent/alone_backup.conf /etc/nginx/conf.d/alone.conf
 		echoContent green " ---> nginx配置文件恢复备份成功"
-		rm /etc/v2ray-agent/alone_backup.conf
+		rm /etc/xray-agent/alone_backup.conf
 	fi
 }
 
@@ -1770,7 +1765,6 @@ updateNginxBlog() {
 
     	handleNginx stop
 		handleNginx start
-		sleep 2
 		if [[ -z $(pgrep -f nginx) ]]; then
 			backupNginxConfig restoreBackup
 			handleNginx start
@@ -2071,23 +2065,23 @@ removeUser() {
 }
 # 更新脚本
 updateV2RayAgent() {
-	echoContent skyBlue "\n进度  $1/${totalProgress} : 更新v2ray-agent脚本"
-	rm -rf /etc/v2ray-agent/install.sh
+	echoContent skyBlue "\n进度  $1/${totalProgress} : 更新xray-agent脚本"
+	rm -rf /etc/xray-agent/install.sh
 	if wget --help | grep -q show-progress; then
-		wget -c -q --show-progress -P /etc/v2ray-agent/ -N --no-check-certificate "https://raw.githubusercontent.com/suysker/v2ray-agent/master/install.sh"
+		wget -c -q --show-progress -P /etc/xray-agent/ -N --no-check-certificate "https://raw.githubusercontent.com/suysker/xray-agent/master/install.sh"
 	else
-		wget -c -q -P /etc/v2ray-agent/ -N --no-check-certificate "https://raw.githubusercontent.com/suysker/v2ray-agent/master/install.sh"
+		wget -c -q -P /etc/xray-agent/ -N --no-check-certificate "https://raw.githubusercontent.com/suysker/xray-agent/master/install.sh"
 	fi
 
-	sudo chmod 700 /etc/v2ray-agent/install.sh
+	sudo chmod 700 /etc/xray-agent/install.sh
 	local version
-	version=$(grep '当前版本:v' "/etc/v2ray-agent/install.sh" | awk -F "[v]" '{print $2}' | tail -n +2 | head -n 1 | awk -F "[\"]" '{print $1}')
+	version=$(grep '当前版本:v' "/etc/xray-agent/install.sh" | awk -F "[v]" '{print $2}' | tail -n +2 | head -n 1 | awk -F "[\"]" '{print $1}')
 
 	echoContent green "\n ---> 更新完毕"
 	echoContent yellow " ---> 请手动执行[vasma]打开脚本"
 	echoContent green " ---> 当前版本:${version}\n"
 	echoContent yellow "如更新不成功，请手动执行下面命令\n"
-	echoContent skyBlue "wget -P /root -N --no-check-certificate https://raw.githubusercontent.com/suysker/v2ray-agent/master/install.sh && chmod 700 /root/install.sh && /root/install.sh"
+	echoContent skyBlue "wget -P /root -N --no-check-certificate https://raw.githubusercontent.com/suysker/xray-agent/master/install.sh && chmod 700 /root/install.sh && /root/install.sh"
 	echo
 	exit 0
 }
@@ -2154,10 +2148,10 @@ EOF
 		tail -f ${configPathLog}error.log
 		;;
 	4)
-		tail -n 100 /etc/v2ray-agent/crontab_tls.log
+		tail -n 100 /etc/xray-agent/crontab_tls.log
 		;;
 	5)
-		tail -n 100 /etc/v2ray-agent/tls/acme.log
+		tail -n 100 /etc/xray-agent/tls/acme.log
 		;;
 	6)
 		echo >${configPathLog}access.log
@@ -2381,7 +2375,6 @@ unInstallOutbounds() {
 
 }
 
-
 # 重启核心
 reloadCore() {
 	handleXray stop
@@ -2391,22 +2384,22 @@ reloadCore() {
 
 # xray-core 安装
 xrayCoreInstall() {
-	totalProgress=13
-	installTools 2
+	totalProgress=11
+	installTools 1
 	# 申请tls
-	initTLSNginxConfig 3
+	initTLSNginxConfig 2
 
 	handleXray stop
 
-	installTLS 4
+	installTLS 3
 	handleNginx stop
-	randomPathFunction 5
+	randomPathFunction 4
 	# 安装Xray
-	installXray 6
-	installXrayService 7
-	initXrayConfig 9
-	installCronTLS 10
-	updateRedirectNginxConf 11
+	installXray 5
+	installXrayService 6
+	initXrayConfig 7
+	installCronTLS 8
+	updateRedirectNginxConf 9
 	handleXray stop
 	sleep 2
 	handleXray start
@@ -2414,8 +2407,8 @@ xrayCoreInstall() {
 	handleNginx start
 	auto_update_geodata
 	# 生成账号
-	checkGFWStatue 12
-	showAccounts 13
+	checkGFWStatue 10
+	showAccounts 11
 }
 
 # 定时任务检查证书
@@ -2455,18 +2448,18 @@ subscribe() {
 		echoContent skyBlue "-------------------------备注---------------------------------"
 		echoContent yellow "# 查看订阅时会重新生成订阅"
 		echoContent yellow "# 每次添加、删除账号需要重新查看订阅"
-		rm -rf /etc/v2ray-agent/subscribe/*
-		rm -rf /etc/v2ray-agent/subscribe_tmp/*
+		rm -rf /etc/xray-agent/subscribe/*
+		rm -rf /etc/xray-agent/subscribe_tmp/*
 		showAccounts >/dev/null
-		mv /etc/v2ray-agent/subscribe_tmp/* /etc/v2ray-agent/subscribe/
+		mv /etc/xray-agent/subscribe_tmp/* /etc/xray-agent/subscribe/
 
-		if [[ -n $(ls /etc/v2ray-agent/subscribe/) ]]; then
-			find /etc/v2ray-agent/subscribe/* | while read -r email; do
+		if [[ -n $(ls /etc/xray-agent/subscribe/) ]]; then
+			find /etc/xray-agent/subscribe/* | while read -r email; do
 				email=$(echo "${email}" | awk -F "[b][e][/]" '{print $2}')
 
 				local base64Result
-				base64Result=$(base64 -w 0 "/etc/v2ray-agent/subscribe/${email}")
-				echo "${base64Result}" >"/etc/v2ray-agent/subscribe/${email}"
+				base64Result=$(base64 -w 0 "/etc/xray-agent/subscribe/${email}")
+				echo "${base64Result}" >"/etc/xray-agent/subscribe/${email}"
 				echoContent skyBlue "--------------------------------------------------------------"
 				echoContent yellow "email:${email}\n"
 				local currentDomain=${domain}
@@ -2511,15 +2504,15 @@ unInstall() {
 	rm -rf /root/.acme.sh
 	echoContent green " ---> 删除acme.sh完成"
 
-	rm -rf /tmp/v2ray-agent-tls/*
-	if [[ -d "/etc/v2ray-agent/tls" ]] && [[ -n $(find /etc/v2ray-agent/tls/ -name "*.key") ]] && [[ -n $(find /etc/v2ray-agent/tls/ -name "*.crt") ]]; then
-		mv /etc/v2ray-agent/tls /tmp/v2ray-agent-tls
-		if [[ -n $(find /tmp/v2ray-agent-tls -name '*.key') ]]; then
-			echoContent yellow " ---> 备份证书成功，请注意留存。[/tmp/v2ray-agent-tls]"
+	rm -rf /tmp/xray-agent-tls/*
+	if [[ -d "/etc/xray-agent/tls" ]] && [[ -n $(find /etc/xray-agent/tls/ -name "*.key") ]] && [[ -n $(find /etc/xray-agent/tls/ -name "*.crt") ]]; then
+		mv /etc/xray-agent/tls /tmp/xray-agent-tls
+		if [[ -n $(find /tmp/xray-agent-tls -name '*.key') ]]; then
+			echoContent yellow " ---> 备份证书成功，请注意留存。[/tmp/xray-agent-tls]"
 		fi
 	fi
 
-	rm -rf /etc/v2ray-agent
+	rm -rf /etc/xray-agent
 	rm -rf ${nginxConfigPath}alone.conf
 
 	if [[ -d "/usr/share/nginx/html" && -f "/usr/share/nginx/html/check" ]]; then
@@ -2530,7 +2523,7 @@ unInstall() {
 	rm -rf /usr/bin/vasma
 	rm -rf /usr/sbin/vasma
 	echoContent green " ---> 卸载快捷方式完成"
-	echoContent green " ---> 卸载v2ray-agent脚本完成"
+	echoContent green " ---> 卸载xray-agent脚本完成"
 }
 
 # Adguardhome管理
@@ -2604,7 +2597,7 @@ menu() {
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
 	echoContent green "当前版本:v2.6.7"
-	echoContent green "Github:https://github.com/mack-a/v2ray-agent"
+	echoContent green "Github:https://github.com/mack-a/xray-agent"
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
 	echoContent red "\n=============================================================="
@@ -2614,23 +2607,23 @@ menu() {
 		echoContent yellow "1.安装"
 	fi
 	echoContent skyBlue "-------------------------工具管理-----------------------------"
-	echoContent yellow "4.账号管理"
-	echoContent yellow "5.更换伪装站"
-	echoContent yellow "6.更新证书"
-	echoContent yellow "8.IPv6分流"
-	echoContent yellow "9.阻止访问中国大陆IP"
-	echoContent yellow "11.添加新端口"
+	echoContent yellow "2.账号管理"
+	echoContent yellow "3.更换伪装站"
+	echoContent yellow "4.更新证书"
+	echoContent yellow "5.IPv6分流"
+	echoContent yellow "6.阻止访问中国大陆IP"
+	echoContent yellow "7.添加新端口"
 	echoContent skyBlue "-------------------------版本管理-----------------------------"
-	echoContent yellow "15.core管理"
-	echoContent yellow "16.更新脚本"
+	echoContent yellow "8.core管理"
+	echoContent yellow "9.更新脚本"
 	echoContent skyBlue "-------------------------脚本管理-----------------------------"
-	echoContent yellow "18.查看日志"
-	echoContent yellow "19.卸载脚本"
+	echoContent yellow "10.查看日志"
+	echoContent yellow "11.卸载脚本"
 	echoContent skyBlue "-------------------------其他功能-----------------------------"
-	echoContent yellow "20.Adguardhome"
-	echoContent yellow "21.WARP"
-	echoContent yellow "22.内核管理及BBR优化"
-	echoContent yellow "23.Hysteria一键"
+	echoContent yellow "12.Adguardhome"
+	echoContent yellow "13.WARP"
+	echoContent yellow "14.内核管理及BBR优化"
+	echoContent yellow "15.Hysteria一键"
 	echoContent red "=============================================================="
 	mkdirTools
 	aliasInstall
@@ -2639,49 +2632,46 @@ menu() {
 	1)
 		xrayCoreInstall
 		;;
-	3)
-		initXrayFrontingConfig 1
-		;;
-	4)
+	2)
 		manageAccount 1
 		;;
-	5)
+	3)
 		updateNginxBlog 1
 		;;
-	6)
+	4)
 		renewalTLS 1
 		;;
-	8)
+	5)
 		ipv6Routing 1
 		;;
-	9)
+	6)
 		BlockCNIP 1
 		;;
-	11)
+	7)
 		addCorePort 1
 		;;
-	15)
+	8)
 		xrayVersionManageMenu 1
 		;;
-	16)
+	9)
 		updateV2RayAgent 1
 		;;
-	18)
+	10)
 		checkLog 1
 		;;
-	19)
+	11)
 		unInstall 1
 		;;
-	20)
+	12)
 		AdguardManageMenu 1
 		;;
-	21)
+	13)
 		wget -N https://raw.githubusercontent.com/fscarmen/warp/main/menu.sh && bash menu.sh
 		;;
-	22)
+	14)
 		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
 		;;
-	23)
+	15)
 		bash <(curl -fsSL https://git.io/hysteria.sh)
 		;;
 	esac
