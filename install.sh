@@ -1363,25 +1363,6 @@ installCronTLS() {
 # 修改nginx重定向配置
 updateRedirectNginxConf() {
 	echoContent skyBlue "\n进度  $1/${totalProgress} : 配置镜像站点，默认使用kaggle官网"
-	if [[ ${BTPanelStatus} == "true" ]]; then
-
-		cat <<EOF >${nginxConfigPath}alone.conf
-server {
-    listen 127.0.0.1:31300;
-    server_name _;
-    return 403;
-}
-EOF
-
-	elif [[ -n "${customPort}" ]]; then
-		cat <<EOF >${nginxConfigPath}alone.conf
-server {
-    listen 127.0.0.1:31300;
-    server_name _;
-    return 403;
-}
-EOF
-	fi
 
 	cat <<EOF >>${nginxConfigPath}alone.conf
 server {
