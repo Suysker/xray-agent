@@ -1,15 +1,14 @@
 - **请给个⭐支持一下**
-
 * * *
 
 # 目录
 
+**TLS证书申请方式：仅支持ACME以API的方式申请泛域名证书【XRAY前置可进行SNI分流】** 
 
 # 1.八合一共存脚本+伪装站点
 ## 特性
-- 支持[Xray-core[XTLS]](https://github.com/XTLS/Xray-core)
+- 只支持[Xray-core[XTLS]](https://github.com/XTLS/Xray-core)
 - 支持VLESS[VLESS XTLS]
-- 支持不同核心之间的配置文件互相读取
 - 支持 VLESS/VMess/trojan 协议
 - 支持Debian、Ubuntu、Centos系统，支持主流的cpu架构。
 - 支持任意组合安装、支持多用户管理、支持添加多端口、
@@ -19,14 +18,14 @@
 
 ## 支持的安装类型
 
-- VLESS+TCP+xtls-rprx-vision【**推荐**】
+- VLESS+TCP+xtls-rprx-vision【**⭐推荐⭐**】
 - VLESS+TCP+TLS
-- VLESS+gRPC+TLS【支持CDN、IPv6、延迟低】
-- VLESS+WS+TLS【支持CDN、IPv6】
+- VLESS+gRPC+TLS【支持CDN、延迟低】
+- VLESS+WS+TLS【支持CDN】
 - Trojan+TCP+TLS【**推荐**】
 - Trojan+TCP+xtls-rprx-direct
-- Trojan+gRPC+TLS【支持CDN、IPv6、延迟低】
-- VMess+WS+TLS【支持CDN、IPv6】
+- Trojan+gRPC+TLS【支持CDN、延迟低】
+- VMess+WS+TLS【支持CDN】
 
 ## 注意事项
 
@@ -44,18 +43,18 @@
 
 ## 安装脚本
 
-- 支持快捷方式启动，安装完毕后，shell输入【**vasma**】即可打开脚本，脚本执行路径[**/etc/v2ray-agent/install.sh**]
+- 支持快捷方式启动，安装完毕后，shell输入【**vasma**】即可打开脚本，脚本执行路径[**/etc/xray-agent/install.sh**]
 
 - Latest Version【推荐】
 
 ```
-wget -P /root -N --no-check-certificate "https://raw.githubusercontent.com/suysker/v2ray-agent/master/install.sh" && chmod 700 /root/install.sh && /root/install.sh
+wget -P /root -N --no-check-certificate "https://raw.githubusercontent.com/suysker/xray-agent/master/install.sh" && chmod 700 /root/install.sh && /root/install.sh
 ```
 
 
 # 许可证
 
-[AGPL-3.0](https://github.com/mack-a/v2ray-agent/blob/master/LICENSE)
+[AGPL-3.0](https://github.com/suysker/xray-agent/blob/master/LICENSE)
 
 ## Stargazers over time
 
