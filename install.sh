@@ -1798,6 +1798,7 @@ updateNginxBlog() {
 
     	handleNginx stop
 		handleNginx start
+		sleep 2
 		if [[ -z $(pgrep -f nginx) ]]; then
 			backupNginxConfig restoreBackup
 			handleNginx start
