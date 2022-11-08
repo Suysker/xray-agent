@@ -1301,7 +1301,7 @@ EOF
 		defaultPort=${customPort}
 	fi
 
-	cat <<EOF >/etc/v2ray-agent/xray/conf/${frontingType}.json
+	cat <<EOF >/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json
 {
 "inbounds":[
 {
