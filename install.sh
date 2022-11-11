@@ -80,9 +80,6 @@ initVar() {
 	# tls安装失败后尝试的次数
 	installTLSCount=
 
-	# BTPanel状态
-	BTPanelStatus=
-
 	# nginx配置文件路径
 	nginxConfigPath=/etc/nginx/conf.d/
 
@@ -285,7 +282,6 @@ readConfigHostPathUUID() {
 checkBTPanel() {
 	if pgrep -f "BT-Panel"; then
 		nginxConfigPath=/www/server/panel/vhost/nginx/
-		BTPanelStatus=true
 	fi
 }
 
@@ -1338,6 +1334,11 @@ updateRedirectNginxConf() {
 
 	cat <<EOF >${nginxConfigPath}alone.conf
 server {
+	listen 80;
+	server_name ${domain};
+	return 302 https://${domain}:${currentDefaultPort};
+}
+server {
 	listen 127.0.0.1:31302 http2 so_keepalive=on;
 	server_name ${domain};
 
@@ -2160,6 +2161,151 @@ EOF
 	esac
 }
 
+warpRouting() {
+	echoContent skyBlue "\n进度  $1/${totalProgress} : WARP分流"
+	echoContent red "=============================================================="
+	if [[ -z $(which warp-cli) ]]; then
+		echoContent red " ---> 安装WARP未安装"
+		echoContent red " ---> 请运行脚本并安装"
+		exit 0
+	fi
+	echoContent red "\n=============================================================="
+	echoContent yellow "1.添加域名"
+	echoContent yellow "2.卸载WARP分流"
+	echoContent yellow "3.分流CN"
+	echoContent yellow "4.卸载分流CN"
+	echoContent red "=============================================================="
+	read -r -p "请选择:" warpStatus
+	if [[ "${warpStatus}" != "2" && "${warpStatus}" != "4" ]]; then
+		echoContent red "\n=============================================================="
+		echoContent yellow "# 注意事项\n"
+		echoContent yellow "1.如果安装时选择添加WARP IPv4、IPv6或者双栈接口，则所有流量均通过WARP（分流可能无意义）"
+		echoContent yellow "2.规则仅支持预定义域名列表[https://github.com/v2fly/domain-list-community]"
+		echoContent yellow "3.只可以把流量分流给warp，不可指定是ipv4或者ipv6"
+	
+		if [[ -n $(ip address show  wgcf) ]]; then
+			echoContent yellow "\n=============================================================="
+			choContent yellow "目前所有流量均通过WARP（分流可能无意义）"
+			warp_ip="ifconfig  wgcf | head -n2 | grep inet | awk '{print$2}"
+		fi
+
+		if [[ -n $(ip address show  CloudflareWARP) ]]; then
+			echoContent yellow "\n=============================================================="
+			echoContent yellow "目前为WARP Client模式，可以正常分流"
+			warp_ip="ifconfig  CloudflareWARP | head -n2 | grep inet | awk '{print$2}"
+		fi
+
+		local outbounds
+		
+		if [[ -n ${warp_ip} ]]; then
+			if [[ "${warpStatus}" == "1" ]]; then
+				unInstallOutbounds warp-out
+				outbounds=$(jq -r '.outbounds += [{"protocol":"freedom","settings":{"domainStrategy":"AsIs"},"sendThrough":'"${warp_ip}"',"tag":"warp-out"}]' ${configPath}10_ipv4_outbounds.json)
+			elif [[ "${warpStatus}" == "3" ]]; then
+				unInstallOutbounds warp-out-cn
+				outbounds=$(jq -r '.outbounds += [{"protocol":"freedom","settings":{"domainStrategy":"AsIs"},"sendThrough":'"${warp_ip}"',"tag":"warp-out-cn"}]' ${configPath}10_ipv4_outbounds.json)
+			fi
+		else
+			echoContent yellow "检测到可能安装 WARP Linux Client，开启了 Socks5 代理模式"
+			echoContent yellow "请输入监听端口，脚本默认为40000"
+			warp_port=40000
+			read -r -p "请输入WARP Socks5 代理监听端口:" warp_port
+			if [[ "${warpStatus}" == "1" ]]; then
+				unInstallOutbounds warp-out
+				outbounds=$(jq -r '.outbounds += [{"protocol":"socks","settings":{"servers":[{"address":"127.0.0.1","port":'"${warp_port}"'}]},"tag":"warp-out"}]' ${configPath}10_ipv4_outbounds.json)
+			elif [[ "${warpStatus}" == "3" ]]; then
+				unInstallOutbounds warp-out-cn
+				outbounds=$(jq -r '.outbounds += [{"protocol":"socks","settings":{"servers":[{"address":"127.0.0.1","port":'"${warp_port}"'}]},"tag":"warp-out-cn"}]' ${configPath}10_ipv4_outbounds.json)
+			fi
+		fi
+		echo "${outbounds}" | jq . >${configPath}10_ipv4_outbounds.json
+
+		if [[ "${warpStatus}" == "1" ]]; then
+			echoContent yellow "4.如内核启动失败请检查域名后重新添加域名"
+			echoContent yellow "5.不允许有特殊字符，注意逗号的格式"
+			echoContent yellow "6.每次添加都是重新添加，不会保留上次域名"
+			echoContent yellow "7.录入示例:google,youtube,facebook\n"
+			read -r -p "请按照上面示例录入域名:" domainList
+	
+			if [[ -f "${configPath}09_routing.json" ]]; then
+				unInstallRouting warp-out outboundTag
+
+				routing=$(jq -r ".routing.rules += [{\"type\":\"field\",\"domain\":[\"geosite:${domainList//,/\",\"geosite:}\"],\"outboundTag\":\"warp-out\"}]" ${configPath}09_routing.json)
+
+				echo "${routing}" | jq . >${configPath}09_routing.json
+
+			else
+				cat <<EOF >${configPath}09_routing.json
+{
+    "routing":{
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "domain": [
+            	"geosite:${domainList//,/\",\"geosite:}"
+            ],
+            "outboundTag": "warp-out"
+          }
+        ]
+  }
+}
+EOF
+			fi
+		elif [[ "${warpStatus}" == "3" ]]; then
+			if [[ -f "${configPath}09_routing.json" ]]; then
+				unInstallRouting warp-out-cn outboundTag
+				routing=$(jq -r ".routing.rules += [{\"type\":\"field\",\"ip\":[\"geoip:cn\"],\"outboundTag\":\"warp-out-cn\"}]" ${configPath}09_routing.json)
+
+				echo "${routing}" | jq . >${configPath}09_routing.json
+			else
+				cat <<EOF >"${configPath}09_routing.json"
+{
+    "routing":{
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+            	"geoip:cn"
+            ],
+            "outboundTag": "warp-out-cn"
+          }
+        ]
+  }
+}
+EOF
+			fi
+			unInstallRouting blackhole-out outboundTag
+		else
+			echoContent red " ---> 选择错误"
+			exit 0
+		fi
+
+		echoContent green " ---> 添加成功"
+
+	elif [[ "${warpStatus}" == "2" ]]; then
+
+		unInstallRouting warp-out outboundTag
+
+		unInstallOutbounds warp-out
+
+		echoContent green " ---> WARP分流卸载成功"
+	elif [[ "${warpStatus}" == "4" ]]; then
+
+		unInstallRouting warp-out-cn outboundTag
+
+		unInstallOutbounds warp-out-cn
+
+		echoContent green " ---> 分流CN卸载成功"
+	else
+		echoContent red " ---> 选择错误"
+		exit 0
+	fi
+	reloadCore
+
+}
+
 # 阻止访问中国大陆IP
 BlockCNIP() {
 	if [[ "${coreInstallType}" != "1" ]]; then
@@ -2168,6 +2314,7 @@ BlockCNIP() {
 		exit 0
 	fi
 	echoContent skyBlue "\n功能 1/${totalProgress} : 阻止访问中国大陆IP"
+	echoContent yellow "若不想阻止访问CN的IP，请使用warp分流功能"
 	echoContent red "\n=============================================================="
 	echoContent yellow "1.启用"
 	echoContent yellow "2.卸载"
@@ -2203,7 +2350,11 @@ EOF
 		outbounds=$(jq -r '.outbounds += [{"protocol":"blackhole","tag":"blackhole-out"}]' ${configPath}10_ipv4_outbounds.json)
 
 		echo "${outbounds}" | jq . >${configPath}10_ipv4_outbounds.json
-		
+
+		unInstallRouting warp-out-cn outboundTag
+
+		unInstallOutbounds warp-out-cn
+
 		echoContent green " ---> 添加成功"
 	else
 		unInstallRouting blackhole-out outboundTag
@@ -2612,18 +2763,19 @@ menu() {
 	echoContent yellow "4.更新证书"
 	echoContent yellow "5.IPv6分流"
 	echoContent yellow "6.阻止访问中国大陆IP"
-	echoContent yellow "7.添加新端口"
+	echoContent yellow "7.WARP分流"
+	echoContent yellow "8.添加新端口"
 	echoContent skyBlue "-------------------------版本管理-----------------------------"
-	echoContent yellow "8.core管理"
-	echoContent yellow "9.更新脚本"
+	echoContent yellow "9.core管理"
+	echoContent yellow "10.更新脚本"
 	echoContent skyBlue "-------------------------脚本管理-----------------------------"
-	echoContent yellow "10.查看日志"
-	echoContent yellow "11.卸载脚本"
+	echoContent yellow "11.查看日志"
+	echoContent yellow "12.卸载脚本"
 	echoContent skyBlue "-------------------------其他功能-----------------------------"
-	echoContent yellow "12.Adguardhome"
-	echoContent yellow "13.WARP"
-	echoContent yellow "14.内核管理及BBR优化"
-	echoContent yellow "15.Hysteria一键"
+	echoContent yellow "13.Adguardhome"
+	echoContent yellow "14.WARP"
+	echoContent yellow "15.内核管理及BBR优化"
+	echoContent yellow "16.Hysteria一键"
 	echoContent red "=============================================================="
 	mkdirTools
 	aliasInstall
@@ -2648,30 +2800,33 @@ menu() {
 		BlockCNIP 1
 		;;
 	7)
-		addCorePort 1
+		warpRouting 1
 		;;
 	8)
-		xrayVersionManageMenu 1
+		addCorePort 1
 		;;
 	9)
-		updateV2RayAgent 1
+		xrayVersionManageMenu 1
 		;;
 	10)
-		checkLog 1
+		updateV2RayAgent 1
 		;;
 	11)
-		unInstall 1
+		checkLog 1
 		;;
 	12)
-		AdguardManageMenu 1
+		unInstall 1
 		;;
 	13)
-		wget -N https://raw.githubusercontent.com/fscarmen/warp/main/menu.sh && bash menu.sh
+		AdguardManageMenu 1
 		;;
 	14)
-		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
+		wget -N https://raw.githubusercontent.com/fscarmen/warp/main/menu.sh && bash menu.sh
 		;;
 	15)
+		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
+		;;
+	16)
 		bash <(curl -fsSL https://git.io/hysteria.sh)
 		;;
 	esac
