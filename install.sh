@@ -2186,13 +2186,13 @@ warpRouting() {
 		if [[ -n $(ip address show  wgcf) ]]; then
 			echoContent yellow "\n=============================================================="
 			choContent yellow "目前所有流量均通过WARP（分流可能无意义）"
-			warp_ip="ifconfig  wgcf | head -n2 | grep inet | awk '{print$2}"
+			warp_ip="ifconfig  wgcf | head -n2 | grep inet | awk '{print$2}'"
 		fi
 
 		if [[ -n $(ip address show  CloudflareWARP) ]]; then
 			echoContent yellow "\n=============================================================="
 			echoContent yellow "目前为WARP Client模式，可以正常分流"
-			warp_ip="ifconfig  CloudflareWARP | head -n2 | grep inet | awk '{print$2}"
+			warp_ip="ifconfig  CloudflareWARP | head -n2 | grep inet | awk '{print$2}'"
 		fi
 
 		local outbounds
@@ -2200,10 +2200,10 @@ warpRouting() {
 		if [[ -n ${warp_ip} ]]; then
 			if [[ "${warpStatus}" == "1" ]]; then
 				unInstallOutbounds warp-out
-				outbounds=$(jq -r '.outbounds += [{"protocol":"freedom","settings":{"domainStrategy":"AsIs"},"sendThrough":"'${warp_ip}"',"tag":"warp-out"}]' ${configPath}10_ipv4_outbounds.json)
+				outbounds=$(jq -r '.outbounds += [{"protocol":"freedom","settings":{"domainStrategy":"AsIs"},"sendThrough":"'${warp_ip}'","tag":"warp-out"}]' ${configPath}10_ipv4_outbounds.json)
 			elif [[ "${warpStatus}" == "3" ]]; then
 				unInstallOutbounds warp-out-cn
-				outbounds=$(jq -r '.outbounds += [{"protocol":"freedom","settings":{"domainStrategy":"AsIs"},"sendThrough":"'${warp_ip}"',"tag":"warp-out-cn"}]' ${configPath}10_ipv4_outbounds.json)
+				outbounds=$(jq -r '.outbounds += [{"protocol":"freedom","settings":{"domainStrategy":"AsIs"},"sendThrough":"'${warp_ip}'","tag":"warp-out-cn"}]' ${configPath}10_ipv4_outbounds.json)
 			fi
 		else
 			echoContent yellow "检测到可能安装 WARP Linux Client，开启了 Socks5 代理模式"
