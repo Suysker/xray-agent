@@ -2186,13 +2186,13 @@ warpRouting() {
 		if [[ -n $(ip address show  wgcf) ]]; then
 			echoContent yellow "\n=============================================================="
 			choContent yellow "目前所有流量均通过WARP（分流可能无意义）"
-			warp_ip="ifconfig  wgcf | head -n2 | grep inet | awk '{print$2}'"
+			warp_ip=$(ifconfig  wgcf | head -n2 | grep inet | awk '{print$2}')
 		fi
 
 		if [[ -n $(ip address show  CloudflareWARP) ]]; then
 			echoContent yellow "\n=============================================================="
 			echoContent yellow "目前为WARP Client模式，可以正常分流"
-			warp_ip="ifconfig  CloudflareWARP | head -n2 | grep inet | awk '{print$2}'"
+			warp_ip=$(ifconfig  CloudflareWARP | head -n2 | grep inet | awk '{print$2}')
 		fi
 
 		local outbounds
