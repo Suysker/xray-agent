@@ -591,6 +591,7 @@ customPortFunction() {
 			echoContent yellow "\n ---> 端口: 443"
 		fi
 	fi
+	#删除其他自定义端口
 	rm -rf "$(find ${configPath}* | grep "dokodemodoor")"
 
 }
@@ -2176,14 +2177,16 @@ warpRouting() {
 		else
 			echoContent yellow "检测到可能安装 WARP Linux Client，开启了 Socks5 代理模式"
 			echoContent yellow "请输入监听端口，脚本默认为40000"
-			warp_port=40000
 			read -r -p "请输入WARP Socks5 代理监听端口:" warp_port
+			if [[ -z "${warp_port}" ]]; then
+				warp_port=40000
+			fi
 			if [[ "${warpStatus}" == "1" ]]; then
 				unInstallOutbounds warp-out
-				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":\"${warp_port}\"}]},\"tag\":\"warp-out\"}]" ${configPath}10_ipv4_outbounds.json)
+				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":${warp_port}}]},\"tag\":\"warp-out\"}]" ${configPath}10_ipv4_outbounds.json)
 			elif [[ "${warpStatus}" == "3" ]]; then
 				unInstallOutbounds cn-out
-				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":\"${warp_port}\"}]},\"tag\":\"cn-out\"}]" ${configPath}10_ipv4_outbounds.json)
+				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":${warp_port}}]},\"tag\":\"cn-out\"}]" ${configPath}10_ipv4_outbounds.json)
 			fi
 		fi
 		echo "${outbounds}" | jq . >${configPath}10_ipv4_outbounds.json
