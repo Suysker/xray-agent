@@ -2183,10 +2183,10 @@ warpRouting() {
 			fi
 			if [[ "${warpStatus}" == "1" ]]; then
 				unInstallOutbounds warp-out
-				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":${warp_port}}]},\"tag\":\"warp-out\"}]" ${configPath}10_ipv4_outbounds.json)
+				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\"settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":${warp_port}}]},\"tag\":\"warp-out\"}]" ${configPath}10_ipv4_outbounds.json)
 			elif [[ "${warpStatus}" == "3" ]]; then
 				unInstallOutbounds cn-out
-				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":${warp_port}}]},\"tag\":\"cn-out\"}]" ${configPath}10_ipv4_outbounds.json)
+				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\"settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":${warp_port}}]},\"tag\":\"cn-out\"}]" ${configPath}10_ipv4_outbounds.json)
 			fi
 		fi
 		echo "${outbounds}" | jq . >${configPath}10_ipv4_outbounds.json
