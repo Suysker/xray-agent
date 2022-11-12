@@ -2146,7 +2146,7 @@ warpRouting() {
 	
 		if [[ -n $(ip address show  wgcf) ]]; then
 			echoContent yellow "\n=============================================================="
-			choContent yellow "目前所有流量均通过WARP（分流可能无意义）"
+			echoContent yellow "目前所有流量均通过WARP（分流可能无意义）"
 			warp_ip=$(ifconfig  wgcf | head -n2 | grep inet | awk '{print$2}')
 		fi
 
@@ -2163,8 +2163,8 @@ warpRouting() {
 				unInstallOutbounds warp-out
 				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"freedom\",\"settings\":{\"domainStrategy\":\"AsIs\"},\"sendThrough\":\"${warp_ip}\",\"tag\":\"warp-out\"}]" ${configPath}10_ipv4_outbounds.json)
 			elif [[ "${warpStatus}" == "3" ]]; then
-				unInstallOutbounds warp-out-cn
-				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"freedom\",\"settings\":{\"domainStrategy\":\"AsIs\"},\"sendThrough\":\"${warp_ip}\",\"tag\":\"warp-out-cn\"}]" ${configPath}10_ipv4_outbounds.json)
+				unInstallOutbounds cn-out
+				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"freedom\",\"settings\":{\"domainStrategy\":\"AsIs\"},\"sendThrough\":\"${warp_ip}\",\"tag\":\"cn-out\"}]" ${configPath}10_ipv4_outbounds.json)
 			fi
 		else
 			echoContent yellow "检测到可能安装 WARP Linux Client，开启了 Socks5 代理模式"
@@ -2175,8 +2175,8 @@ warpRouting() {
 				unInstallOutbounds warp-out
 				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":\"${warp_port}\"}]},\"tag\":\"warp-out\"}]" ${configPath}10_ipv4_outbounds.json)
 			elif [[ "${warpStatus}" == "3" ]]; then
-				unInstallOutbounds warp-out-cn
-				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":\"${warp_port}\"}]},\"tag\":\"warp-out-cn\"}]" ${configPath}10_ipv4_outbounds.json)
+				unInstallOutbounds cn-out
+				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":\"${warp_port}\"}]},\"tag\":\"cn-out\"}]" ${configPath}10_ipv4_outbounds.json)
 			fi
 		fi
 		echo "${outbounds}" | jq . >${configPath}10_ipv4_outbounds.json
@@ -2215,8 +2215,8 @@ EOF
 			fi
 		elif [[ "${warpStatus}" == "3" ]]; then
 			if [[ -f "${configPath}09_routing.json" ]]; then
-				unInstallRouting warp-out-cn outboundTag
-				routing=$(jq -r ".routing.rules += [{\"type\":\"field\",\"ip\":[\"geoip:cn\"],\"outboundTag\":\"warp-out-cn\"}]" ${configPath}09_routing.json)
+				unInstallRouting cn-out outboundTag
+				routing=$(jq -r ".routing.rules += [{\"type\":\"field\",\"ip\":[\"geoip:cn\"],\"outboundTag\":\"cn-out\"}]" ${configPath}09_routing.json)
 
 				echo "${routing}" | jq . >${configPath}09_routing.json
 			else
@@ -2230,7 +2230,7 @@ EOF
             "ip": [
             	"geoip:cn"
             ],
-            "outboundTag": "warp-out-cn"
+            "outboundTag": "cn-out"
           }
         ]
   }
@@ -2254,9 +2254,9 @@ EOF
 		echoContent green " ---> WARP分流卸载成功"
 	elif [[ "${warpStatus}" == "4" ]]; then
 
-		unInstallRouting warp-out-cn outboundTag
+		unInstallRouting cn-out outboundTag
 
-		unInstallOutbounds warp-out-cn
+		unInstallOutbounds cn-out
 
 		echoContent green " ---> 分流CN卸载成功"
 	else
@@ -2312,9 +2312,9 @@ EOF
 
 		echo "${outbounds}" | jq . >${configPath}10_ipv4_outbounds.json
 
-		unInstallRouting warp-out-cn outboundTag
+		unInstallRouting cn-out outboundTag
 
-		unInstallOutbounds warp-out-cn
+		unInstallOutbounds cn-out
 
 		echoContent green " ---> 添加成功"
 	else
