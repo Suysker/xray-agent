@@ -591,6 +591,7 @@ customPortFunction() {
 			echoContent yellow "\n ---> 端口: 443"
 		fi
 	fi
+	rm -rf "$(find ${configPath}* | grep "dokodemodoor")"
 
 }
 # 检测端口是否占用
@@ -1821,6 +1822,12 @@ addCorePort() {
 		if [[ -n "${newPort}" ]]; then
 
 			while read -r port; do
+				
+				if [[ "${port}" == "${Port}" ]];then
+					echoContent yellow "不能和默认端口相同"
+					continue
+				fi
+
 				rm -rf "$(find ${configPath}* | grep "${port}")"
 
 				local fileName=
