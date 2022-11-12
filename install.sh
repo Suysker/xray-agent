@@ -86,6 +86,12 @@ initVar() {
 	# nginx配置文件路径
 	nginxConfigPath=/etc/nginx/conf.d/
 
+	# xray配置文件路径
+	configPath=/etc/xray-agent/xray/conf/
+
+	# xray核心位置
+	ctlPath=/etc/xray-agent/xray/xray
+
 	# 是否为预览版
 	prereleaseStatus=false
 
@@ -172,17 +178,12 @@ checkCPUVendor() {
 
 # 检测xray是否完成安装
 readInstallType() {
-	coreInstallType=
-	configPath=
-
 	# 1.检测安装目录
 	if [[ -d "/etc/xray-agent" ]]; then
 		if [[ -d "/etc/xray-agent/xray" && -f "/etc/xray-agent/xray/xray" ]]; then
 			# 这里检测xray-core
 			if [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "/etc/xray-agent/xray/conf/02_VLESS_TCP_inbounds.json" ]]; then
 				# xray-core
-				configPath=/etc/xray-agent/xray/conf/
-				ctlPath=/etc/xray-agent/xray/xray
 				coreInstallType=1
 			fi
 		fi
