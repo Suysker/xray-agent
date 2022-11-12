@@ -47,6 +47,15 @@ initVar() {
 	# 配置文件中的伪装域名
 	domain=
 
+	# 反代路径
+	path=
+
+	# UUID
+	UUID=
+
+	# 默认监听端口
+	Port=
+
 	# 安装总进度
 	totalProgress=1
 
@@ -65,14 +74,8 @@ initVar() {
 	#xray-core配置文件的路径
 	configPath=
 
-	# 反代路径
-	currentPath=
-
 	# centos version
 	centosVersion=
-
-	# UUID
-	currentUUID=
 
 	# 集成更新证书逻辑不再使用单独的脚本--RenewTLS
 	renewTLS=$1
@@ -97,9 +100,6 @@ initVar() {
 
 	# 伪装域名的泛域名
 	TLSDomain=
-
-	# 自定义端口
-	customPort=
 }
 
 checkSystem() {
@@ -218,63 +218,28 @@ readInstallProtocolType() {
 	fi
 }
 
-# 读取默认自定义端口
-readCustomPort() {
-	if [[ "${coreInstallType}" == "1" ]]; then
-		local port=
-		port=$(jq -r .inbounds[0].port "${configPath}${frontingType}.json")
-		if [[ "${port}" != "443" ]]; then
-			customPort=${port}
-		fi
-	fi
-}
 
 # 检查文件目录以及path路径
 readConfigHostPathUUID() {
-	currentPath=
-	currentDefaultPort=
-	currentUUID=
+	path=
+	Port=
+	UUID=
 	domain=
 	# 读取path
 	if [[ "${coreInstallType}" == "1" ]]; then
 		local fallback
 		fallback=$(jq -r -c '.inbounds[0].settings.fallbacks[]|select(.path)' ${configPath}${frontingType}.json | head -1)
 
-		local path
-		path=$(echo "${fallback}" | jq -r .path | awk -F "[/]" '{print $2}')
+		path=$(echo "${fallback}" | jq -r .path | awk -F "[/]" '{print $2}' | awk -F "[w][s]" '{print $1}')
 
-		if [[ $(echo "${fallback}" | jq -r .dest) == 31297 ]]; then
-			currentPath=$(echo "${path}" | awk -F "[w][s]" '{print $1}')
-		elif [[ $(echo "${fallback}" | jq -r .dest) == 31298 ]]; then
-			currentPath=$(echo "${path}" | awk -F "[t][c][p]" '{print $1}')
-		elif [[ $(echo "${fallback}" | jq -r .dest) == 31299 ]]; then
-			currentPath=$(echo "${path}" | awk -F "[v][w][s]" '{print $1}')
-		fi
-		# 尝试读取alpn h2 Path
-
-		if [[ -z "${currentPath}" ]]; then
-			dest=$(jq -r -c '.inbounds[0].settings.fallbacks[]|select(.alpn)|.dest' ${configPath}${frontingType}.json | head -1)
-			if [[ "${dest}" == "31302" || "${dest}" == "31304" ]]; then
-
-				if grep -q "trojangrpc {" <${nginxConfigPath}alone.conf; then
-					currentPath=$(grep "trojangrpc {" <${nginxConfigPath}alone.conf | awk -F "[/]" '{print $2}' | awk -F "[t][r][o][j][a][n]" '{print $1}')
-				elif grep -q "grpc {" <${nginxConfigPath}alone.conf; then
-					currentPath=$(grep "grpc {" <${nginxConfigPath}alone.conf | head -1 | awk -F "[/]" '{print $2}' | awk -F "[g][r][p][c]" '{print $1}')
-				fi
-			fi
+		if [[ -z "${path}" ]]; then
+			path=$(echo "${fallback}" | jq -r .path | awk -F "[/]" '{print $2}' | awk -F "[v][w][s]" '{print $1}')
 		fi
 
-		local defaultPortFile=
-		defaultPortFile=$(find ${configPath}* | grep "default")
 
-		if [[ -n "${defaultPortFile}" ]]; then
-			currentDefaultPort=$(echo "${defaultPortFile}" | awk -F [_] '{print $4}')
-		else
-			currentDefaultPort=$(jq -r .inbounds[0].port ${configPath}${frontingType}.json)
-		fi
-
+		Port=$(jq -r .inbounds[0].port ${configPath}${frontingType}.json)
 		domain=$(jq -r .inbounds[0].settings.clients[0].add ${configPath}${frontingType}.json)
-		currentUUID=$(jq -r .inbounds[0].settings.clients[0].id ${configPath}${frontingType}.json)
+		UUID=$(jq -r .inbounds[0].settings.clients[0].id ${configPath}${frontingType}.json)
 	fi
 }
 
@@ -601,26 +566,28 @@ handleNginx() {
 # 自定义端口
 customPortFunction() {
 	local historyCustomPortStatus=
-	if [[ -n "${customPort}" ]]; then
+	if [[ -n "${Port}" ]]; then
 		echo
 		read -r -p "读取到上次安装时的端口，是否使用上次安装时的端口 ？[y/n]:" historyCustomPortStatus
 		if [[ "${historyCustomPortStatus}" == "y" ]]; then
-			echoContent yellow "\n ---> 端口: ${customPort}"
+			echoContent yellow "\n ---> 端口: ${Port}"
 		fi
 	fi
 
-	if [[ "${historyCustomPortStatus}" == "n" || -z "${customPort}" ]]; then
+	if [[ "${historyCustomPortStatus}" == "n" || -z "${Port}" ]]; then
 		echo
 		echoContent yellow "请输入自定义端口[例: 2083]，[回车]使用443"
-		read -r -p "端口:" customPort
-		if [[ -n "${customPort}" ]]; then
-			if ((customPort >= 1 && customPort <= 65535)); then
+		read -r -p "端口:" Port
+		if [[ -n "${Port}" ]]; then
+			if ((Port >= 1 && Port <= 65535)); then
 				checkCustomPort
 			else
 				echoContent red " ---> 端口输入错误"
 				exit
 			fi
 		else
+			Port=443
+			checkCustomPort
 			echoContent yellow "\n ---> 端口: 443"
 		fi
 	fi
@@ -628,8 +595,9 @@ customPortFunction() {
 }
 # 检测端口是否占用
 checkCustomPort() {
-	if lsof -i "tcp:${customPort}" | grep -q LISTEN; then
-		echoContent red "\n ---> ${customPort}端口被占用，请手动关闭后安装\n"
+	port_progress=$(lsof -i "tcp:${Port}" | grep -q LISTEN | awk '{print $1}' | head -1)
+	if [[ -n "${port_progress}" && "${port_progress}" != "xray" ]]; then
+		echoContent red "\n ---> ${Port}端口被占用，请手动关闭后安装\n"
 		lsof -i tcp:80 | grep LISTEN
 		exit 0
 	fi
@@ -675,11 +643,7 @@ initTLSNginxConfig() {
 			TLSDomain=$(echo "${domain}" | awk -F "[.]" '{print $(NF-2)"."$(NF-1)"."$NF}')
 		fi
 		
-		local port=80
 		customPortFunction
-		if [[ -n "${customPort}" ]]; then
-			port=${customPort}
-		fi
 	fi
 
 	readAcmeTLS
@@ -877,7 +841,7 @@ installTLS() {
 randomPathFunction() {
 	echoContent skyBlue "\n进度  $1/${totalProgress} : 生成随机路径"
 
-	if [[ -n "${currentPath}" ]]; then
+	if [[ -n "${path}" ]]; then
 		echo
 		read -r -p "读取到上次安装记录，是否使用上次安装时的path路径 ？[y/n]:" historyPathStatus
 		echo
@@ -887,15 +851,15 @@ randomPathFunction() {
 		echoContent green " ---> 使用成功\n"
 	else
 		echoContent yellow "请输入自定义路径[例: alone]，不需要斜杠，[回车]随机路径"
-		read -r -p '路径:' currentPath
+		read -r -p '路径:' path
 
-		if [[ -z "${currentPath}" ]]; then
-			currentPath=$(head -n 50 /dev/urandom | sed 's/[^a-z]//g' | strings -n 4 | tr '[:upper:]' '[:lower:]' | head -1)
-			currentPath=${currentPath:0:4}
+		if [[ -z "${path}" ]]; then
+			path=$(head -n 50 /dev/urandom | sed 's/[^a-z]//g' | strings -n 4 | tr '[:upper:]' '[:lower:]' | head -1)
+			path=${path:0:4}
 		fi
 
 	fi
-	echoContent yellow "\n path:${currentPath}"
+	echoContent yellow "\n path:${path}"
 	echoContent skyBlue "\n----------------------------"
 }
 
@@ -997,25 +961,25 @@ EOF
 initXrayConfig() {
 	echoContent skyBlue "\n进度 $1/${totalProgress} : 初始化Xray配置"
 	echo
-	if [[ -n "${currentUUID}" ]]; then
+	if [[ -n "${UUID}" ]]; then
 		read -r -p "读取到上次安装记录，是否使用上次安装时的UUID ？[y/n]:" historyUUIDStatus
 		if [[ "${historyUUIDStatus}" == "y" ]]; then
 			echoContent green "\n ---> 使用成功"
 		else
 			echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
-			read -r -p 'UUID:' currentUUID
+			read -r -p 'UUID:' UUID
 		fi
 	else
 		echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
-		read -r -p 'UUID:' currentUUID
+		read -r -p 'UUID:' UUID
 	fi
 
-	if [[ -z "${currentUUID}" ]]; then
+	if [[ -z "${UUID}" ]]; then
 		echoContent red "\n ---> uuid读取错误，重新生成"
-		currentUUID=$(/etc/xray-agent/xray/xray uuid)
+		UUID=$(/etc/xray-agent/xray/xray uuid)
 	fi
 
-	echoContent yellow "\n ${currentUUID}"
+	echoContent yellow "\n ${UUID}"
 
 	# log
 	cat <<EOF >/etc/xray-agent/xray/conf/00_log.json
@@ -1080,8 +1044,8 @@ EOF
 	  "settings": {
 		"clients": [
 		  {
-			"password": "${currentUUID}",
-			"email": "${domain}_${currentUUID}"
+			"password": "${UUID}",
+			"email": "${domain}_${UUID}"
 		  }
 		],
 		"fallbacks":[
@@ -1108,7 +1072,7 @@ EOF
 EOF
 
 	# VLESS_WS_TLS
-	fallbacksList=${fallbacksList}',{"path":"/'${currentPath}'ws","dest":31297,"xver":1}'
+	fallbacksList=${fallbacksList}',{"path":"/'${path}'ws","dest":31297,"xver":1}'
 	cat <<EOF >/etc/xray-agent/xray/conf/03_VLESS_WS_inbounds.json
 {
 "inbounds":[
@@ -1120,8 +1084,8 @@ EOF
 	  "settings": {
 		"clients": [
 		  {
-			"id": "${currentUUID}",
-			"email": "${domain}_${currentUUID}"
+			"id": "${UUID}",
+			"email": "${domain}_${UUID}"
 		  }
 		],
 		"decryption": "none"
@@ -1131,7 +1095,7 @@ EOF
 		"security": "none",
 		"wsSettings": {
 		  "acceptProxyProtocol": true,
-		  "path": "/${currentPath}ws"
+		  "path": "/${path}ws"
 		}
 	  },
 	  "sniffing": {
@@ -1158,8 +1122,8 @@ EOF
 	  "settings": {
 		"clients": [
 		  {
-			"password": "${currentUUID}",
-			"email": "${domain}_${currentUUID}"
+			"password": "${UUID}",
+			"email": "${domain}_${UUID}"
 		  }
 		],
 		"fallbacks": [
@@ -1171,7 +1135,7 @@ EOF
 	  "streamSettings": {
 		"network": "grpc",
 		"grpcSettings": {
-		  "serviceName": "${currentPath}trojangrpc"
+		  "serviceName": "${path}trojangrpc"
 		}
 	  },
 	  "sniffing": {
@@ -1187,7 +1151,7 @@ EOF
 EOF
 
 	# VMess_WS
-	fallbacksList=${fallbacksList}',{"path":"/'${currentPath}'vws","dest":31299,"xver":1}'
+	fallbacksList=${fallbacksList}',{"path":"/'${path}'vws","dest":31299,"xver":1}'
 	cat <<EOF >/etc/xray-agent/xray/conf/05_VMess_WS_inbounds.json
 {
 "inbounds":[
@@ -1199,10 +1163,10 @@ EOF
 	  "settings": {
 		"clients": [
 		  {
-			"id": "${currentUUID}",
+			"id": "${UUID}",
 			"alterId": 0,
 			"add": "${domain}",
-			"email": "${domain}_${currentUUID}"
+			"email": "${domain}_${UUID}"
 		  }
 		]
 	  },
@@ -1211,7 +1175,7 @@ EOF
 		"security": "none",
 		"wsSettings": {
 		  "acceptProxyProtocol": true,
-		  "path": "/${currentPath}vws"
+		  "path": "/${path}vws"
 		}
 	  },
 	  "sniffing": {
@@ -1238,9 +1202,9 @@ EOF
 	  "settings": {
 		"clients": [
 		  {
-			"id": "${currentUUID}",
+			"id": "${UUID}",
 			"add": "${domain}",
-			"email": "${domain}_${currentUUID}"
+			"email": "${domain}_${UUID}"
 		  }
 		],
 		"decryption": "none"
@@ -1248,7 +1212,7 @@ EOF
 	  "streamSettings": {
 		"network": "grpc",
 		"grpcSettings": {
-		  "serviceName": "${currentPath}grpc"
+		  "serviceName": "${path}grpc"
 		}
 	  },
 	  "sniffing": {
@@ -1264,25 +1228,21 @@ EOF
 EOF
 
 	# VLESS_TCP
-	local defaultPort=443
-	if [[ -n "${customPort}" ]]; then
-		defaultPort=${customPort}
-	fi
 
 	cat <<EOF >/etc/xray-agent/xray/conf/02_VLESS_TCP_inbounds.json
 {
 "inbounds":[
 {
-  "port": ${defaultPort},
+  "port": ${Port},
   "protocol": "vless",
   "tag":"VLESSTCP",
   "settings": {
     "clients": [
      {
-        "id": "${currentUUID}",
+        "id": "${UUID}",
         "add":"${domain}",
         "flow":"xtls-rprx-vision",
-        "email": "${domain}_${currentUUID}"
+        "email": "${domain}_${UUID}"
       }
     ],
     "decryption": "none",
@@ -1336,7 +1296,7 @@ updateRedirectNginxConf() {
 server {
 	listen 80;
 	server_name ${domain};
-	return 302 https://${domain}:${currentDefaultPort};
+	return 302 https://${domain}:${Port};
 }
 server {
 	listen 127.0.0.1:31302 http2 so_keepalive=on;
@@ -1350,7 +1310,7 @@ server {
     	alias /etc/xray-agent/subscribe/;
     }
 
-    location /${currentPath}grpc {
+    location /${path}grpc {
     	if (\$content_type !~ "application/grpc") {
     		return 404;
     	}
@@ -1361,7 +1321,7 @@ server {
 		grpc_pass grpc://127.0.0.1:31301;
 	}
 
-	location /${currentPath}trojangrpc {
+	location /${path}trojangrpc {
 		if (\$content_type !~ "application/grpc") {
             		return 404;
 		}
@@ -1453,26 +1413,24 @@ defaultBase64Code() {
 	local email=$2
 	local id=$3
 
-	port=${currentDefaultPort}
-
 	local subAccount
 	subAccount=$(echo "${email}" | awk -F "[_]" '{print $1}')_$(echo "${id}_currentHost" | md5sum | awk '{print $1}')
 	if [[ "${type}" == "vlesstcp" ]]; then
 		echoContent yellow " ---> 通用格式(VLESS+TCP+TLS/xtls-rprx-vision)"
-		echoContent green "    vless://${id}@${domain}:${currentDefaultPort}?encryption=none&security=tls&type=tcp&host=${domain}&headerType=none&sni=${domain}&flow=xtls-rprx-vision#${email}\n"
+		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=tcp&host=${domain}&headerType=none&sni=${domain}&flow=xtls-rprx-vision#${email}\n"
 
 		echoContent yellow " ---> 格式化明文(VLESS+TCP+TLS/xtls-rprx-vision)"
-		echoContent green "协议类型:VLESS，地址:${domain}，端口:${currentDefaultPort}，用户ID:${id}，安全:tls，传输方式:tcp，flow:xtls-rprx-vision，账户名:${email}\n"
+		echoContent green "协议类型:VLESS，地址:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:tcp，flow:xtls-rprx-vision，账户名:${email}\n"
 		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
-vless://${id}@${domain}:${currentDefaultPort}?encryption=none&security=tls&type=tcp&host=${domain}&headerType=none&sni=${domain}&flow=xtls-rprx-vision#${email}
+vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=tcp&host=${domain}&headerType=none&sni=${domain}&flow=xtls-rprx-vision#${email}
 EOF
 
 	elif [[ "${type}" == "vmessws" ]]; then
-		qrCodeBase64Default=$(echo -n "{\"port\":${currentDefaultPort},\"ps\":\"${email}\",\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${currentPath}vws\",\"net\":\"ws\",\"add\":\"${domain}\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}" | base64 -w 0)
+		qrCodeBase64Default=$(echo -n "{\"port\":${Port},\"ps\":\"${email}\",\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"add\":\"${domain}\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}" | base64 -w 0)
 		qrCodeBase64Default="${qrCodeBase64Default// /}"
 
 		echoContent yellow " ---> 通用json(VMess+WS+TLS)"
-		echoContent green "    {\"port\":${currentDefaultPort},\"ps\":\"${email}\",\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${currentPath}vws\",\"net\":\"ws\",\"add\":\"${domain}\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}\n"
+		echoContent green "    {\"port\":${Port},\"ps\":\"${email}\",\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"add\":\"${domain}\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}\n"
 		echoContent yellow " ---> 通用vmess(VMess+WS+TLS)链接"
 		echoContent green "    vmess://${qrCodeBase64Default}\n"
 
@@ -1483,41 +1441,41 @@ EOF
 	elif [[ "${type}" == "vlessws" ]]; then
 
 		echoContent yellow " ---> 通用格式(VLESS+WS+TLS)"
-		echoContent green "    vless://${id}@${domain}:${currentDefaultPort}?encryption=none&security=tls&type=ws&host=${domain}&sni=${domain}&path=/${currentPath}ws#${email}\n"
+		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=ws&host=${domain}&sni=${domain}&path=/${path}ws#${email}\n"
 
 		echoContent yellow " ---> 格式化明文(VLESS+WS+TLS)"
-		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${currentDefaultPort}，用户ID:${id}，安全:tls，传输方式:ws，路径:/${currentPath}ws，账户名:${email}\n"
+		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:ws，路径:/${path}ws，账户名:${email}\n"
 
 		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
-vless://${id}@${domain}:${currentDefaultPort}?encryption=none&security=tls&type=ws&host=${domain}&sni=${domain}&path=/${currentPath}ws#${email}
+vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=ws&host=${domain}&sni=${domain}&path=/${path}ws#${email}
 EOF
 
 	elif [[ "${type}" == "vlessgrpc" ]]; then
 
 		echoContent yellow " ---> 通用格式(VLESS+gRPC+TLS)"
-		echoContent green "    vless://${id}@${domain}:${currentDefaultPort}?encryption=none&security=tls&type=grpc&host=${domain}&path=${currentPath}grpc&serviceName=${currentPath}grpc&alpn=h2&sni=${domain}#${email}\n"
+		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=grpc&host=${domain}&path=${path}grpc&serviceName=${path}grpc&alpn=h2&sni=${domain}#${email}\n"
 
 		echoContent yellow " ---> 格式化明文(VLESS+gRPC+TLS)"
-		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${currentDefaultPort}，用户ID:${id}，安全:tls，传输方式:gRPC，alpn:h2，serviceName:${currentPath}grpc，账户名:${email}\n"
+		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:gRPC，alpn:h2，serviceName:${path}grpc，账户名:${email}\n"
 
 		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
-vless://${id}@${domain}:${currentDefaultPort}?encryption=none&security=tls&type=grpc&host=${domain}&path=${currentPath}grpc&serviceName=${currentPath}grpc&alpn=h2&sni=${domain}#${email}
+vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=grpc&host=${domain}&path=${path}grpc&serviceName=${path}grpc&alpn=h2&sni=${domain}#${email}
 EOF
 	elif [[ "${type}" == "trojan" ]]; then
 		# URLEncode
 		echoContent yellow " ---> Trojan(TLS)"
-		echoContent green "    trojan://${id}@${domain}:${currentDefaultPort}?peer=${domain}&sni=${domain}&alpn=http/1.1#${domain}_Trojan\n"
+		echoContent green "    trojan://${id}@${domain}:${Port}?peer=${domain}&sni=${domain}&alpn=http/1.1#${domain}_Trojan\n"
 
 		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
-trojan://${id}@${domain}:${currentDefaultPort}?peer=${domain}&sni=${domain}&alpn=http/1.1#${email}_Trojan
+trojan://${id}@${domain}:${Port}?peer=${domain}&sni=${domain}&alpn=http/1.1#${email}_Trojan
 EOF
 	elif [[ "${type}" == "trojangrpc" ]]; then
 		# URLEncode
 
 		echoContent yellow " ---> Trojan gRPC(TLS)"
-		echoContent green "    trojan://${id}@${domain}:${currentDefaultPort}?encryption=none&peer=${domain}&security=tls&type=grpc&sni=${domain}&alpn=h2&path=${currentPath}trojangrpc&serviceName=${currentPath}trojangrpc#${email}\n"
+		echoContent green "    trojan://${id}@${domain}:${Port}?encryption=none&peer=${domain}&security=tls&type=grpc&sni=${domain}&alpn=h2&path=${path}trojangrpc&serviceName=${path}trojangrpc#${email}\n"
 		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
-trojan://${id}@${domain}:${currentDefaultPort}?encryption=none&peer=${domain}&security=tls&type=grpc&sni=${domain}&alpn=h2&path=${currentPath}trojangrpc&serviceName=${currentPath}trojangrpc#${email}
+trojan://${id}@${domain}:${Port}?encryption=none&peer=${domain}&security=tls&type=grpc&sni=${domain}&alpn=h2&path=${path}trojangrpc&serviceName=${path}trojangrpc#${email}
 EOF
 	fi
 
@@ -1526,9 +1484,6 @@ EOF
 
 # 账号
 showAccounts() {
-	readInstallType
-	readInstallProtocolType
-	readConfigHostPathUUID
 	echoContent skyBlue "\n进度 $1/${totalProgress} : 账号"
 	local show
 	# VLESS TCP
@@ -1561,8 +1516,8 @@ showAccounts() {
 		# VMess WS
 		if echo ${currentInstallProtocolType} | grep -q 3; then
 			echoContent skyBlue "\n================================ VMess WS TLS CDN ================================\n"
-			local path="${currentPath}vws"
-			path="${currentPath}vws"
+			local path="${path}vws"
+			path="${path}vws"
 			jq .inbounds[0].settings.clients ${configPath}05_VMess_WS_inbounds.json | jq -c '.[]' | while read -r user; do
 				local email=
 				email=$(echo "${user}" | jq -r .email)
@@ -1752,6 +1707,11 @@ backupNginxConfig() {
 
 # 更新伪装站
 updateNginxBlog() {
+	if [[ "${coreInstallType}" != "1" ]]; then
+		echoContent red " ---> 未安装，请使用脚本安装"
+		menu
+		exit 0
+	fi
 	echoContent skyBlue "\n进度 $1/${totalProgress} : 更换伪装站点"
 	echoContent red "\n=============================================================="
     if [[ -f "${nginxConfigPath}alone.conf" ]]; then
@@ -1836,6 +1796,11 @@ allowPort() {
 
 # 添加新端口
 addCorePort() {
+	if [[ "${coreInstallType}" != "1" ]]; then
+		echoContent red " ---> 未安装，请使用脚本安装"
+		menu
+		exit 0
+	fi
 	echoContent skyBlue "\n功能 1/${totalProgress} : 添加新端口"
 	echoContent red "\n=============================================================="
 	echoContent yellow "# 注意事项\n"
@@ -1851,11 +1816,7 @@ addCorePort() {
 	read -r -p "请选择:" selectNewPortType
 	if [[ "${selectNewPortType}" == "1" ]]; then
 		read -r -p "请输入端口号:" newPort
-		read -r -p "请输入默认的端口号，同时会更改订阅端口以及节点端口，[回车]默认443:" defaultPort
-
-		if [[ -n "${defaultPort}" ]]; then
-			rm -rf "$(find ${configPath}* | grep "default")"
-		fi
+		#read -r -p "请输入默认的端口号，同时会更改订阅端口以及节点端口，[回车]默认443:" defaultPort
 
 		if [[ -n "${newPort}" ]]; then
 
@@ -1863,19 +1824,10 @@ addCorePort() {
 				rm -rf "$(find ${configPath}* | grep "${port}")"
 
 				local fileName=
-				if [[ -n "${defaultPort}" && "${port}" == "${defaultPort}" ]]; then
-					fileName="${configPath}02_dokodemodoor_inbounds_${port}_default.json"
-				else
-					fileName="${configPath}02_dokodemodoor_inbounds_${port}.json"
-				fi
+				fileName="${configPath}02_dokodemodoor_inbounds_${port}.json"
 
 				# 开放端口
 				allowPort "${port}"
-
-				local settingsPort=443
-				if [[ -n "${customPort}" ]]; then
-					settingsPort=${customPort}
-				fi
 
 				cat <<EOF >"${fileName}"
 {
@@ -1886,7 +1838,7 @@ addCorePort() {
 	  "protocol": "dokodemo-door",
 	  "settings": {
 		"address": "127.0.0.1",
-		"port": ${settingsPort},
+		"port": ${Port},
 		"network": "tcp",
 		"followRedirect": false
 	  },
@@ -1919,6 +1871,11 @@ EOF
 
 # manageUser 用户管理
 manageUser() {
+	if [[ "${coreInstallType}" != "1" ]]; then
+		echoContent red " ---> 未安装，请使用脚本安装"
+		menu
+		exit 0
+	fi
 	echoContent skyBlue "\n进度 $1/${totalProgress} : 多用户管理"
 	echoContent skyBlue "-----------------------------------------------------"
 	echoContent yellow "1.添加用户"
@@ -1936,7 +1893,6 @@ manageUser() {
 
 # 添加用户
 addUser() {
-
 	echoContent yellow "添加新用户后，需要重新查看订阅"
 	read -r -p "请输入要添加的用户数量:" userNum
 	echo
@@ -2162,6 +2118,11 @@ EOF
 }
 
 warpRouting() {
+	if [[ "${coreInstallType}" != "1" ]]; then
+		echoContent red " ---> 未安装，请使用脚本安装"
+		menu
+		exit 0
+	fi
 	echoContent skyBlue "\n进度  $1/${totalProgress} : WARP分流"
 	echoContent red "=============================================================="
 	if [[ -z $(which warp-cli) ]]; then
@@ -2571,6 +2532,11 @@ cronRenewTLS() {
 }
 # 账号管理
 manageAccount() {
+	if [[ "${coreInstallType}" != "1" ]]; then
+		echoContent red " ---> 未安装，请使用脚本安装"
+		menu
+		exit 0
+	fi
 	echoContent skyBlue "\n功能 1/${totalProgress} : 账号管理"
 	echoContent red "\n=============================================================="
 	echoContent yellow "# 每次删除、添加账号后，需要重新查看订阅生成订阅\n"
@@ -2615,8 +2581,8 @@ subscribe() {
 				echoContent yellow "email:${email}\n"
 				local currentDomain=${domain}
 
-				if [[ -n "${currentDefaultPort}" && "${currentDefaultPort}" != "443" ]]; then
-					currentDomain="${domain}:${currentDefaultPort}"
+				if [[ -n "${Port}" && "${Port}" != "443" ]]; then
+					currentDomain="${domain}:${Port}"
 				fi
 
 				echoContent yellow "url:https://${currentDomain}/s/${email}\n"
@@ -2842,8 +2808,6 @@ checkCPUVendor
 readInstallType
 #读取安装协议类型
 readInstallProtocolType
-#读取安装端口
-readCustomPort
 #读取伪装站点域名、UUID及路径
 readConfigHostPathUUID
 #检查宝塔面板
