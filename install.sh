@@ -1818,7 +1818,6 @@ addCorePort() {
 	read -r -p "请选择:" selectNewPortType
 	if [[ "${selectNewPortType}" == "1" ]]; then
 		read -r -p "请输入端口号:" newPort
-		#read -r -p "请输入默认的端口号，同时会更改订阅端口以及节点端口，[回车]默认443:" defaultPort
 
 		if [[ -n "${newPort}" ]]; then
 
@@ -1826,6 +1825,7 @@ addCorePort() {
 				
 				if [[ "${port}" == "${Port}" ]];then
 					echoContent yellow "不能和默认端口相同"
+					echoContent yellow "自动跳过该端口"
 					continue
 				fi
 
@@ -2723,7 +2723,7 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
-	echoContent green "当前版本:v2.6.7"
+	echoContent green "当前版本:v2.6.8"
 	echoContent green "Github:https://github.com/mack-a/xray-agent"
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
