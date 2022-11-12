@@ -2125,7 +2125,7 @@ warpRouting() {
 	fi
 	echoContent skyBlue "\n进度  $1/${totalProgress} : WARP分流"
 	echoContent red "=============================================================="
-	if [[ -z $(which warp-cli) || -z $(which warp) ]]; then
+	if [[ -z $(which warp-cli) && -z $(which warp) ]]; then
 		echoContent red " ---> 安装WARP未安装"
 		echoContent red " ---> 请运行脚本并安装"
 		exit 0
