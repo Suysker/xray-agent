@@ -98,12 +98,6 @@ initVar() {
 	# ssl类型
 	sslType=
 
-	# ssl邮箱
-	sslEmail=
-
-	# 检查天数
-	sslRenewalDays=90
-
 	# 伪装域名的泛域名
 	TLSDomain=
 }
@@ -671,8 +665,6 @@ switchSSLType() {
 			sslType="letsencrypt"
 			;;
 		esac
-		touch /etc/xray-agent/tls
-		echo "${sslType}" >/etc/xray-agent/tls/ssl_type
 
 	fi
 }
@@ -706,15 +698,53 @@ customSSLEmail() {
 #acme申请证书
 acmeInstallSSL() {
 
-	echoContent red " ---> 默认支持Cloudflare"
+	echoContent yellow "1.Cloudflare[默认]"
+	echoContent yellow "2.DNSPod"
+	echoContent yellow "3.Aliyun "
+	echoContent yellow "4.其他 "
 	echoContent red " ---> 其他DNS运营商使用方式详见 https://github.com/acmesh-official/acme.sh/wiki/dnsapi"
 	echoContent red " ---> 请先根据文档自行添加密钥后,并输入n"
-	read -r -p "是否使用默认Cloudflare ？[y/n]:" selectDNS
-	#暂时只支持Cloudflare
-	if [[ "${selectDNS}" != "n" ]]; then
+	echoContent red "=============================================================="
+	read -r -p "请选择:" selectDNS
+	if [[ "${selectDNS}" == "1" ]]; then
+		echoContent red " ---> the token currently needs access read access to Zone.Zone, and write access to Zone.DNS,"
+		echoContent red "=============================================================="
 		read -r -p "请输入Cloudflare API Token:" CF_Token
 		sed '/CF_Token/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		echo "SAVED_CF_Token='${CF_Token}'" >>/root/.acme.sh/account.conf
+		export CF_Token="${CF_Token}"
+		#echo "SAVED_CF_Token='${CF_Token}'" >>/root/.acme.sh/account.conf
+		
+		dnsType=dns_cf
+	elif [[ "${selectDNS}" == "2" ]]; then
+		echoContent red " ---> The DNSPod.cn Domain API option requires that you first login to your account to get a DNSPod API Key and ID."
+		echoContent red "=============================================================="
+		read -r -p "请输入DNSPod API Key:" DP_Key
+		sed '/DP_Key/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
+		export DP_Key="${DP_Key}"
+		read -r -p "请输入DNSPod API ID:" DP_Id
+		sed '/DP_Id/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
+		export DP_Id="${DP_Id}"
+
+		dnsType=dns_dp
+	elif [[ "${selectDNS}" == "3" ]]; then
+		echoContent red " ---> First you need to login to your Aliyun account to get your RAM API key. https://ram.console.aliyun.com/users"
+		echoContent red "=============================================================="
+		read -r -p "请输入Aliyun API key:" Ali_Key
+		sed '/Ali_Key/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
+		export Ali_Key="${Ali_Key}"
+		read -r -p "请输入Aliyun Secret:" Ali_Secret
+		sed '/Ali_Secret/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
+		export Ali_Secret="${Ali_Secret}"
+
+		dnsType=dns_ali
+	elif [[ "${selectDNS}" == "4" ]]; then
+		echoContent red "请确保已经通过export添加相应TOKEN、KEY、ID等"
+		echoContent yellow "输入类似于dns_cf; dns_dp; dns_ali "
+		echoContent red "=============================================================="
+		read -r -p "请输入DNS服务商:" dnsType
+	else
+		echoContent red "选择错误"
+		exit 0
 	fi
 
 	if [[ "${selectSSLType}" == "2" ]]; then
@@ -729,7 +759,7 @@ acmeInstallSSL() {
 
 	echoContent green " ---> 生成证书中"
 	#暂时只支持Cloudflare
-	sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns dns_cf -k ec-256 --server "${sslType}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+	sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns "${dnsType}" -k ec-256 --server "${sslType}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
 
 	readAcmeTLS
 }
@@ -743,7 +773,6 @@ renewalTLS() {
 	readAcmeTLS
 
 	if [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
-		modifyTime=
 
 		modifyTime=$(stat "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" | sed -n '7,6p' | awk '{print $2" "$3" "$4" "$5}')
 
@@ -751,11 +780,13 @@ renewalTLS() {
 		currentTime=$(date +%s)
 		((stampDiff = currentTime - modifyTime))
 		((days = stampDiff / 86400))
+		sslRenewalDays=90
 		((remainingDays = sslRenewalDays - days))
 
-		tlsStatus=${remainingDays}
 		if [[ ${remainingDays} -le 0 ]]; then
 			tlsStatus="已过期"
+		else
+			tlsStatus=${remainingDays}
 		fi
 
 		echoContent skyBlue " ---> 证书检查日期:$(date "+%F %H:%M:%S")"
@@ -799,17 +830,13 @@ installTLS() {
 			fi
 		fi
 
-	elif [[ -d "$HOME/.acme.sh" ]] && [[ ! -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" || ! -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" ]]; then
+	elif [[ -d "$HOME/.acme.sh" ]]; then
 		echoContent green " ---> 安装TLS证书"
 
-		if [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
-			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
-		else
-			switchSSLType
-			customSSLEmail
-			acmeInstallSSL
-			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
-		fi
+		switchSSLType
+		customSSLEmail
+		acmeInstallSSL
+		sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
 
 		if [[ ! -f "/etc/xray-agent/tls/${TLSDomain}.crt" || ! -f "/etc/xray-agent/tls/${TLSDomain}.key" ]] || [[ -z $(cat "/etc/xray-agent/tls/${TLSDomain}.key") || -z $(cat "/etc/xray-agent/tls/${TLSDomain}.crt") ]]; then
 			tail -n 10 /etc/xray-agent/tls/acme.log
