@@ -711,8 +711,7 @@ acmeInstallSSL() {
 		echoContent red "=============================================================="
 		read -r -p "请输入Cloudflare API Token:" CF_Token
 		sed '/CF_Token/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		export CF_Token="${CF_Token}"
-		#echo "SAVED_CF_Token='${CF_Token}'" >>/root/.acme.sh/account.conf
+		echo "SAVED_CF_Token='${CF_Token}'" >>/root/.acme.sh/account.conf
 		
 		dnsType=dns_cf
 	elif [[ "${selectDNS}" == "2" ]]; then
@@ -720,10 +719,10 @@ acmeInstallSSL() {
 		echoContent red "=============================================================="
 		read -r -p "请输入DNSPod API Key:" DP_Key
 		sed '/DP_Key/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		export DP_Key="${DP_Key}"
+		echo "SAVED_DP_Key='${DP_Key}'" >>/root/.acme.sh/account.conf
 		read -r -p "请输入DNSPod API ID:" DP_Id
 		sed '/DP_Id/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		export DP_Id="${DP_Id}"
+		echo "SAVED_DP_Id='${DP_Id}'" >>/root/.acme.sh/account.conf
 
 		dnsType=dns_dp
 	elif [[ "${selectDNS}" == "3" ]]; then
@@ -731,10 +730,10 @@ acmeInstallSSL() {
 		echoContent red "=============================================================="
 		read -r -p "请输入Aliyun API key:" Ali_Key
 		sed '/Ali_Key/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		export Ali_Key="${Ali_Key}"
+		echo "SAVED_Ali_Key='${Ali_Key}'" >>/root/.acme.sh/account.conf
 		read -r -p "请输入Aliyun Secret:" Ali_Secret
 		sed '/Ali_Secret/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		export Ali_Secret="${Ali_Secret}"
+		echo "SAVED_Ali_Secret='${Ali_Secret}'" >>/root/.acme.sh/account.conf
 
 		dnsType=dns_ali
 	elif [[ "${selectDNS}" == "4" ]]; then
@@ -2160,63 +2159,40 @@ warpRouting() {
 		exit 0
 	fi
 	echoContent skyBlue "\n进度  $1/${totalProgress} : WARP分流"
-	echoContent red "=============================================================="
-	if [[ -z $(which warp-cli) && -z $(which warp) ]]; then
-		echoContent red " ---> 安装WARP未安装"
-		echoContent red " ---> 请运行脚本并安装"
-		exit 0
-	fi
 	echoContent red "\n=============================================================="
 	echoContent yellow "1.添加域名"
 	echoContent yellow "2.卸载WARP分流"
-	echoContent yellow "3.分流CN"
-	echoContent yellow "4.卸载分流CN"
+	echoContent yellow "3.分流CN的域名和IP"
+	echoContent yellow "4.卸载分流CN域名和IP"
 	echoContent red "=============================================================="
 	read -r -p "请选择:" warpStatus
 	if [[ "${warpStatus}" != "2" && "${warpStatus}" != "4" ]]; then
 		echoContent red "\n=============================================================="
 		echoContent yellow "# 注意事项\n"
-		echoContent yellow "1.如果安装时选择添加WARP IPv4、IPv6或者双栈接口，则所有流量均通过WARP（分流可能无意义）"
-		echoContent yellow "2.规则仅支持预定义域名列表[https://github.com/v2fly/domain-list-community]"
-		echoContent yellow "3.只可以把流量分流给warp，不可指定是ipv4或者ipv6"
-	
-		if [[ -n $(ip address show  wgcf) ]]; then
-			echoContent yellow "\n=============================================================="
-			echoContent yellow "目前所有流量均通过WARP（分流可能无意义）"
-			warp_ip=$(ifconfig  wgcf | head -n2 | grep inet | awk '{print$2}')
-		fi
+		echoContent yellow "1.规则仅支持预定义域名列表[https://github.com/v2fly/domain-list-community]"
+		echoContent yellow "3.warp支持IPV4和IPV6"
 
-		if [[ -n $(ip address show  CloudflareWARP) ]]; then
-			echoContent yellow "\n=============================================================="
-			echoContent yellow "目前为WARP Client模式，可以正常分流"
-			warp_ip=$(ifconfig  CloudflareWARP | head -n2 | grep inet | awk '{print$2}')
-		fi
-
+	if [[ ($(curl -4 ip.gs |awk '{print $1}') == $(curl -4 ip.gs --interface wgcf |awk '{print $1}')) && ($(curl -6 ip.gs |awk '{print $1}') == $(curl -6 ip.gs --interface wgcf |awk '{print $1}')) ]]; then
+		echoContent red "warp全局接管IPV4和IPV6，无需进行分流设置"
+		unInstallRouting warp-out outboundTag
+		unInstallOutbounds warp-out
+		echoContent green " ---> WARP分流卸载成功"
+		unInstallRouting cn-out outboundTag
+		unInstallOutbounds cn-out
+		echoContent green " ---> 分流CN卸载成功"
+	fi
+		
 		local outbounds
 		
-		if [[ -n ${warp_ip} ]]; then
-			if [[ "${warpStatus}" == "1" ]]; then
-				unInstallOutbounds warp-out
-				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"freedom\",\"settings\":{\"domainStrategy\":\"AsIs\"},\"sendThrough\":\"${warp_ip}\",\"tag\":\"warp-out\"}]" ${configPath}10_ipv4_outbounds.json)
-			elif [[ "${warpStatus}" == "3" ]]; then
-				unInstallOutbounds cn-out
-				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"freedom\",\"settings\":{\"domainStrategy\":\"AsIs\"},\"sendThrough\":\"${warp_ip}\",\"tag\":\"cn-out\"}]" ${configPath}10_ipv4_outbounds.json)
-			fi
-		else
-			echoContent yellow "检测到可能安装 WARP Linux Client，开启了 Socks5 代理模式"
-			echoContent yellow "请输入监听端口，脚本默认为40000"
-			read -r -p "请输入WARP Socks5 代理监听端口:" warp_port
-			if [[ -z "${warp_port}" ]]; then
-				warp_port=40000
-			fi
-			if [[ "${warpStatus}" == "1" ]]; then
-				unInstallOutbounds warp-out
-				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\"settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":${warp_port}}]},\"tag\":\"warp-out\"}]" ${configPath}10_ipv4_outbounds.json)
-			elif [[ "${warpStatus}" == "3" ]]; then
-				unInstallOutbounds cn-out
-				outbounds=$(jq -r ".outbounds += [{\"protocol\":\"socks\",\"settings\":{\"servers\":[{\"address\":\"127.0.0.1\",\"port\":${warp_port}}]},\"tag\":\"cn-out\"}]" ${configPath}10_ipv4_outbounds.json)
-			fi
+
+		if [[ "${warpStatus}" == "1" ]]; then
+			unInstallOutbounds warp-out
+			outbounds=$(jq -r ".outbounds += [{\"protocol\":\"freedom\",\"streamSettings\":{\"sockopt\":{\"mark\":250}},\"settings\":{\"domainStrategy\":\"UseIP\"},\"tag\":\"warp-out\"}]" ${configPath}10_ipv4_outbounds.json)
+		elif [[ "${warpStatus}" == "3" ]]; then
+			unInstallOutbounds cn-out
+			outbounds=$(jq -r ".outbounds += [{\"protocol\":\"freedom\",\"streamSettings\":{\"sockopt\":{\"mark\":250}},\"settings\":{\"domainStrategy\":\"UseIP\"},\"tag\":\"cn-out\"}]" ${configPath}10_ipv4_outbounds.json)
 		fi
+		
 		echo "${outbounds}" | jq . >${configPath}10_ipv4_outbounds.json
 
 		if [[ "${warpStatus}" == "1" ]]; then
@@ -2263,6 +2239,13 @@ EOF
     "routing":{
         "domainStrategy": "IPOnDemand",
         "rules": [
+          {
+            "type": "field",
+            "domain": [
+            	"geosite:cn"
+            ],
+            "outboundTag": "cn-out"
+          },
           {
             "type": "field",
             "ip": [
@@ -2314,6 +2297,7 @@ BlockCNIP() {
 	fi
 	echoContent skyBlue "\n功能 1/${totalProgress} : 阻止访问中国大陆IP"
 	echoContent yellow "若不想阻止访问CN的IP，请使用warp分流功能"
+	echoContent yellow "此处只阻止访问CN的IP，域名则不进行阻止"
 	echoContent red "\n=============================================================="
 	echoContent yellow "1.启用"
 	echoContent yellow "2.卸载"
