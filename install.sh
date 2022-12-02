@@ -652,6 +652,7 @@ switchSSLType() {
 		echoContent red "\n=============================================================="
 		echoContent yellow "1.letsencrypt[默认]"
 		echoContent yellow "2.zerossl"
+		echoContent yellow "3.HiCA"
 		echoContent red "=============================================================="
 		read -r -p "请选择[回车]使用默认:" selectSSLType
 		case ${selectSSLType} in
@@ -660,6 +661,9 @@ switchSSLType() {
 			;;
 		2)
 			sslType="zerossl"
+			;;
+		3)
+			sslType="https://acme.hi.cn/directory"
 			;;
 		*)
 			sslType="letsencrypt"
@@ -2809,7 +2813,7 @@ menu() {
 		AdguardManageMenu 1
 		;;
 	14)
-		wget -N https://raw.githubusercontent.com/fscarmen/warp/main/menu.sh && bash menu.sh
+		wget -N https://raw.githubusercontent.com/suysker/warp/main/menu.sh && bash menu.sh
 		;;
 	15)
 		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
