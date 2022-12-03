@@ -1,11 +1,4 @@
-- **请给个⭐支持一下**
-* * *
-
 # 目录
-
-**支持XTLS-RPRX-VISION** 
-**支持将CNIP分流至WARP或者直接阻止** 
-**TLS证书申请方式：仅支持ACME以API的方式申请泛域名证书【XRAY前置可进行SNI分流】** 
 
 # 1.八合一共存脚本+伪装站点
 ## 特性
@@ -17,6 +10,9 @@
 - 支持卸载后保留tls证书
 - 支持WARP分流、IPv6分流
 - 支持日志管理、域名黑名单管理、核心管理、伪装站点管理
+- **支持XTLS-RPRX-VISION一键安装**
+- **支持将CNIP分流至WARP或者直接阻止**
+- **TLS证书申请方式：仅支持ACME以API的方式申请泛域名证书【XRAY前置可进行SNI分流】**
 
 ## 支持的安装类型
 
@@ -24,8 +20,7 @@
 - VLESS+TCP+TLS
 - VLESS+gRPC+TLS【支持CDN、延迟低】
 - VLESS+WS+TLS【支持CDN】
-- Trojan+TCP+TLS【**推荐**】
-- Trojan+TCP+xtls-rprx-direct
+- Trojan+TCP+TLS
 - Trojan+gRPC+TLS【支持CDN、延迟低】
 - VMess+WS+TLS【支持CDN】
 
@@ -35,7 +30,6 @@
 - **使用纯净系统安装，如使用其他脚本安装过并且自己无法修改错误，请重新安装系统后再次尝试安装**
 - 不支持非root账户
 - **如发现Nginx相关问题，请卸载掉自编译的nginx或者重新安装系统**
-- **为了节约时间，反馈请带上详细截图或者按照模版规范，无截图或者不按照规范的issue会被直接关闭**
 - **不推荐GCP用户使用**
 - **不推荐使用Centos以及低版本的系统，如果Centos安装失败，请切换至Debian10重新尝试，脚本不再支持Centos6、Ubuntu 16.x**
 - **Oracle Cloud有一个额外的防火墙，需要手动设置**
