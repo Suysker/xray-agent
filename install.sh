@@ -1287,21 +1287,20 @@ EOF
     "network": "tcp",
     "security": "tls",
     "tlsSettings": {
-      "rejectUnknownSni": true,
-      "minVersion": "1.2",
-      "alpn": [
-        "http/1.1",
-        "h2"
-      ],
       "certificates": [
         {
           "certificateFile": "/etc/xray-agent/tls/${TLSDomain}.crt",
-          "keyFile": "/etc/xray-agent/tls/${TLSDomain}.key",
-          "ocspStapling": 3600,
-          "usage":"encipherment"
+          "keyFile": "/etc/xray-agent/tls/${TLSDomain}.key"
         }
       ]
     }
+  },
+    "sniffing": {
+      "enabled": true,
+      "destOverride": [
+        "http",
+        "tls"
+      ]
   }
 }
 ]
@@ -2169,6 +2168,7 @@ warpRouting() {
 	echoContent yellow "3.分流CN的域名和IP"
 	echoContent yellow "4.卸载分流CN域名和IP"
 	echoContent red "=============================================================="
+	echoContent red "需要在warp一键脚本安装后，手动更改wgcf的配置，详情请见https://blog.suysker.xyz/archives/235"
 	read -r -p "请选择:" warpStatus
 	if [[ "${warpStatus}" != "2" && "${warpStatus}" != "4" ]]; then
 		echoContent red "\n=============================================================="
