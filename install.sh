@@ -42,9 +42,9 @@ initVar() {
 
 	# 核心支持的cpu版本
 	xrayCoreCPUVendor=""
-	# hysteriaCoreCPUVendor=""
+	adgCoreCPUVendor=""
 
-	# 配置文件中的伪装域名
+	# 伪装域名
 	domain=
 
 	# 反代路径
@@ -61,9 +61,6 @@ initVar() {
 
 	# xray安装是否完成安装
 	coreInstallType=
-
-	#内核地址
-	ctlPath=
 
 	# 当前的个性化安装方式 01234
 	currentInstallProtocolType=
@@ -95,10 +92,10 @@ initVar() {
 	# 是否为预览版
 	prereleaseStatus=false
 
-	# ssl类型
+	# ssl申请的服务商
 	sslType=
 
-	# 伪装域名的泛域名
+	# Xray中的TLS证书域名
 	TLSDomain=
 }
 
@@ -152,11 +149,11 @@ checkCPUVendor() {
 			case "$(uname -m)" in
 			'amd64' | 'x86_64')
 				xrayCoreCPUVendor="Xray-linux-64"
-				# hysteriaCoreCPUVendor="hysteria-linux-amd64"
+				adgCoreCPUVendor="AdGuardHome_linux_amd64"
 				;;
 			'armv8' | 'aarch64')
 				xrayCoreCPUVendor="Xray-linux-arm64-v8a"
-				# hysteriaCoreCPUVendor="hysteria-linux-arm64"
+				adgCoreCPUVendor="AdGuardHome_linux_arm64"
 				;;
 			*)
 				echo "  不支持此CPU架构--->"
@@ -167,6 +164,7 @@ checkCPUVendor() {
 	else
 		echoContent red "  无法识别此CPU架构，默认amd64、x86_64--->"
 		xrayCoreCPUVendor="Xray-linux-64"
+		adgCoreCPUVendor="AdGuardHome_linux_amd64"
 	fi
 }
 
@@ -233,7 +231,9 @@ readConfigHostPathUUID() {
 
 
 		Port=$(jq -r .inbounds[0].port ${configPath}${frontingType}.json)
-		domain=$(jq -r .inbounds[0].settings.clients[0].add ${configPath}${frontingType}.json)
+		#domain=$(jq -r .inbounds[0].settings.clients[0].add ${configPath}${frontingType}.json | awk -F "@" '{print $1}')
+		#从nginx的回落配置中读取伪装域名
+		domain=$(grep "server_name" ${nginxConfigPath}alone.conf | awk '$2 ~ /\./ {gsub(";","",$2); print $2; exit}')
 		UUID=$(jq -r .inbounds[0].settings.clients[0].id ${configPath}${frontingType}.json)
 	fi
 }
@@ -506,7 +506,7 @@ installTools() {
 		fi
 
 		if [[ -n "${policyCoreUtils}" ]]; then
-			${installType} ${policyCoreUtils} >/dev/null 2>&1
+			${installType} "${policyCoreUtils}" >/dev/null 2>&1
 		fi
 		if [[ -n $(which semanage) ]]; then
 			semanage port -a -t http_port_t -p tcp 31300
@@ -517,6 +517,7 @@ installTools() {
 	if [[ ! -d "$HOME/.acme.sh" ]] || [[ -d "$HOME/.acme.sh" && -z $(find "$HOME/.acme.sh/acme.sh") ]]; then
 		echoContent green " ---> 安装acme.sh"
 		curl -s https://get.acme.sh | sh >/etc/xray-agent/tls/acme.log 2>&1
+		source "$HOME/.bashrc"
 		sudo "$HOME/.acme.sh/acme.sh" --upgrade --auto-upgrade
 
 		if [[ ! -d "$HOME/.acme.sh" ]] || [[ -z $(find "$HOME/.acme.sh/acme.sh") ]]; then
@@ -761,7 +762,7 @@ acmeInstallSSL() {
 	fi
 
 	echoContent green " ---> 生成证书中"
-	#暂时只支持Cloudflare
+	
 	sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns "${dnsType}" -k ec-256 --server "${sslType}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
 
 	readAcmeTLS
@@ -1024,6 +1025,21 @@ initXrayConfig() {
 }
 EOF
 
+	# 本地策略Policy
+	cat <<EOF >/etc/xray-agent/xray/conf/01_policy.json
+{
+  "policy": {
+    "levels": {
+      "0": {
+        "handshake": 3,
+        "connIdle": 360,
+		"bufferSize": 1024
+      }
+    }
+  }
+}
+EOF
+
 	cat <<EOF >/etc/xray-agent/xray/conf/10_ipv4_outbounds.json
 {
     "outbounds":[
@@ -1078,7 +1094,7 @@ EOF
 		"clients": [
 		  {
 			"password": "${UUID}",
-			"email": "${domain}_${UUID}"
+			"email": "${domain}@${UUID}"
 		  }
 		],
 		"fallbacks":[
@@ -1097,7 +1113,8 @@ EOF
         "destOverride": [
 			"http",
 			"tls"
-        ]
+        ],
+		"routeOnly": false
 	  }
 	}
 	]
@@ -1118,7 +1135,7 @@ EOF
 		"clients": [
 		  {
 			"id": "${UUID}",
-			"email": "${domain}_${UUID}"
+			"email": "${UUID}"
 		  }
 		],
 		"decryption": "none"
@@ -1136,7 +1153,8 @@ EOF
         "destOverride": [
 			"http",
 			"tls"
-        ]
+        ],
+		"routeOnly": false
 	  }
 	}
 ]
@@ -1156,7 +1174,7 @@ EOF
 		"clients": [
 		  {
 			"password": "${UUID}",
-			"email": "${domain}_${UUID}"
+			"email": "${domain}@${UUID}"
 		  }
 		],
 		"fallbacks": [
@@ -1176,7 +1194,8 @@ EOF
         "destOverride": [
 			"http",
 			"tls"
-        ]
+        ],
+		"routeOnly": false
 	  }
     }
 ]
@@ -1198,8 +1217,7 @@ EOF
 		  {
 			"id": "${UUID}",
 			"alterId": 0,
-			"add": "${domain}",
-			"email": "${domain}_${UUID}"
+			"email": "${domain}@${UUID}"
 		  }
 		]
 	  },
@@ -1216,7 +1234,8 @@ EOF
         "destOverride": [
 			"http",
 			"tls"
-        ]
+        ],
+		"routeOnly": false
 	  }
     }
 ]
@@ -1236,8 +1255,7 @@ EOF
 		"clients": [
 		  {
 			"id": "${UUID}",
-			"add": "${domain}",
-			"email": "${domain}_${UUID}"
+			"email": "${domain}@${UUID}"
 		  }
 		],
 		"decryption": "none"
@@ -1253,7 +1271,8 @@ EOF
         "destOverride": [
 			"http",
 			"tls"
-        ]
+        ],
+		"routeOnly": false
 	  }
     }
 ]
@@ -1273,9 +1292,8 @@ EOF
     "clients": [
      {
         "id": "${UUID}",
-        "add":"${domain}",
         "flow":"xtls-rprx-vision",
-        "email": "${domain}_${UUID}"
+        "email": "${domain}@${UUID}"
       }
     ],
     "decryption": "none",
@@ -1287,6 +1305,8 @@ EOF
     "network": "tcp",
     "security": "tls",
     "tlsSettings": {
+      "rejectUnknownSni": true,
+	  "minVersion": "1.2",
       "certificates": [
         {
           "certificateFile": "/etc/xray-agent/tls/${TLSDomain}.crt",
@@ -1300,7 +1320,8 @@ EOF
       "destOverride": [
         "http",
         "tls"
-      ]
+      ],
+	  "routeOnly": false
   }
 }
 ]
@@ -1376,7 +1397,7 @@ server {
 		proxy_set_header Accept-Encoding "";
 		proxy_ssl_session_reuse off;
 		proxy_ssl_name \$proxy_host;
-		proxy_ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
+		proxy_ssl_protocols TLSv1.2 TLSv1.3;
 	}
 }
 server {
@@ -1400,7 +1421,7 @@ server {
 		proxy_set_header Accept-Encoding "";
 		proxy_ssl_session_reuse off;
 		proxy_ssl_name \$proxy_host;
-		proxy_ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
+		proxy_ssl_protocols TLSv1.2 TLSv1.3;
 	}
 }
 EOF
@@ -1458,11 +1479,11 @@ vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=tcp&host=${dom
 EOF
 
 	elif [[ "${type}" == "vmessws" ]]; then
-		qrCodeBase64Default=$(echo -n "{\"port\":${Port},\"ps\":\"${email}\",\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"add\":\"${domain}\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}" | base64 -w 0)
+		qrCodeBase64Default=$(echo -n "{\"port\":${Port},\"ps\":\"${email}\",\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}" | base64 -w 0)
 		qrCodeBase64Default="${qrCodeBase64Default// /}"
 
 		echoContent yellow " ---> 通用json(VMess+WS+TLS)"
-		echoContent green "    {\"port\":${Port},\"ps\":\"${email}\",\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"add\":\"${domain}\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}\n"
+		echoContent green "    {\"port\":${Port},\"ps\":\"${email}\",\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}\n"
 		echoContent yellow " ---> 通用vmess(VMess+WS+TLS)链接"
 		echoContent green "    vmess://${qrCodeBase64Default}\n"
 
@@ -1516,8 +1537,13 @@ EOF
 
 # 账号
 showAccounts() {
+	readInstallType
+	#读取安装协议类型
+	readInstallProtocolType
+	#读取伪装站点域名、UUID及路径
+	readConfigHostPathUUID
 	echoContent skyBlue "\n进度 $1/${totalProgress} : 账号"
-	local show
+	local 
 	# VLESS TCP
 	if [[ -n "${configPath}" ]]; then
 		show=1
@@ -1726,12 +1752,12 @@ updateXray() {
 # 备份恢复nginx文件
 backupNginxConfig() {
 	if [[ "$1" == "backup" ]]; then
-		cp /etc/nginx/conf.d/alone.conf /etc/xray-agent/alone_backup.conf
+		cp ${nginxConfigPath}alone.conf /etc/xray-agent/alone_backup.conf
 		echoContent green " ---> nginx配置文件备份成功"
 	fi
 
 	if [[ "$1" == "restoreBackup" ]] && [[ -f "/etc/xray-agent/alone_backup.conf" ]]; then
-		cp /etc/xray-agent/alone_backup.conf /etc/nginx/conf.d/alone.conf
+		cp /etc/xray-agent/alone_backup.conf ${nginxConfigPath}alone.conf
 		echoContent green " ---> nginx配置文件恢复备份成功"
 		rm /etc/xray-agent/alone_backup.conf
 	fi
@@ -1791,39 +1817,41 @@ checkUFWAllowPort() {
 
 # 开放系统防火墙端口
 allowPort() {
-	# 如果防火墙启动状态则添加相应的开放端口
-	if systemctl status netfilter-persistent 2>/dev/null | grep -q "active (exited)"; then
-		local updateFirewalldStatus=
-		if ! iptables -L | grep -q "$1(mack-a)"; then
-			updateFirewalldStatus=true
-			iptables -I INPUT -p tcp --dport "$1" -m comment --comment "allow $1(mack-a)" -j ACCEPT
-		fi
+    local type=$2
+    if [[ -z "${type}" ]]; then
+        type=tcp
+    fi
+    # 如果防火墙启动状态则添加相应的开放端口
+    if systemctl status netfilter-persistent 2>/dev/null | grep -q "active (exited)"; then
+        local updateFirewalldStatus=
+        if ! iptables -L | grep -q "$1(mack-a)"; then
+            updateFirewalldStatus=true
+            iptables -I INPUT -p "${type}" --dport "$1" -m comment --comment "allow $1(mack-a)" -j ACCEPT
+        fi
 
-		if echo "${updateFirewalldStatus}" | grep -q "true"; then
-			netfilter-persistent save
-		fi
-	elif systemctl status ufw 2>/dev/null | grep -q "active (exited)"; then
-		if ufw status | grep -q "Status: active"; then
-			if ! ufw status | grep -q "$1"; then
-				sudo ufw allow "$1"
-				checkUFWAllowPort "$1"
-			fi
-		fi
+        if echo "${updateFirewalldStatus}" | grep -q "true"; then
+            netfilter-persistent save
+        fi
+    elif systemctl status ufw 2>/dev/null | grep -q "active (exited)"; then
+        if ufw status | grep -q "Status: active"; then
+            if ! ufw status | grep -q "$1/${type}"; then
+                sudo ufw allow "$1/${type}"
+                checkUFWAllowPort "$1"
+            fi
+        fi
 
-	elif
-		systemctl status firewalld 2>/dev/null | grep -q "active (running)"
-	then
-		local updateFirewalldStatus=
-		if ! firewall-cmd --list-ports --permanent | grep -qw "$1/tcp"; then
-			updateFirewalldStatus=true
-			firewall-cmd --zone=public --add-port="$1/tcp" --permanent
-			checkFirewalldAllowPort "$1"
-		fi
+    elif systemctl status firewalld 2>/dev/null | grep -q "active (running)"; then
+        local updateFirewalldStatus=
+        if ! firewall-cmd --list-ports --permanent | grep -qw "$1/${type}"; then
+            updateFirewalldStatus=true
+            firewall-cmd --zone=public --add-port="$1/${type}" --permanent
+            checkFirewalldAllowPort "$1"
+        fi
 
-		if echo "${updateFirewalldStatus}" | grep -q "true"; then
-			firewall-cmd --reload
-		fi
-	fi
+        if echo "${updateFirewalldStatus}" | grep -q "true"; then
+            firewall-cmd --reload
+        fi
+    fi
 }
 
 # 添加新端口
@@ -2026,31 +2054,31 @@ removeUser() {
 	if [[ -n "${delUserIndex}" ]]; then
 		if echo ${currentInstallProtocolType} | grep -q 1; then
 			local vlessWSResult
-			vlessWSResult=$(jq -r 'del(.inbounds[0].settings.clients['${delUserIndex}'])' ${configPath}03_VLESS_WS_inbounds.json)
+			vlessWSResult=$(jq -r 'del(.inbounds[0].settings.clients['"${delUserIndex}"'])' ${configPath}03_VLESS_WS_inbounds.json)
 			echo "${vlessWSResult}" | jq . >${configPath}03_VLESS_WS_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 2; then
 			local trojangRPCUsers
-			trojangRPCUsers=$(jq -r 'del(.inbounds[0].settings.clients['${delUserIndex}'])' ${configPath}04_trojan_gRPC_inbounds.json)
+			trojangRPCUsers=$(jq -r 'del(.inbounds[0].settings.clients['"${delUserIndex}"'])' ${configPath}04_trojan_gRPC_inbounds.json)
 			echo "${trojangRPCUsers}" | jq . >${configPath}04_trojan_gRPC_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 3; then
 			local vmessWSResult
-			vmessWSResult=$(jq -r 'del(.inbounds[0].settings.clients['${delUserIndex}'])' ${configPath}05_VMess_WS_inbounds.json)
+			vmessWSResult=$(jq -r 'del(.inbounds[0].settings.clients['"${delUserIndex}"'])' ${configPath}05_VMess_WS_inbounds.json)
 			echo "${vmessWSResult}" | jq . >${configPath}05_VMess_WS_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 5; then
 			local vlessGRPCResult
-			vlessGRPCResult=$(jq -r 'del(.inbounds[0].settings.clients['${delUserIndex}'])' ${configPath}06_VLESS_gRPC_inbounds.json)
+			vlessGRPCResult=$(jq -r 'del(.inbounds[0].settings.clients['"${delUserIndex}"'])' ${configPath}06_VLESS_gRPC_inbounds.json)
 			echo "${vlessGRPCResult}" | jq . >${configPath}06_VLESS_gRPC_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 4; then
 			local trojanTCPResult
-			trojanTCPResult=$(jq -r 'del(.inbounds[0].settings.clients['${delUserIndex}'])' ${configPath}04_trojan_TCP_inbounds.json)
+			trojanTCPResult=$(jq -r 'del(.inbounds[0].settings.clients['"${delUserIndex}"'])' ${configPath}04_trojan_TCP_inbounds.json)
 			echo "${trojanTCPResult}" | jq . >${configPath}04_trojan_TCP_inbounds.json
 		fi
 
@@ -2137,10 +2165,10 @@ EOF
 		checkLog 1
 		;;
 	2)
-		tail -f ${configPathLog}access.log
+		tail -f "${configPathLog}"access.log
 		;;
 	3)
-		tail -f ${configPathLog}error.log
+		tail -f "${configPathLog}"error.log
 		;;
 	4)
 		tail -n 100 /etc/xray-agent/crontab_tls.log
@@ -2149,8 +2177,8 @@ EOF
 		tail -n 100 /etc/xray-agent/tls/acme.log
 		;;
 	6)
-		echo >${configPathLog}access.log
-		echo >${configPathLog}error.log
+		echo >"${configPathLog}"access.log
+		echo >"${configPathLog}"error.log
 		;;
 	esac
 }
@@ -2331,7 +2359,7 @@ BlockCNIP() {
 }
 EOF
 		fi
-
+	
 		unInstallOutbounds blackhole-out
 
 		outbounds=$(jq -r '.outbounds += [{"protocol":"blackhole","tag":"blackhole-out"}]' ${configPath}10_ipv4_outbounds.json)
@@ -2511,6 +2539,55 @@ unInstallOutbounds() {
 		fi
 	fi
 
+}
+
+manageSniffing() {
+	if [[ "${coreInstallType}" != "1" ]]; then
+		echoContent red " ---> 未安装，请使用脚本安装"
+		menu
+		exit 0
+	fi
+	
+	echoContent skyBlue "\n功能 1/${totalProgress} : 流量嗅探管理"
+	echoContent red "\n=============================================================="
+
+	if [[ $(jq '.inbounds[0].sniffing.enabled' ${configPath}${frontingType}.json) ]]; then
+		echoContent red "\n流量嗅探功能默认开启,关闭将会导致routing规则失效"
+		echoContent yellow "1.关闭流量嗅探"
+		
+		if [[ $(jq '.inbounds[0].sniffing.routeOnly' ${configPath}${frontingType}.json) ]]; then
+			echoContent yellow "3.关闭流量嗅探仅供路由"
+		else
+			echoContent red "\n流量嗅探仅供路由默认关闭，开启将会导致routing规则失效"
+			echoContent yellow "4.开启流量嗅探仅供路由"
+		fi
+	else
+		echoContent yellow "2.开启流量嗅探"
+	fi
+	read -r -p "请按照上面示例录入域名:" sniffingtype
+
+	if [[ "${sniffingtype}" == "1" ]]; then
+		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
+			sed -i 's/"enabled": true/"enabled": false/' "${configfile}"
+		done
+	elif [[ "${sniffingtype}" == "2" ]]; then
+		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
+			sed -i 's/"enabled": false/"enabled": true/' "${configfile}"
+		done
+	elif [[ "${sniffingtype}" == "3" ]]; then
+		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
+			sed -i 's/"routeOnly": true/"routeOnly": false/' "${configfile}"
+		done
+	elif [[ "${sniffingtype}" == "4" ]]; then
+		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
+			sed -i 's/"routeOnly": false/"routeOnly": true/' "${configfile}"
+		done
+	else
+		echoContent red " ---> 选择错误"
+		exit 0
+	fi
+
+	reloadCore
 }
 
 # 重启核心
@@ -2703,7 +2780,7 @@ AdguardManageMenu() {
 	if [[ "${selectADGType}" == "2" ]]; then
 
 		#下载最新版至tmp
-		wget -O '/tmp/AdGuardHome_linux_amd64.tar.gz' 'https://static.adguard.com/adguardhome/release/AdGuardHome_linux_amd64.tar.gz'
+		wget -O '/tmp/AdGuardHome_linux_amd64.tar.gz' "https://static.adguard.com/adguardhome/release/${adgCoreCPUVendor}.tar.gz"
 		#解压最新版至tmp
 		tar -C /tmp/ -f /tmp/AdGuardHome_linux_amd64.tar.gz -x -v -z
 		#暂停运行
@@ -2739,7 +2816,7 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
-	echoContent green "当前版本:v2.6.8"
+	echoContent green "当前版本:v2.6.9"
 	echoContent green "Github:https://github.com/mack-a/xray-agent"
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
@@ -2757,17 +2834,18 @@ menu() {
 	echoContent yellow "6.阻止访问中国大陆IP"
 	echoContent yellow "7.WARP分流"
 	echoContent yellow "8.添加新端口"
+	echoContent yellow "9.流量嗅探管理"
 	echoContent skyBlue "-------------------------版本管理-----------------------------"
-	echoContent yellow "9.core管理"
-	echoContent yellow "10.更新脚本"
+	echoContent yellow "10.core管理"
+	echoContent yellow "11.更新脚本"
 	echoContent skyBlue "-------------------------脚本管理-----------------------------"
-	echoContent yellow "11.查看日志"
-	echoContent yellow "12.卸载脚本"
+	echoContent yellow "12.查看日志"
+	echoContent yellow "13.卸载脚本"
 	echoContent skyBlue "-------------------------其他功能-----------------------------"
-	echoContent yellow "13.Adguardhome"
-	echoContent yellow "14.WARP"
-	echoContent yellow "15.内核管理及BBR优化"
-	echoContent yellow "16.Hysteria一键"
+	echoContent yellow "14.Adguardhome"
+	echoContent yellow "15.WARP"
+	echoContent yellow "16.内核管理及BBR优化"
+	echoContent yellow "17.Hysteria一键"
 	echoContent red "=============================================================="
 	mkdirTools
 	aliasInstall
@@ -2798,27 +2876,30 @@ menu() {
 		addCorePort 1
 		;;
 	9)
-		xrayVersionManageMenu 1
+		manageSniffing 1
 		;;
 	10)
-		updateV2RayAgent 1
+		xrayVersionManageMenu 1
 		;;
 	11)
-		checkLog 1
+		updateV2RayAgent 1
 		;;
 	12)
-		unInstall 1
+		checkLog 1
 		;;
 	13)
-		AdguardManageMenu 1
+		unInstall 1
 		;;
 	14)
-		wget -N https://raw.githubusercontent.com/suysker/warp/main/menu.sh && bash menu.sh
+		AdguardManageMenu 1
 		;;
 	15)
-		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
+		wget -N https://raw.githubusercontent.com/suysker/warp/main/menu.sh && bash menu.sh
 		;;
 	16)
+		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
+		;;
+	17)
 		bash <(curl -fsSL https://git.io/hysteria.sh)
 		;;
 	esac
