@@ -218,6 +218,7 @@ readConfigHostPathUUID() {
 	Port=
 	UUID=
 	domain=
+	TLSDomain=
 	# 读取path
 	if [[ "${coreInstallType}" == "1" ]]; then
 		local fallback
@@ -235,6 +236,7 @@ readConfigHostPathUUID() {
 		#从nginx的回落配置中读取伪装域名
 		domain=$(grep "server_name" ${nginxConfigPath}alone.conf | awk '$2 ~ /\./ {gsub(";","",$2); print $2; exit}')
 		UUID=$(jq -r .inbounds[0].settings.clients[0].id ${configPath}${frontingType}.json)
+		TLSDomain=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].certificateFile ${configPath}${frontingType}.json | awk -F "[/]" '{print $5}' | awk -F "[.][c][r][t]" '{print $1}')
 	fi
 }
 
@@ -561,7 +563,7 @@ handleNginx() {
 
 # 自定义端口
 customPortFunction() {
-	local historyCustomPortStatus=
+	#local historyCustomPortStatus=
 	if [[ -n "${Port}" ]]; then
 		echo
 		read -r -p "读取到上次安装时的端口，是否使用上次安装时的端口 ？[y/n]:" historyCustomPortStatus
@@ -635,16 +637,10 @@ initTLSNginxConfig() {
 		echoContent red "  域名不可为空--->"
 		initTLSNginxConfig 3
 	else
-		TLSDomain=$(echo "${domain}" | awk -F "[.]" '{print $(NF-1)"."$NF}')
-
-		if [[ "${TLSDomain}" == "eu.org" ]]; then
-			TLSDomain=$(echo "${domain}" | awk -F "[.]" '{print $(NF-2)"."$(NF-1)"."$NF}')
-		fi
+		readAcmeTLS
 		
 		customPortFunction
 	fi
-
-	readAcmeTLS
 }
 
 # 选择ssl安装类型
@@ -674,98 +670,122 @@ switchSSLType() {
 	fi
 }
 
-# 自定义email
-customSSLEmail() {
-	if echo "$1" | grep -q "validate email"; then
-		read -r -p "是否重新输入邮箱地址[y/n]:" sslEmailStatus
-		if [[ "${sslEmailStatus}" == "y" ]]; then
-			sed '/ACCOUNT_EMAIL/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		else
-			exit 0
-		fi
-	fi
-
-	if [[ -d "/root/.acme.sh" && -f "/root/.acme.sh/account.conf" ]]; then
-		if ! grep -q "ACCOUNT_EMAIL" <"/root/.acme.sh/account.conf" && ! echo "${sslType}" | grep -q "letsencrypt"; then
-			read -r -p "请输入邮箱地址:" sslEmail
-			if echo "${sslEmail}" | grep -q "@"; then
-				echo "ACCOUNT_EMAIL='${sslEmail}'" >>/root/.acme.sh/account.conf
-				echoContent green " ---> 添加成功"
-			else
-				echoContent yellow "请重新输入正确的邮箱格式[例: username@example.com]"
-				customSSLEmail
-			fi
-		fi
-	fi
-
-}
-
 #acme申请证书
 acmeInstallSSL() {
 
-	echoContent yellow "1.Cloudflare[默认]"
-	echoContent yellow "2.DNSPod"
-	echoContent yellow "3.Aliyun "
-	echoContent yellow "4.其他 "
-	echoContent red " ---> 其他DNS运营商使用方式详见 https://github.com/acmesh-official/acme.sh/wiki/dnsapi"
-	echoContent red " ---> 请先根据文档自行添加密钥后,并输入n"
-	echoContent red "=============================================================="
-	read -r -p "请选择:" selectDNS
-	if [[ "${selectDNS}" == "1" ]]; then
-		echoContent red " ---> the token currently needs access read access to Zone.Zone, and write access to Zone.DNS,"
+	installSSLIPv6="--listen-v6"
+
+	echoContent red "\n=============================================================="
+	echoContent yellow "1.密钥（通配证书）"
+	echoContent yellow "2.DNS（通配证书）"
+	echoContent yellow "3.普通证书"
+	read -r -p "申请SSL证书的方式：" installSSLType
+
+	if [[ "${installSSLType}" == "1" ]]; then
+		echoContent red "\n=============================================================="
+		echoContent yellow "1.Cloudflare[默认]"
+		echoContent yellow "2.DNSPod"
+		echoContent yellow "3.Aliyun "
+		echoContent yellow "4.其他 "
+		echoContent red " ---> 其他DNS运营商使用方式详见 https://github.com/acmesh-official/acme.sh/wiki/dnsapi"
+		echoContent red " ---> 请先根据文档自行添加密钥后,并输入n"
 		echoContent red "=============================================================="
-		read -r -p "请输入Cloudflare API Token:" CF_Token
-		sed '/CF_Token/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		echo "SAVED_CF_Token='${CF_Token}'" >>/root/.acme.sh/account.conf
+		read -r -p "请选择:" selectDNS
+		if [[ "${selectDNS}" == "1" ]]; then
+			echoContent red " ---> the token currently needs access read access to Zone.Zone, and write access to Zone.DNS,"
+			echoContent red "=============================================================="
+			read -r -p "请输入Cloudflare API Token:" CF_Token
+			sed '/CF_Token/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
+			echo "SAVED_CF_Token='${CF_Token}'" >>/root/.acme.sh/account.conf
 		
-		dnsType=dns_cf
-	elif [[ "${selectDNS}" == "2" ]]; then
-		echoContent red " ---> The DNSPod.cn Domain API option requires that you first login to your account to get a DNSPod API Key and ID."
-		echoContent red "=============================================================="
-		read -r -p "请输入DNSPod API Key:" DP_Key
-		sed '/DP_Key/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		echo "SAVED_DP_Key='${DP_Key}'" >>/root/.acme.sh/account.conf
-		read -r -p "请输入DNSPod API ID:" DP_Id
-		sed '/DP_Id/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		echo "SAVED_DP_Id='${DP_Id}'" >>/root/.acme.sh/account.conf
+			dnsType=dns_cf
+		elif [[ "${selectDNS}" == "2" ]]; then
+			echoContent red " ---> The DNSPod.cn Domain API option requires that you first login to your account to get a DNSPod API Key and ID."
+			echoContent red "=============================================================="
+			read -r -p "请输入DNSPod API Key:" DP_Key
+			sed '/DP_Key/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
+			echo "SAVED_DP_Key='${DP_Key}'" >>/root/.acme.sh/account.conf
+			read -r -p "请输入DNSPod API ID:" DP_Id
+			sed '/DP_Id/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
+			echo "SAVED_DP_Id='${DP_Id}'" >>/root/.acme.sh/account.conf
 
-		dnsType=dns_dp
-	elif [[ "${selectDNS}" == "3" ]]; then
-		echoContent red " ---> First you need to login to your Aliyun account to get your RAM API key. https://ram.console.aliyun.com/users"
-		echoContent red "=============================================================="
-		read -r -p "请输入Aliyun API key:" Ali_Key
-		sed '/Ali_Key/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		echo "SAVED_Ali_Key='${Ali_Key}'" >>/root/.acme.sh/account.conf
-		read -r -p "请输入Aliyun Secret:" Ali_Secret
-		sed '/Ali_Secret/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-		echo "SAVED_Ali_Secret='${Ali_Secret}'" >>/root/.acme.sh/account.conf
+			dnsType=dns_dp
+		elif [[ "${selectDNS}" == "3" ]]; then
+			echoContent red " ---> First you need to login to your Aliyun account to get your RAM API key. https://ram.console.aliyun.com/users"
+			echoContent red "=============================================================="
+			read -r -p "请输入Aliyun API key:" Ali_Key
+			sed '/Ali_Key/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
+			echo "SAVED_Ali_Key='${Ali_Key}'" >>/root/.acme.sh/account.conf
+			read -r -p "请输入Aliyun Secret:" Ali_Secret
+			sed '/Ali_Secret/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
+			echo "SAVED_Ali_Secret='${Ali_Secret}'" >>/root/.acme.sh/account.conf
 
-		dnsType=dns_ali
-	elif [[ "${selectDNS}" == "4" ]]; then
-		echoContent red "请确保已经通过export添加相应TOKEN、KEY、ID等"
-		echoContent yellow "输入类似于dns_cf; dns_dp; dns_ali "
-		echoContent red "=============================================================="
-		read -r -p "请输入DNS服务商:" dnsType
-	else
-		echoContent red "选择错误"
-		exit 0
-	fi
+			dnsType=dns_ali
+		elif [[ "${selectDNS}" == "4" ]]; then
+			echoContent red "请确保已经通过export添加相应TOKEN、KEY、ID等"
+			echoContent yellow "输入类似于dns_cf; dns_dp; dns_ali "
+			echoContent red "=============================================================="
+			read -r -p "请输入DNS服务商:" dnsType
+		else
+			echoContent red "选择错误"
+			exit 0
+		fi
 
-	if [[ "${selectSSLType}" == "2" ]]; then
-		echoContent red " ---> zerossl需要注册账号"
-		read -r -p "请输入ZeroSSL后台控制面板拿到的API Key:" ZeroSSL_API
-		ZeroSSL_Result=$(curl -s -X POST "https://api.zerossl.com/acme/eab-credentials?access_key=${ZeroSSL_API}")
-		Result="${ZeroSSL_Result}"
-		eab_kid="$(echo "$Result" | jq -r .eab_kid)"
-		eab_hmac_key="$(echo "$Result" | jq -r .eab_hmac_key)"
-		sudo "$HOME/.acme.sh/acme.sh" --register-account  --server zerossl --eab-kid "${eab_kid}" --eab-hmac-key "${eab_hmac_key}"
-	fi
+		if [[ "${selectSSLType}" == "2" ]]; then
+			echoContent red " ---> zerossl需要注册账号"
+			read -r -p "请输入ZeroSSL后台控制面板拿到的API Key:" ZeroSSL_API
+			ZeroSSL_Result=$(curl -s -X POST "https://api.zerossl.com/acme/eab-credentials?access_key=${ZeroSSL_API}")
+			Result="${ZeroSSL_Result}"
+			eab_kid="$(echo "$Result" | jq -r .eab_kid)"
+			eab_hmac_key="$(echo "$Result" | jq -r .eab_hmac_key)"
+			sudo "$HOME/.acme.sh/acme.sh" --register-account  --server zerossl --eab-kid "${eab_kid}" --eab-hmac-key "${eab_hmac_key}"
+		fi
 
-	echoContent green " ---> 生成证书中"
+		echoContent green " ---> 生成证书中"
 	
-	sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns "${dnsType}" -k ec-256 --server "${sslType}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+		sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns "${dnsType}" -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
 
-	readAcmeTLS
+	elif [[ "${installSSLType}" == "2" ]]; then
+		sudo "$HOME/.acme.sh/acme.sh" --issue -d "*.${TLSDomain}" -d "${TLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+
+        local txtValue=
+        txtValue=$(tail -n 10 /etc/xray-agent/tls/acme.log | grep "TXT value" | awk -F "'" '{print $2}')
+        if [[ -n "${txtValue}" ]]; then
+            echoContent green " ---> 请手动添加DNS TXT记录"
+            echoContent yellow " ---> 添加方法请参考此教程，https://github.com/mack-a/v2ray-agent/blob/master/documents/dns_txt.md"
+            echoContent yellow " ---> 如同一个域名多台机器安装通配符证书，请添加多个TXT记录，不需要修改以前添加的TXT记录"
+            echoContent green " --->  name：_acme-challenge"
+            echoContent green " --->  value：${txtValue}"
+            echoContent yellow " ---> 添加完成后等请等待1-2分钟"
+            echo
+            read -r -p "是否添加完成[y/n]:" addDNSTXTRecordStatus
+            if [[ "${addDNSTXTRecordStatus}" == "y" ]]; then
+                local txtAnswer=
+                txtAnswer=$(dig @1.1.1.1 +nocmd "_acme-challenge.${TLSDomain}" txt +noall +answer | awk -F "[\"]" '{print $2}')
+                if echo "${txtAnswer}" | grep -q "^${txtValue}"; then
+                    echoContent green " ---> TXT记录验证通过"
+                    echoContent green " ---> 生成证书中"
+                    if [[ -n "${installSSLIPv6}" ]]; then
+                        sudo "$HOME/.acme.sh/acme.sh" --renew -d "*.${TLSDomain}" -d "${TLSDomain}" --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+                    else
+                        sudo "$HOME/.acme.sh/acme.sh" --renew -d "*.${TLSDomain}" -d "${TLSDomain}" --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+                    fi
+                else
+                    echoContent red " ---> 验证失败，请等待1-2分钟后重新尝试"
+                    acmeInstallSSL
+                fi
+            else
+                echoContent red " ---> 放弃"
+                exit 0
+            fi
+        fi
+
+	else
+		TLSDomain=${domain}
+		echoContent green " ---> 生成证书中"
+        sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" --standalone -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+	fi
+
 }
 
 # 更新证书
@@ -774,9 +794,43 @@ renewalTLS() {
 	if [[ -n $1 ]]; then
 		echoContent skyBlue "\n进度  $1/1 : 更新证书"
 	fi
-	readAcmeTLS
 
 	if [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
+
+		modifyTime=$(stat "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" | sed -n '7,6p' | awk '{print $2" "$3" "$4" "$5}')
+
+		modifyTime=$(date +%s -d "${modifyTime}")
+		currentTime=$(date +%s)
+		((stampDiff = currentTime - modifyTime))
+		((days = stampDiff / 86400))
+		sslRenewalDays=90
+		((remainingDays = sslRenewalDays - days))
+
+		if [[ ${remainingDays} -le 0 ]]; then
+			tlsStatus="已过期"
+		else
+			tlsStatus=${remainingDays}
+		fi
+
+		echoContent skyBlue " ---> 证书检查日期:$(date "+%F %H:%M:%S")"
+		echoContent skyBlue " ---> 证书生成日期:$(date -d @"${modifyTime}" +"%F %H:%M:%S")"
+		echoContent skyBlue " ---> 证书生成天数:${days}"
+		echoContent skyBlue " ---> 证书剩余天数:"${tlsStatus}
+		echoContent skyBlue " ---> 证书过期前最后一天自动更新，如更新失败请手动更新"
+
+		if [[ ${remainingDays} -le 1 ]]; then
+			echoContent yellow " ---> 重新生成证书"
+			handleNginx stop
+			sudo "$HOME/.acme.sh/acme.sh" --cron --home "$HOME/.acme.sh"
+			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath /etc/xray-agent/tls/"${TLSDomain}.crt" --keypath /etc/xray-agent/tls/"${TLSDomain}.key" --ecc
+			reloadCore
+			handleNginx start
+		else
+			echoContent green " ---> 证书有效"
+		fi
+	elif [[ -d "$HOME/.acme.sh/${domain}_ecc" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.key" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" ]]; then
+
+		TLSDomain=${domain}
 
 		modifyTime=$(stat "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" | sed -n '7,6p' | awk '{print $2" "$3" "$4" "$5}')
 
@@ -833,7 +887,23 @@ installTLS() {
 				installTLS "$1"
 			fi
 		fi
+	elif [[ -f "/etc/xray-agent/tls/${domain}.crt" && -f "/etc/xray-agent/tls/${domain}.key" && -n $(cat "/etc/xray-agent/tls/${domain}.crt") ]] || [[ -d "$HOME/.acme.sh/${domain}_ecc" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.key" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" ]]; then
+		
+		TLSDomain=${domain}
+		
+		echoContent green " ---> 检测到证书"
+		renewalTLS
 
+		if [[ -z $(find /etc/xray-agent/tls/ -name "${TLSDomain}.crt") ]] || [[ -z $(find /etc/xray-agent/tls/ -name "${TLSDomain}.key") ]] || [[ -z $(cat "/etc/xray-agent/tls/${TLSDomain}.crt") ]]; then
+			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
+		else
+			echoContent yellow " ---> 如未过期或者自定义证书请选择[n]\n"
+			read -r -p "是否重新安装？[y/n]:" reInstallStatus
+			if [[ "${reInstallStatus}" == "y" ]]; then
+				rm -rf /etc/xray-agent/tls/*
+				installTLS "$1"
+			fi
+		fi
 	elif [[ -d "$HOME/.acme.sh" ]]; then
 		echoContent green " ---> 安装TLS证书"
 
@@ -869,6 +939,32 @@ installTLS() {
 		echoContent yellow " ---> 未安装acme.sh"
 		exit 0
 	fi
+}
+
+# 自定义email
+customSSLEmail() {
+	if echo "$1" | grep -q "validate email"; then
+		read -r -p "是否重新输入邮箱地址[y/n]:" sslEmailStatus
+		if [[ "${sslEmailStatus}" == "y" ]]; then
+			sed '/ACCOUNT_EMAIL/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
+		else
+			exit 0
+		fi
+	fi
+
+	if [[ -d "/root/.acme.sh" && -f "/root/.acme.sh/account.conf" ]]; then
+		if ! grep -q "ACCOUNT_EMAIL" <"/root/.acme.sh/account.conf" && ! echo "${sslType}" | grep -q "letsencrypt"; then
+			read -r -p "请输入邮箱地址:" sslEmail
+			if echo "${sslEmail}" | grep -q "@"; then
+				echo "ACCOUNT_EMAIL='${sslEmail}'" >>/root/.acme.sh/account.conf
+				echoContent green " ---> 添加成功"
+			else
+				echoContent yellow "请重新输入正确的邮箱格式[例: username@example.com]"
+				customSSLEmail
+			fi
+		fi
+	fi
+
 }
 
 # 自定义/随机路径
@@ -1007,6 +1103,7 @@ initXrayConfig() {
 		echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
 		read -r -p 'UUID:' UUID
 	fi
+	
 
 	if [[ -z "${UUID}" ]]; then
 		echoContent red "\n ---> uuid读取错误，重新生成"
@@ -1872,6 +1969,7 @@ addCorePort() {
 
 	echoContent yellow "1.添加端口"
 	echoContent yellow "2.删除端口"
+	echoContent yellow "3.查看已添加端口"
 	echoContent red "=============================================================="
 	read -r -p "请选择:" selectNewPortType
 	if [[ "${selectNewPortType}" == "1" ]]; then
@@ -1931,6 +2029,9 @@ EOF
 			echoContent yellow "\n ---> 编号输入错误，请重新选择"
 			addCorePort
 		fi
+	elif [[ "${selectNewPortType}" == "3" ]]; then
+		find ${configPath} -name "*dokodemodoor*" | awk -F "[c][o][n][f][/]" '{print $2}' | awk -F "[_]" '{print $4}' | awk -F "[.]" '{print ""NR""":"$1}'
+        exit 0
 	fi
 }
 
@@ -2190,39 +2291,44 @@ warpRouting() {
 		exit 0
 	fi
 	echoContent skyBlue "\n进度  $1/${totalProgress} : WARP分流"
+
+	#检测WARP是否安装并开启
+	if [[ "$(ip a)" =~ ": WARP:" ]]; then
+		echoContent red " ---> 已安装，网卡名称为WARP"
+		warpinterface="WARP"
+	elif [[ "$(ip a)" =~ ": wgcf:" ]]; then
+		echoContent red " ---> 已安装，网卡名称为wgcf"
+		warpinterface="wgcf"
+	else
+		echoContent red " ---> 未安装或未开启，请使用脚本安装或开启"
+		menu
+		exit 0
+	fi
+
 	echoContent red "\n=============================================================="
 	echoContent yellow "1.添加域名"
 	echoContent yellow "2.卸载WARP分流"
-	echoContent yellow "3.分流CN的域名和IP"
-	echoContent yellow "4.卸载分流CN域名和IP"
+	echoContent yellow "3.查看已分流域名"
+	echoContent yellow "4.分流CN的域名和IP"
+	echoContent yellow "5.卸载分流CN域名和IP"
 	echoContent red "=============================================================="
 	echoContent red "需要在warp一键脚本安装后，手动更改wgcf的配置，详情请见https://blog.suysker.xyz/archives/235"
 	read -r -p "请选择:" warpStatus
-	if [[ "${warpStatus}" != "2" && "${warpStatus}" != "4" ]]; then
+	if [[ "${warpStatus}" == "3" ]]; then
+        jq -r -c '.routing.rules[]|select (.outboundTag=="warp-out")|.domain' ${configPath}09_routing.json | jq -r
+        exit 0
+	elif [[ "${warpStatus}" != "2" && "${warpStatus}" != "5" ]]; then
 		echoContent red "\n=============================================================="
 		echoContent yellow "# 注意事项\n"
 		echoContent yellow "1.规则仅支持预定义域名列表[https://github.com/v2fly/domain-list-community]"
 		echoContent yellow "3.warp支持IPV4和IPV6"
 
-	if [[ ($(curl -4 ip.gs |awk '{print $1}') == $(curl -4 ip.gs --interface wgcf |awk '{print $1}')) && ($(curl -6 ip.gs |awk '{print $1}') == $(curl -6 ip.gs --interface wgcf |awk '{print $1}')) ]]; then
-		echoContent red "warp全局接管IPV4和IPV6，无需进行分流设置"
-		unInstallRouting warp-out outboundTag
-		unInstallOutbounds warp-out
-		echoContent green " ---> WARP分流卸载成功"
-		unInstallRouting cn-out outboundTag
-		unInstallOutbounds cn-out
-		echoContent green " ---> 分流CN卸载成功"
-	fi
-		
-		local outbounds
-		
-
 		if [[ "${warpStatus}" == "1" ]]; then
 			unInstallOutbounds warp-out
-			outbounds=$(jq -r ".outbounds += [{\"protocol\":\"freedom\",\"streamSettings\":{\"sockopt\":{\"mark\":250}},\"settings\":{\"domainStrategy\":\"UseIP\"},\"tag\":\"warp-out\"}]" ${configPath}10_ipv4_outbounds.json)
-		elif [[ "${warpStatus}" == "3" ]]; then
+			outbounds=$(jq -r ".outbounds += [{\"protocol\":\"freedom\",\"streamSettings\":{\"sockopt\":{\"interface\":\"${warpinterface}\"}},\"settings\":{\"domainStrategy\":\"UseIP\"},\"tag\":\"warp-out\"}]" ${configPath}10_ipv4_outbounds.json)
+		elif [[ "${warpStatus}" == "4" ]]; then
 			unInstallOutbounds cn-out
-			outbounds=$(jq -r ".outbounds += [{\"protocol\":\"freedom\",\"streamSettings\":{\"sockopt\":{\"mark\":250}},\"settings\":{\"domainStrategy\":\"UseIP\"},\"tag\":\"cn-out\"}]" ${configPath}10_ipv4_outbounds.json)
+			outbounds=$(jq -r ".outbounds += [{\"protocol\":\"freedom\",\"streamSettings\":{\"sockopt\":{\"interface\":\"${warpinterface}\"}},\"settings\":{\"domainStrategy\":\"UseIP\"},\"tag\":\"cn-out\"}]" ${configPath}10_ipv4_outbounds.json)
 		fi
 		
 		echo "${outbounds}" | jq . >${configPath}10_ipv4_outbounds.json
@@ -2231,7 +2337,7 @@ warpRouting() {
 			echoContent yellow "4.如内核启动失败请检查域名后重新添加域名"
 			echoContent yellow "5.不允许有特殊字符，注意逗号的格式"
 			echoContent yellow "6.每次添加都是重新添加，不会保留上次域名"
-			echoContent yellow "7.录入示例:google,youtube,facebook\n"
+			echoContent yellow "7.录入示例:openai,google,youtube,facebook\n"
 			read -r -p "请按照上面示例录入域名:" domainList
 	
 			if [[ -f "${configPath}09_routing.json" ]]; then
@@ -2259,10 +2365,10 @@ warpRouting() {
 }
 EOF
 			fi
-		elif [[ "${warpStatus}" == "3" ]]; then
+		elif [[ "${warpStatus}" == "4" ]]; then
 			if [[ -f "${configPath}09_routing.json" ]]; then
 				unInstallRouting cn-out outboundTag
-				routing=$(jq -r ".routing.rules += [{\"type\":\"field\",\"ip\":[\"geoip:cn\"],\"outboundTag\":\"cn-out\"}]" ${configPath}09_routing.json)
+				routing=$(jq -r ".routing.rules += [{\"type\":\"field\",\"domain\":[\"geosite:cn\"],\"ip\":[\"geoip:cn\"],\"outboundTag\":\"cn-out\"}]" ${configPath}09_routing.json)
 
 				echo "${routing}" | jq . >${configPath}09_routing.json
 			else
@@ -2276,11 +2382,7 @@ EOF
             "domain": [
             	"geosite:cn"
             ],
-            "outboundTag": "cn-out"
-          },
-          {
-            "type": "field",
-            "ip": [
+			"ip": [
             	"geoip:cn"
             ],
             "outboundTag": "cn-out"
@@ -2290,7 +2392,8 @@ EOF
 }
 EOF
 			fi
-			unInstallRouting blackhole-out outboundTag
+			unInstallRouting cn-blackhole outboundTag
+			unInstallOutbounds cn-blackhole
 		else
 			echoContent red " ---> 选择错误"
 			exit 0
@@ -2305,7 +2408,7 @@ EOF
 		unInstallOutbounds warp-out
 
 		echoContent green " ---> WARP分流卸载成功"
-	elif [[ "${warpStatus}" == "4" ]]; then
+	elif [[ "${warpStatus}" == "5" ]]; then
 
 		unInstallRouting cn-out outboundTag
 
@@ -2320,25 +2423,78 @@ EOF
 
 }
 
-# 阻止访问中国大陆IP
-BlockCNIP() {
+# 阻止访问黑名单及中国大陆IP
+blacklist() {
 	if [[ "${coreInstallType}" != "1" ]]; then
 		echoContent red " ---> 未安装，请使用脚本安装"
 		menu
 		exit 0
 	fi
 	echoContent skyBlue "\n功能 1/${totalProgress} : 阻止访问中国大陆IP"
+
+	echoContent red "\n=============================================================="
+    echoContent yellow "1.添加域名"
+    echoContent yellow "2.删除黑名单"
+    echoContent yellow "3.查看已屏蔽域名"
+	echoContent yellow "4.启用阻止访问中国大陆IP"
+	echoContent yellow "5.卸载阻止访问中国大陆IP"
 	echoContent yellow "若不想阻止访问CN的IP，请使用warp分流功能"
 	echoContent yellow "此处只阻止访问CN的IP，域名则不进行阻止"
-	echoContent red "\n=============================================================="
-	echoContent yellow "1.启用"
-	echoContent yellow "2.卸载"
 	echoContent red "=============================================================="
-	read -r -p "请选择:" CNIPStatus
-	if [[ "${CNIPStatus}" == "1" ]]; then
+	read -r -p "请选择:" blacklistStatus
+
+    if [[ "${blacklistStatus}" == "3" ]]; then
+        jq -r -c '.routing.rules[]|select (.outboundTag=="blackhole-out")|.domain' ${configPath}09_routing.json | jq -r
+        exit 0
+    elif [[ "${blacklistStatus}" == "1" ]]; then
+        echoContent red "=============================================================="
+        echoContent yellow "# 注意事项\n"
+        echoContent yellow "1.规则仅支持预定义域名列表[https://github.com/v2fly/domain-list-community]"
+        echoContent yellow "2.详细文档[https://www.v2fly.org/config/routing.html]"
+        echoContent yellow "3.如内核启动失败请检查域名后重新添加域名"
+        echoContent yellow "4.不允许有特殊字符，注意逗号的格式"
+        echoContent yellow "5.每次添加都是重新添加，不会保留上次域名"
+        echoContent yellow "6.支持hysteria"
+        echoContent yellow "7.录入示例:speedtest,facebook,cn\n"
+        read -r -p "请按照上面示例录入域名:" domainList
+
+        if [[ -f "${configPath}09_routing.json" ]]; then
+            unInstallRouting blackhole-out outboundTag
+
+            routing=$(jq -r ".routing.rules += [{\"type\":\"field\",\"domain\":[\"geosite:${domainList//,/\",\"geosite:}\"],\"outboundTag\":\"blackhole-out\"}]" ${configPath}09_routing.json)
+
+            echo "${routing}" | jq . >${configPath}09_routing.json
+
+        else
+            cat <<EOF >${configPath}09_routing.json
+{
+    "routing":{
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "domain": [
+            	"geosite:${domainList//,/\",\"geosite:}"
+            ],
+            "outboundTag": "blackhole-out"
+          }
+        ]
+  }
+}
+EOF
+        fi
+
+        echoContent green " ---> 添加成功"
+
+    elif [[ "${blacklistStatus}" == "2" ]]; then
+
+        unInstallRouting blackhole-out outboundTag
+
+        echoContent green " ---> 域名黑名单删除成功"
+	elif [[ "${blacklistStatus}" == "4" ]]; then
 		if [[ -f "${configPath}09_routing.json" ]]; then
-			unInstallRouting blackhole-out outboundTag
-			routing=$(jq -r ".routing.rules += [{\"type\":\"field\",\"ip\":[\"geoip:cn\"],\"outboundTag\":\"blackhole-out\"}]" ${configPath}09_routing.json)
+			unInstallRouting cn-blackhole outboundTag
+			routing=$(jq -r ".routing.rules += [{\"type\":\"field\",\"ip\":[\"geoip:cn\"],\"outboundTag\":\"cn-blackhole\"}]" ${configPath}09_routing.json)
 
 			echo "${routing}" | jq . >${configPath}09_routing.json
 		else
@@ -2352,7 +2508,7 @@ BlockCNIP() {
             "ip": [
             	"geoip:cn"
             ],
-            "outboundTag": "blackhole-out"
+            "outboundTag": "cn-blackhole"
           }
         ]
   }
@@ -2360,9 +2516,9 @@ BlockCNIP() {
 EOF
 		fi
 	
-		unInstallOutbounds blackhole-out
+		unInstallOutbounds cn-blackhole
 
-		outbounds=$(jq -r '.outbounds += [{"protocol":"blackhole","tag":"blackhole-out"}]' ${configPath}10_ipv4_outbounds.json)
+		outbounds=$(jq -r '.outbounds += [{"protocol":"blackhole","tag":"cn-blackhole"}]' ${configPath}10_ipv4_outbounds.json)
 
 		echo "${outbounds}" | jq . >${configPath}10_ipv4_outbounds.json
 
@@ -2371,8 +2527,8 @@ EOF
 		unInstallOutbounds cn-out
 
 		echoContent green " ---> 添加成功"
-	else
-		unInstallRouting blackhole-out outboundTag
+	elif [[ "${blacklistStatus}" == "5" ]]; then
+		unInstallRouting cn-blackhole outboundTag
 		echoContent green " ---> 阻止访问中国大陆IP卸载成功"
 	fi
 	reloadCore
@@ -2398,12 +2554,14 @@ ipv6Routing() {
 	fi
 
 	checkIPv6
+	
 	echoContent skyBlue "\n功能 1/${totalProgress} : IPv6分流"
 	echoContent red "\n=============================================================="
 	echoContent yellow "1.添加域名"
 	echoContent yellow "2.卸载IPv6分流"
-	echoContent yellow "3.全局IPv6优先"
-	echoContent yellow "4.全局IPv4优先"
+	echoContent yellow "3.查看已分流域名"
+	echoContent yellow "4.全局IPv6优先"
+	echoContent yellow "5.全局IPv4优先"
 	echoContent red "=============================================================="
 	read -r -p "请选择:" ipv6Status
 	if [[ "${ipv6Status}" == "1" ]]; then
@@ -2414,8 +2572,7 @@ ipv6Routing() {
 		echoContent yellow "3.如内核启动失败请检查域名后重新添加域名"
 		echoContent yellow "4.不允许有特殊字符，注意逗号的格式"
 		echoContent yellow "5.每次添加都是重新添加，不会保留上次域名"
-		echoContent yellow "6.强烈建议屏蔽国内的网站，下方输入【cn】即可屏蔽"
-		echoContent yellow "7.录入示例:google,youtube,facebook,cn\n"
+		echoContent yellow "6.录入示例:openai,google,youtube,facebook,cn\n"
 		read -r -p "请按照上面示例录入域名:" domainList
 
 		if [[ -f "${configPath}09_routing.json" ]]; then
@@ -2460,7 +2617,10 @@ EOF
 		unInstallRouting IPv6-out outboundTag
 
 		echoContent green " ---> IPv6分流卸载成功"
-    elif [[ "${ipv6Status}" == "3" ]]; then
+	elif [[ "${ipv6Status}" == "3" ]]; then
+		jq -r -c '.routing.rules[]|select (.outboundTag=="IPv6-out")|.domain' ${configPath}09_routing.json | jq -r
+        exit 0
+    elif [[ "${ipv6Status}" == "4" ]]; then
 
 			unInstallOutbounds IPv4-out
 			unInstallOutbounds IPv6-out
@@ -2472,7 +2632,7 @@ EOF
         
 		echoContent green " ---> 全局IPv6优先"
        
-    elif [[ "${ipv6Status}" == "4" ]]; then
+    elif [[ "${ipv6Status}" == "5" ]]; then
 
 			unInstallOutbounds IPv4-out
 			unInstallOutbounds IPv6-out
@@ -2831,8 +2991,8 @@ menu() {
 	echoContent yellow "3.更换伪装站"
 	echoContent yellow "4.更新证书"
 	echoContent yellow "5.IPv6分流"
-	echoContent yellow "6.阻止访问中国大陆IP"
-	echoContent yellow "7.WARP分流"
+	echoContent yellow "6.阻止访问黑名单及中国大陆IP"
+	echoContent yellow "7.WARP分流及中国大陆域名+IP"
 	echoContent yellow "8.添加新端口"
 	echoContent yellow "9.流量嗅探管理"
 	echoContent skyBlue "-------------------------版本管理-----------------------------"
@@ -2867,7 +3027,7 @@ menu() {
 		ipv6Routing 1
 		;;
 	6)
-		BlockCNIP 1
+		blacklist 1
 		;;
 	7)
 		warpRouting 1
