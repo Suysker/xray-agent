@@ -68,9 +68,6 @@ initVar() {
 	# 前置类型
 	frontingType=
 
-	#xray-core配置文件的路径
-	configPath=
-
 	# centos version
 	centosVersion=
 
@@ -95,7 +92,7 @@ initVar() {
 	# ssl申请的服务商
 	sslType=
 
-	# Xray中的TLS证书域名
+	# Xray中的TLS证书域名(用于解密TLS流量)
 	TLSDomain=
 }
 
@@ -172,9 +169,9 @@ checkCPUVendor() {
 readInstallType() {
 	# 1.检测安装目录
 	if [[ -d "/etc/xray-agent" ]]; then
-		if [[ -d "/etc/xray-agent/xray" && -f "/etc/xray-agent/xray/xray" ]]; then
+		if [[ -d "/etc/xray-agent/xray" && -f "${ctlPath}" ]]; then
 			# 这里检测xray-core
-			if [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "/etc/xray-agent/xray/conf/02_VLESS_TCP_inbounds.json" ]]; then
+			if [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}02_VLESS_TCP_inbounds.json" ]]; then
 				# xray-core
 				coreInstallType=1
 			fi
@@ -519,7 +516,7 @@ installTools() {
 	if [[ ! -d "$HOME/.acme.sh" ]] || [[ -d "$HOME/.acme.sh" && -z $(find "$HOME/.acme.sh/acme.sh") ]]; then
 		echoContent green " ---> 安装acme.sh"
 		curl -s https://get.acme.sh | sh >/etc/xray-agent/tls/acme.log 2>&1
-		source "$HOME/.bashrc"
+		#source "$HOME/.bashrc"
 		sudo "$HOME/.acme.sh/acme.sh" --upgrade --auto-upgrade
 
 		if [[ ! -d "$HOME/.acme.sh" ]] || [[ -z $(find "$HOME/.acme.sh/acme.sh") ]]; then
@@ -637,8 +634,11 @@ initTLSNginxConfig() {
 		echoContent red "  域名不可为空--->"
 		initTLSNginxConfig 3
 	else
-		readAcmeTLS
-		
+		TLSDomain=$(echo "${domain}" | awk -F "[.]" '{print $(NF-1)"."$NF}')
+		if [[ "${TLSDomain}" == "eu.org" ]]; then
+			TLSDomain=$(echo "${domain}" | awk -F "[.]" '{print $(NF-2)"."$(NF-1)"."$NF}')
+		fi
+
 		customPortFunction
 	fi
 }
@@ -795,42 +795,11 @@ renewalTLS() {
 		echoContent skyBlue "\n进度  $1/1 : 更新证书"
 	fi
 
-	if [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
-
-		modifyTime=$(stat "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" | sed -n '7,6p' | awk '{print $2" "$3" "$4" "$5}')
-
-		modifyTime=$(date +%s -d "${modifyTime}")
-		currentTime=$(date +%s)
-		((stampDiff = currentTime - modifyTime))
-		((days = stampDiff / 86400))
-		sslRenewalDays=90
-		((remainingDays = sslRenewalDays - days))
-
-		if [[ ${remainingDays} -le 0 ]]; then
-			tlsStatus="已过期"
-		else
-			tlsStatus=${remainingDays}
-		fi
-
-		echoContent skyBlue " ---> 证书检查日期:$(date "+%F %H:%M:%S")"
-		echoContent skyBlue " ---> 证书生成日期:$(date -d @"${modifyTime}" +"%F %H:%M:%S")"
-		echoContent skyBlue " ---> 证书生成天数:${days}"
-		echoContent skyBlue " ---> 证书剩余天数:"${tlsStatus}
-		echoContent skyBlue " ---> 证书过期前最后一天自动更新，如更新失败请手动更新"
-
-		if [[ ${remainingDays} -le 1 ]]; then
-			echoContent yellow " ---> 重新生成证书"
-			handleNginx stop
-			sudo "$HOME/.acme.sh/acme.sh" --cron --home "$HOME/.acme.sh"
-			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath /etc/xray-agent/tls/"${TLSDomain}.crt" --keypath /etc/xray-agent/tls/"${TLSDomain}.key" --ecc
-			reloadCore
-			handleNginx start
-		else
-			echoContent green " ---> 证书有效"
-		fi
-	elif [[ -d "$HOME/.acme.sh/${domain}_ecc" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.key" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" ]]; then
-
+	if [[ -d "$HOME/.acme.sh/${domain}_ecc" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.key" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" ]]; then
 		TLSDomain=${domain}
+	fi
+
+	if [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
 
 		modifyTime=$(stat "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" | sed -n '7,6p' | awk '{print $2" "$3" "$4" "$5}')
 
@@ -872,25 +841,12 @@ renewalTLS() {
 installTLS() {
 	echoContent skyBlue "\n进度  $1/${totalProgress} : 申请TLS证书\n"
 
+	if [[ -f "/etc/xray-agent/tls/${domain}.crt" && -f "/etc/xray-agent/tls/${domain}.key" && -n $(cat "/etc/xray-agent/tls/${domain}.crt") ]] || [[ -d "$HOME/.acme.sh/${domain}_ecc" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.key" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" ]]; then
+		TLSDomain=${domain}
+	fi
+
 	# 安装tls
 	if [[ -f "/etc/xray-agent/tls/${TLSDomain}.crt" && -f "/etc/xray-agent/tls/${TLSDomain}.key" && -n $(cat "/etc/xray-agent/tls/${TLSDomain}.crt") ]] || [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
-		echoContent green " ---> 检测到证书"
-		renewalTLS
-
-		if [[ -z $(find /etc/xray-agent/tls/ -name "${TLSDomain}.crt") ]] || [[ -z $(find /etc/xray-agent/tls/ -name "${TLSDomain}.key") ]] || [[ -z $(cat "/etc/xray-agent/tls/${TLSDomain}.crt") ]]; then
-			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
-		else
-			echoContent yellow " ---> 如未过期或者自定义证书请选择[n]\n"
-			read -r -p "是否重新安装？[y/n]:" reInstallStatus
-			if [[ "${reInstallStatus}" == "y" ]]; then
-				rm -rf /etc/xray-agent/tls/*
-				installTLS "$1"
-			fi
-		fi
-	elif [[ -f "/etc/xray-agent/tls/${domain}.crt" && -f "/etc/xray-agent/tls/${domain}.key" && -n $(cat "/etc/xray-agent/tls/${domain}.crt") ]] || [[ -d "$HOME/.acme.sh/${domain}_ecc" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.key" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" ]]; then
-		
-		TLSDomain=${domain}
-		
 		echoContent green " ---> 检测到证书"
 		renewalTLS
 
@@ -1010,7 +966,7 @@ handleXray() {
 			echoContent green " ---> Xray启动成功"
 		else
 			echoContent red "Xray启动失败"
-			echoContent red "请手动执行【/etc/xray-agent/xray/xray -confdir /etc/xray-agent/xray/conf】，查看错误日志"
+			echoContent red "请手动执行【${ctlPath} -confdir /etc/xray-agent/xray/conf】，查看错误日志"
 			exit 0
 		fi
 	elif [[ "$1" == "stop" ]]; then
@@ -1042,12 +998,12 @@ installXray() {
 
 		unzip -o "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip" -d /etc/xray-agent/xray >/dev/null
 		rm -rf "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip"
-		chmod 655 /etc/xray-agent/xray/xray
+		chmod 655 ${ctlPath}
 	else
-		echoContent green " ---> Xray-core版本:$(/etc/xray-agent/xray/xray --version | awk '{print $2}' | head -1)"
+		echoContent green " ---> Xray-core版本:$(${ctlPath} --version | awk '{print $2}' | head -1)"
 		read -r -p "是否更新、升级？[y/n]:" reInstallXrayStatus
 		if [[ "${reInstallXrayStatus}" == "y" ]]; then
-			rm -f /etc/xray-agent/xray/xray
+			rm -f ${ctlPath}
 			installXray "$1"
 		fi
 	fi
@@ -1059,7 +1015,7 @@ installXrayService() {
 	if [[ -n $(find /bin /usr/bin -name "systemctl") ]]; then
 		rm -rf /etc/systemd/system/xray.service
 		touch /etc/systemd/system/xray.service
-		execStart='/etc/xray-agent/xray/xray run -confdir /etc/xray-agent/xray/conf'
+		execStart="${ctlPath} run -confdir /etc/xray-agent/xray/conf"
 		cat <<EOF >/etc/systemd/system/xray.service
 [Unit]
 Description=Xray Service
@@ -1107,13 +1063,13 @@ initXrayConfig() {
 
 	if [[ -z "${UUID}" ]]; then
 		echoContent red "\n ---> uuid读取错误，重新生成"
-		UUID=$(/etc/xray-agent/xray/xray uuid)
+		UUID=$(${ctlPath} uuid)
 	fi
 
 	echoContent yellow "\n ${UUID}"
 
 	# log
-	cat <<EOF >/etc/xray-agent/xray/conf/00_log.json
+	cat <<EOF >${configPath}00_log.json
 {
   "log": {
     "error": "/etc/xray-agent/xray/error.log",
@@ -1123,7 +1079,7 @@ initXrayConfig() {
 EOF
 
 	# 本地策略Policy
-	cat <<EOF >/etc/xray-agent/xray/conf/01_policy.json
+	cat <<EOF >${configPath}01_policy.json
 {
   "policy": {
     "levels": {
@@ -1137,7 +1093,7 @@ EOF
 }
 EOF
 
-	cat <<EOF >/etc/xray-agent/xray/conf/10_ipv4_outbounds.json
+	cat <<EOF >${configPath}10_ipv4_outbounds.json
 {
     "outbounds":[
         {
@@ -1163,10 +1119,10 @@ EOF
 EOF
 
 	# routing
-	rm -f /etc/xray-agent/xray/conf/09_routing.json
+	rm -f ${configPath}09_routing.json
 
 	# dns
-	cat <<EOF >/etc/xray-agent/xray/conf/11_dns.json
+	cat <<EOF >${configPath}11_dns.json
 {
     "dns": {
         "servers": [
@@ -1179,7 +1135,7 @@ EOF
 	# VLESS_TCP_TLS/XTLS
 	# 回落nginx
 	fallbacksList='{"dest":31296,"xver":1},{"alpn":"h2","dest":31302,"xver":0}'
-	cat <<EOF >/etc/xray-agent/xray/conf/04_trojan_TCP_inbounds.json
+	cat <<EOF >${configPath}04_trojan_TCP_inbounds.json
 {
 "inbounds":[
 	{
@@ -1220,7 +1176,7 @@ EOF
 
 	# VLESS_WS_TLS
 	fallbacksList=${fallbacksList}',{"path":"/'${path}'ws","dest":31297,"xver":1}'
-	cat <<EOF >/etc/xray-agent/xray/conf/03_VLESS_WS_inbounds.json
+	cat <<EOF >${configPath}03_VLESS_WS_inbounds.json
 {
 "inbounds":[
     {
@@ -1259,7 +1215,7 @@ EOF
 EOF
 
 	# trojan_grpc
-	cat <<EOF >/etc/xray-agent/xray/conf/04_trojan_gRPC_inbounds.json
+	cat <<EOF >${configPath}04_trojan_gRPC_inbounds.json
 {
 "inbounds": [
     {
@@ -1301,7 +1257,7 @@ EOF
 
 	# VMess_WS
 	fallbacksList=${fallbacksList}',{"path":"/'${path}'vws","dest":31299,"xver":1}'
-	cat <<EOF >/etc/xray-agent/xray/conf/05_VMess_WS_inbounds.json
+	cat <<EOF >${configPath}05_VMess_WS_inbounds.json
 {
 "inbounds":[
     {
@@ -1340,7 +1296,7 @@ EOF
 EOF
 
 	#VLESS_GRCP
-	cat <<EOF >/etc/xray-agent/xray/conf/06_VLESS_gRPC_inbounds.json
+	cat <<EOF >${configPath}06_VLESS_gRPC_inbounds.json
 {
 "inbounds":[
     {
@@ -1378,7 +1334,7 @@ EOF
 
 	# VLESS_TCP
 
-	cat <<EOF >/etc/xray-agent/xray/conf/02_VLESS_TCP_inbounds.json
+	cat <<EOF >${configPath}02_VLESS_TCP_inbounds.json
 {
 "inbounds":[
 {
@@ -1468,6 +1424,7 @@ server {
 		grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
 		client_body_timeout 1071906480m;
 		grpc_read_timeout 1071906480m;
+		client_body_buffer_size 1m;
 		grpc_pass grpc://127.0.0.1:31301;
 	}
 
@@ -1479,6 +1436,7 @@ server {
 		grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
 		client_body_timeout 1071906480m;
 		grpc_read_timeout 1071906480m;
+		client_body_buffer_size 1m;
 		grpc_pass grpc://127.0.0.1:31304;
 	}
 
@@ -1799,11 +1757,11 @@ updateXray() {
 
 		unzip -o "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip" -d /etc/xray-agent/xray >/dev/null
 		rm -rf "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip"
-		chmod 655 /etc/xray-agent/xray/xray
+		chmod 655 ${ctlPath}
 		handleXray stop
 		handleXray start
 	else
-		echoContent green " ---> 当前Xray-core版本:$(/etc/xray-agent/xray/xray --version | awk '{print $2}' | head -1)"
+		echoContent green " ---> 当前Xray-core版本:$(${ctlPath} --version | awk '{print $2}' | head -1)"
 
 		if [[ -n "$1" ]]; then
 			version=$1
@@ -1814,20 +1772,20 @@ updateXray() {
 		if [[ -n "$1" ]]; then
 			read -r -p "回退版本为${version}，是否继续？[y/n]:" rollbackXrayStatus
 			if [[ "${rollbackXrayStatus}" == "y" ]]; then
-				echoContent green " ---> 当前Xray-core版本:$(/etc/xray-agent/xray/xray --version | awk '{print $2}' | head -1)"
+				echoContent green " ---> 当前Xray-core版本:$(${ctlPath} --version | awk '{print $2}' | head -1)"
 
 				handleXray stop
-				rm -f /etc/xray-agent/xray/xray
+				rm -f ${ctlPath}
 				updateXray "${version}"
 			else
 				echoContent green " ---> 放弃回退版本"
 			fi
-		elif [[ "${version}" == "v$(/etc/xray-agent/xray/xray --version | awk '{print $2}' | head -1)" ]]; then
+		elif [[ "${version}" == "v$(${ctlPath} --version | awk '{print $2}' | head -1)" ]]; then
 			read -r -p "当前版本与最新版相同，是否重新安装？[y/n]:" reInstallXrayStatus
 			if [[ "${reInstallXrayStatus}" == "y" ]]; then
 				handleXray stop
-				rm -f /etc/xray-agent/xray/xray
-				rm -f /etc/xray-agent/xray/xray
+				rm -f ${ctlPath}
+				rm -f ${ctlPath}
 				updateXray
 			else
 				echoContent green " ---> 放弃重新安装"
@@ -1835,7 +1793,7 @@ updateXray() {
 		else
 			read -r -p "最新版本为:${version}，是否更新？[y/n]:" installXrayStatus
 			if [[ "${installXrayStatus}" == "y" ]]; then
-				rm -f /etc/xray-agent/xray/xray
+				rm -f ${ctlPath}
 				updateXray
 			else
 				echoContent green " ---> 放弃更新"
@@ -3054,7 +3012,7 @@ menu() {
 		AdguardManageMenu 1
 		;;
 	15)
-		wget -N https://raw.githubusercontent.com/suysker/warp/main/menu.sh && bash menu.sh
+		wget -N https://raw.githubusercontent.com/suysker/warp/main/warp-go.sh && bash menu.sh
 		;;
 	16)
 		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
