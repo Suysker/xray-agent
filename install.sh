@@ -678,7 +678,7 @@ acmeInstallSSL() {
 	echoContent red "\n=============================================================="
 	echoContent yellow "1.密钥（通配证书）"
 	echoContent yellow "2.DNS（通配证书）"
-	echoContent yellow "3.普通证书"
+	echoContent yellow "3.普通证书【默认】"
 	read -r -p "申请SSL证书的方式：" installSSLType
 
 	if [[ "${installSSLType}" == "1" ]]; then
@@ -1401,6 +1401,7 @@ updateRedirectNginxConf() {
 	cat <<EOF >${nginxConfigPath}alone.conf
 server {
 	listen 80;
+	listen [::]:80;
 	server_name ${domain};
 	return 302 https://${domain}:${Port};
 }
@@ -2146,7 +2147,7 @@ removeUser() {
 	manageAccount 1
 }
 # 更新脚本
-updateV2RayAgent() {
+updateXRayAgent() {
 	echoContent skyBlue "\n进度  $1/${totalProgress} : 更新xray-agent脚本"
 	rm -rf /etc/xray-agent/install.sh
 	if wget --help | grep -q show-progress; then
@@ -2934,7 +2935,7 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
-	echoContent green "当前版本:v2.6.9"
+	echoContent green "当前版本:v2.7.0"
 	echoContent green "Github:https://github.com/mack-a/xray-agent"
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
@@ -3000,7 +3001,7 @@ menu() {
 		xrayVersionManageMenu 1
 		;;
 	11)
-		updateV2RayAgent 1
+		updateXRayAgent 1
 		;;
 	12)
 		checkLog 1
@@ -3012,7 +3013,7 @@ menu() {
 		AdguardManageMenu 1
 		;;
 	15)
-		wget -N https://raw.githubusercontent.com/suysker/warp/main/warp-go.sh && bash menu.sh
+		wget -N https://raw.githubusercontent.com/suysker/warp/main/warp-go.sh && bash warp-go.sh
 		;;
 	16)
 		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
