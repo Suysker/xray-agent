@@ -940,8 +940,17 @@ randomPathFunction() {
 		read -r -p '路径:' path
 
 		if [[ -z "${path}" ]]; then
-			path=$(head -n 50 /dev/urandom | sed 's/[^a-z]//g' | strings -n 4 | tr '[:upper:]' '[:lower:]' | head -1)
-			path=${path:0:4}
+			local chars="abcdefghijklmnopqrtuxyz"
+    		for i in {1..4}; do
+        		echo "${i}" >/dev/null
+        		path+="${chars:RANDOM%${#chars}:1}"
+    		done
+		else
+			if [[ "${path: -2}" == "ws" ]]; then
+                echo
+                echoContent red " ---> 自定义path结尾不可用ws结尾，否则无法区分分流路径"
+                randomPathFunction "$1"
+            fi
 		fi
 
 	fi
@@ -1362,6 +1371,7 @@ EOF
 	  "minVersion": "1.2",
       "certificates": [
         {
+          "ocspStapling": 3600,
           "certificateFile": "/etc/xray-agent/tls/${TLSDomain}.crt",
           "keyFile": "/etc/xray-agent/tls/${TLSDomain}.key"
         }
@@ -1398,14 +1408,18 @@ installCronTLS() {
 updateRedirectNginxConf() {
 	echoContent skyBlue "\n进度  $1/${totalProgress} : 配置镜像站点，默认使用kaggle官网"
 
+	rm- f ${nginxConfigPath}default.conf
+	echoContent skyBlue "删除nginx默认站点"
+	
 	cat <<EOF >${nginxConfigPath}alone.conf
+# acme使用standalone模式申请/更新证书时会监听80端口，如果80端口被占用会导致失败。
+#server {
+    	#listen 80;
+    	#return 301 https://\$host\$request_uri;
+    #}
+
 server {
-	listen 80;
-	listen [::]:80;
-	server_name ${domain};
-	return 302 https://${domain}:${Port};
-}
-server {
+	listen 127.0.0.1:31300
 	listen 127.0.0.1:31302 http2 so_keepalive=on;
 	server_name ${domain};
 
@@ -1418,67 +1432,52 @@ server {
     }
 
     location /${path}grpc {
-    	if (\$content_type !~ "application/grpc") {
-    		return 404;
-    	}
  		client_max_body_size 0;
-		grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
-		client_body_timeout 1071906480m;
-		grpc_read_timeout 1071906480m;
-		client_body_buffer_size 1m;
-		grpc_pass grpc://127.0.0.1:31301;
+        grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
+        client_body_timeout 1071906480m;
+        grpc_read_timeout 1071906480m;
+        client_body_buffer_size 1m;
+        grpc_pass grpc://127.0.0.1:31301;
 	}
 
 	location /${path}trojangrpc {
-		if (\$content_type !~ "application/grpc") {
-            		return 404;
-		}
  		client_max_body_size 0;
-		grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
-		client_body_timeout 1071906480m;
-		grpc_read_timeout 1071906480m;
-		client_body_buffer_size 1m;
-		grpc_pass grpc://127.0.0.1:31304;
+        grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
+        client_body_timeout 1071906480m;
+        grpc_read_timeout 1071906480m;
+        client_body_buffer_size 1m;
+        grpc_pass grpc://127.0.0.1:31304;
 	}
 
 	location / {
         add_header Strict-Transport-Security "max-age=15552000; preload" always;
-		sub_filter www.kaggle.com ${domain};
-		sub_filter_once off;
-		proxy_set_header X-Real-IP \$remote_addr;
-		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-		proxy_set_header Referer https://www.kaggle.com/;
-		proxy_set_header Host www.kaggle.com;
-		proxy_pass https://www.kaggle.com;
-		proxy_set_header Accept-Encoding "";
-		proxy_ssl_session_reuse off;
-		proxy_ssl_name \$proxy_host;
-		proxy_ssl_protocols TLSv1.2 TLSv1.3;
+        sub_filter \$proxy_host \$host;
+        sub_filter_once off;
+
+        proxy_pass https://www.kaggle.com;
+        proxy_set_header Host \$proxy_host;
+
+        proxy_http_version 1.1;
+        proxy_cache_bypass \$http_upgrade;
+
+        proxy_ssl_server_name on;
+        proxy_ssl_name \$proxy_host;
+        proxy_ssl_protocols TLSv1.2 TLSv1.3;
+
+        proxy_set_header Upgrade \$http_upgrade;
+        #proxy_set_header Connection \$connection_upgrade;
+        proxy_set_header X-Real-IP \$proxy_protocol_addr;
+        #proxy_set_header Forwarded \$proxy_add_forwarded;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
 	}
 }
-server {
-	listen 127.0.0.1:31300;
-	server_name ${domain};
-
-	location /s/ {
-		add_header Content-Type text/plain;
-		alias /etc/xray-agent/subscribe/;
-	}
-
-	location / {
-        add_header Strict-Transport-Security "max-age=15552000; preload" always;
-		sub_filter www.kaggle.com ${domain};
-		sub_filter_once off;
-		proxy_set_header X-Real-IP \$remote_addr;
-		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-		proxy_set_header Referer https://www.kaggle.com/;
-		proxy_set_header Host www.kaggle.com;
-		proxy_pass https://www.kaggle.com;
-		proxy_set_header Accept-Encoding "";
-		proxy_ssl_session_reuse off;
-		proxy_ssl_name \$proxy_host;
-		proxy_ssl_protocols TLSv1.2 TLSv1.3;
-	}
 }
 EOF
 }
@@ -1497,7 +1496,7 @@ EOF
 	local historyCrontab
 	historyCrontab=$(sed '/auto_update_geodata.sh/d' /etc/xray-agent/backup_crontab.cron)
 	echo "${historyCrontab}" >/etc/xray-agent/backup_crontab.cron
-	echo "30 1 * * * /bin/bash /etc/xray-agent/auto_update_geodata.sh >> /etc/xray-agent/crontab_geo.log 2>&1" >>/etc/xray-agent/backup_crontab.cron
+	echo "30 1 * * 1 /bin/bash /etc/xray-agent/auto_update_geodata.sh >> /etc/xray-agent/crontab_geo.log 2>&1" >>/etc/xray-agent/backup_crontab.cron
 	crontab /etc/xray-agent/backup_crontab.cron
 	echoContent green "\n ---> 添加定时更新GeoData成功"
 
@@ -1832,7 +1831,7 @@ updateNginxBlog() {
 	
 		read -r -p "请输入要镜像的域名,例如 www.baidu.com，无http/https:" mirrorDomain
 	
-		currentmirrorDomain=$(grep -m 1 "sub_filter.*${domain}" ${nginxConfigPath}alone.conf | awk '{print $2}')
+		currentmirrorDomain=$(grep -m 1 "proxy_pass https://*" ${nginxConfigPath}alone.conf | sed 's/;//' | awk -F "//" '{print $2}')
 		
 		backupNginxConfig backup
     
