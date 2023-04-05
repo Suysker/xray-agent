@@ -99,6 +99,7 @@ initVar() {
 	RealityUUID=
 	RealityfrontingType=
     RealityPrivateKey=
+	RealityPublicKey=
     RealityServerNames=
     RealityDestDomain=
 	RealityPort=
@@ -265,6 +266,7 @@ readConfigHostPathUUID() {
         RealityPublicKey=$(jq -r .inbounds[0].streamSettings.RealitySettings.publicKey "${configPath}${RealityfrontingType}.json")
         RealityPort=$(jq -r .inbounds[0].port "${configPath}${RealityfrontingType}.json")
 		RealityDestDomain=$(jq -r .inbounds[0].streamSettings.RealitySettings.dest "${configPath}${RealityfrontingType}.json" | awk -F "[:]" '{print $1}')
+		RealityPrivateKey=$(jq -r .inbounds[0].streamSettings.RealitySettings.privateKey "${configPath}${RealityfrontingType}.json")
 	fi
 }
 
@@ -1153,7 +1155,7 @@ initXrayRealityConfig() {
     echoContent skyBlue "\n进度 $1/${totalProgress} : 初始化 Xray-core Reality配置"
     
     echoContent skyBlue "\n --->生成key\n"
-    RealityX25519Key=$(/etc/v2ray-agent/xray/xray x25519)
+    RealityX25519Key=$(${ctlPath} x25519)
 
     RealityPrivateKey=$(echo "${RealityX25519Key}" | head -1 | awk '{print $3}')
     RealityPublicKey=$(echo "${RealityX25519Key}" | tail -n 1 | awk '{print $3}')
@@ -1186,7 +1188,7 @@ initXrayRealityConfig() {
 
 	echoContent yellow "\n ${RealityUUID}"
 
-	cat <<EOF >${configPath}07_VLESS_vision_reality_inbounds.json
+	cat <<EOF >${configPath}07_VLESS_Reality_TCP_inbounds.json
 {
   "inbounds": [
     {
@@ -1219,6 +1221,7 @@ initXrayRealityConfig() {
                 ${RealityServerNames}
             ],
             "privateKey": "${RealityPrivateKey}",
+			"publicKey": "${RealityPublicKey}",
             "shortIds": [
                 ""
             ]
@@ -1237,7 +1240,7 @@ initXrayRealityConfig() {
 }
 EOF
 
-cat <<EOF >${configPath}08_VLESS_reality_h2_inbounds.json
+cat <<EOF >${configPath}08_VLESS_Reality_h2_inbounds.json
 {
   "inbounds": [
     {
@@ -1866,7 +1869,7 @@ defaultBase64Code() {
         echoContent yellow " ---> 格式化明文(VLESS+tcp+reality)"
         echoContent green "协议类型:VLESS reality，地址:$(getPublicIP)，publicKey:${RealityPublicKey}，serverNames：${RealityServerNames}，端口:${RealityPort}，用户ID:${id}，传输方式:tcp，账户名:${id}\n"
 
-    elif [[ "${type}" == "vlessRealityGRPC" ]]; then
+    elif [[ "${type}" == "vlessh2reality" ]]; then
         echoContent yellow " ---> 通用格式(VLESS+h2+reality)"
         echoContent green "    vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&security=reality&type=h2&sni=${RealityServerNames}&fp=chrome&pbk=${RealityPublicKey}#${id}\n"
 
@@ -1978,7 +1981,7 @@ showAccounts() {
 		# VLESS reality h2
 		if echo ${currentInstallProtocolType} | grep -q 8; then
 			echoContent skyBlue "\n=============================== VLESS TCP Reality ===============================\n"
-			jq .inbounds[0].settings.clients ${configPath}08_VLESS_reality_h2_inbounds.json | jq -c '.[]' | while read -r user; do
+			jq .inbounds[0].settings.clients ${configPath}08_VLESS_Reality_h2_inbounds.json | jq -c '.[]' | while read -r user; do
 				local uuid=
 				uuid=$(echo "${user}" | jq -r .id)
 				echoContent skyBlue "\n ---> 账号:${uuid}"
@@ -2435,8 +2438,8 @@ addUser() {
 		if echo ${currentInstallProtocolType} | grep -q 8; then
             local vlessUsers="${users//\,\"alterId\":0/}"
             local vlessTcpResult
-            vlessTcpResult=$(jq -r ".inbounds[0].settings.clients += [${vlessUsers}]" ${configPath}08_VLESS_reality_h2_inbounds.json)
-            echo "${vlessTcpResult}" | jq . >${configPath}08_VLESS_reality_h2_inbounds.json
+            vlessTcpResult=$(jq -r ".inbounds[0].settings.clients += [${vlessUsers}]" ${configPath}08_VLESS_Reality_h2_inbounds.json)
+            echo "${vlessTcpResult}" | jq . >${configPath}08_VLESS_Reality_h2_inbounds.json
         fi
 
     done
@@ -2453,7 +2456,7 @@ removeUser() {
 	echo "${userIds}" | awk '{print NR""":"$0}'
 	read -r -p "请选择要删除的用户编号[仅支持单个删除]:" delUserIndex
 
-	userIdsArray=("$userIds")
+	userIdsArray=($(echo "${userIds}"))
 	
 	if [[ -z ${userIdsArray[$((delUserIndex-1))]} ]]; then
     	echoContent red " ---> 选择错误"
@@ -2464,50 +2467,50 @@ removeUser() {
 	if [[ -n "${delUserIndex}" ]]; then
 		if echo ${currentInstallProtocolType} | grep -q 0; then
 			local vlessTcpResult
-			vlessTcpResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}${frontingType}.json)
+			vlessTcpResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' ${configPath}${frontingType}.json)
 			echo "${vlessTcpResult}" | jq . >${configPath}${frontingType}.json
 		fi
 		
 		if echo ${currentInstallProtocolType} | grep -q 1; then
 			local vlessWSResult
-			vlessWSResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}03_VLESS_WS_inbounds.json)
+			vlessWSResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' ${configPath}03_VLESS_WS_inbounds.json)
 			echo "${vlessWSResult}" | jq . >${configPath}03_VLESS_WS_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 2; then
 			local trojangRPCUsers
-			trojangRPCUsers=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.password == '"${userIdToDelete}"')))' ${configPath}04_trojan_gRPC_inbounds.json)
+			trojangRPCUsers=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.password == $uid)))' ${configPath}04_trojan_gRPC_inbounds.json)
 			echo "${trojangRPCUsers}" | jq . >${configPath}04_trojan_gRPC_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 3; then
 			local vmessWSResult
-			vmessWSResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}05_VMess_WS_inbounds.json)
+			vmessWSResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' ${configPath}05_VMess_WS_inbounds.json)
 			echo "${vmessWSResult}" | jq . >${configPath}05_VMess_WS_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 5; then
 			local vlessGRPCResult
-			vlessGRPCResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}06_VLESS_gRPC_inbounds.json)
+			vlessGRPCResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' ${configPath}06_VLESS_gRPC_inbounds.json)
 			echo "${vlessGRPCResult}" | jq . >${configPath}06_VLESS_gRPC_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 4; then
 			local trojanTCPResult
-			trojanTCPResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.password == '"${userIdToDelete}"')))' ${configPath}04_trojan_TCP_inbounds.json)
+			trojanTCPResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.password == $uid)))' ${configPath}04_trojan_TCP_inbounds.json)
 			echo "${trojanTCPResult}" | jq . >${configPath}04_trojan_TCP_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 7; then
 			local vlessRealitytcpResult
-			vlessRealitytcpResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}${RealityfrontingType}.json)
+			vlessRealitytcpResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' ${configPath}${RealityfrontingType}.json)
 			echo "${vlessRealitytcpResult}" | jq . >${configPath}${RealityfrontingType}.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 8; then
 			local vlessRealityh2Result
-			vlessRealityh2Result=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}08_VLESS_Reality_H2_inbounds.json)
-			echo "${vlessRealityh2Result}" | jq . >${configPath}08_VLESS_Reality_H2_inbounds.json
+			vlessRealityh2Result=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' ${configPath}08_VLESS_Reality_h2_inbounds.json)
+			echo "${vlessRealityh2Result}" | jq . >${configPath}08_VLESS_Reality_h2_inbounds.json
 		fi
 
 		reloadCore
