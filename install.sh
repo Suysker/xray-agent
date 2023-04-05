@@ -94,6 +94,14 @@ initVar() {
 
 	# Xray中的TLS证书域名(用于解密TLS流量)
 	TLSDomain=
+
+	# Reality
+	RealityUUID=
+	RealityfrontingType=
+    RealityPrivateKey=
+    RealityServerNames=
+    RealityDestDomain=
+	RealityPort=
 }
 
 checkSystem() {
@@ -171,9 +179,15 @@ readInstallType() {
 	if [[ -d "/etc/xray-agent" ]]; then
 		if [[ -d "/etc/xray-agent/xray" && -f "${ctlPath}" ]]; then
 			# 这里检测xray-core
-			if [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}02_VLESS_TCP_inbounds.json" ]]; then
+			if [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}02_VLESS_TCP_inbounds.json" ]] && [[ -f "${configPath}07_VLESS_Reality_TCP_inbounds.json" ]]; then
+				# xray-core
+				coreInstallType=3
+			elif [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}02_VLESS_TCP_inbounds.json" ]]; then
 				# xray-core
 				coreInstallType=1
+			elif [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}07_VLESS_Reality_TCP_inbounds.json" ]]; then
+				# xray-core
+				coreInstallType=2
 			fi
 		fi
 	fi
@@ -181,8 +195,7 @@ readInstallType() {
 
 # 读取协议类型
 readInstallProtocolType() {
-	if [[ "${coreInstallType}" == "1" ]]; then
-		currentInstallProtocolType=
+	currentInstallProtocolType=
 
 		while read -r row; do
 			if echo "${row}" | grep -q VLESS_TCP_inbounds; then
@@ -204,8 +217,14 @@ readInstallProtocolType() {
 			if echo "${row}" | grep -q VLESS_gRPC_inbounds; then
 				currentInstallProtocolType=${currentInstallProtocolType}'5'
 			fi
+			if echo "${row}" | grep -q VLESS_Reality_TCP_inbounds; then
+            	currentInstallProtocolType=${currentInstallProtocolType}'7'
+				RealityfrontingType=07_VLESS_Reality_TCP_inbounds
+        	fi
+        	if echo "${row}" | grep -q VLESS_Reality_h2_inbounds; then
+            	currentInstallProtocolType=${currentInstallProtocolType}'8'
+        	fi
 		done < <(find ${configPath} -name "*inbounds.json" | awk -F "[.]" '{print $1}')
-	fi
 }
 
 
@@ -216,8 +235,13 @@ readConfigHostPathUUID() {
 	UUID=
 	domain=
 	TLSDomain=
+
+	RealityPort=
+	RealityPublicKey=
+	RealityServerNames=
+	RealityDestDomain=
 	# 读取path
-	if [[ "${coreInstallType}" == "1" ]]; then
+	if [[ "${coreInstallType}" == "1" || "${coreInstallType}" == "3" ]]; then
 		local fallback
 		fallback=$(jq -r -c '.inbounds[0].settings.fallbacks[]|select(.path)' ${configPath}${frontingType}.json | head -1)
 
@@ -234,6 +258,13 @@ readConfigHostPathUUID() {
 		domain=$(grep "server_name" ${nginxConfigPath}alone.conf | awk '$2 ~ /\./ {gsub(";","",$2); print $2; exit}')
 		UUID=$(jq -r .inbounds[0].settings.clients[0].id ${configPath}${frontingType}.json)
 		TLSDomain=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].certificateFile ${configPath}${frontingType}.json | awk -F "[/]" '{print $5}' | awk -F "[.][c][r][t]" '{print $1}')
+	
+	elif [[ "${coreInstallType}" == "2" || "${coreInstallType}" == "3" ]]; then
+		RealityUUID=$(jq -r .inbounds[0].settings.clients[0].id ${configPath}${RealityfrontingType}.json)
+		RealityServerNames=$(jq -r .inbounds[0].streamSettings.RealitySettings.serverNames[0] "${configPath}${RealityfrontingType}.json")
+        RealityPublicKey=$(jq -r .inbounds[0].streamSettings.RealitySettings.publicKey "${configPath}${RealityfrontingType}.json")
+        RealityPort=$(jq -r .inbounds[0].port "${configPath}${RealityfrontingType}.json")
+		RealityDestDomain=$(jq -r .inbounds[0].streamSettings.RealitySettings.dest "${configPath}${RealityfrontingType}.json" | awk -F "[:]" '{print $1}')
 	fi
 }
 
@@ -246,7 +277,7 @@ checkBTPanel() {
 
 # 状态展示
 showInstallStatus() {
-	if [[ "${coreInstallType}" == "1" ]]; then
+	if [[ -n "${coreInstallType}" ]]; then
 		if [[ -n $(pgrep -f xray/xray) ]]; then
 			echoContent yellow "\n核心: Xray-core[运行中]"
 		else
@@ -261,7 +292,7 @@ showInstallStatus() {
 		fi
 		
 		if echo ${currentInstallProtocolType} | grep -q 0; then
-			echoContent yellow "VLESS+TCP[TLS/XTLS] \c"
+			echoContent yellow "VLESS+TCP[TLS] \c"
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 1; then
@@ -283,14 +314,18 @@ showInstallStatus() {
 		if echo ${currentInstallProtocolType} | grep -q 5; then
 			echoContent yellow "VLESS+gRPC[TLS] \c"
 		fi
+		if echo ${currentInstallProtocolType} | grep -q 7; then
+			echoContent yellow "VLESS+TCP[Reality] \c"
+		fi
+		if echo ${currentInstallProtocolType} | grep -q 8; then
+			echoContent yellow "VLESS+h2[Reality] \c"
+		fi
 	fi
 }
 
 # 初始化安装目录
 mkdirTools() {
 	mkdir -p /etc/xray-agent/tls
-	mkdir -p /etc/xray-agent/subscribe
-	mkdir -p /etc/xray-agent/subscribe_tmp
 	mkdir -p /etc/xray-agent/xray/conf
 	mkdir -p /etc/systemd/system/
 	mkdir -p /tmp/xray-agent-tls/
@@ -557,7 +592,38 @@ handleNginx() {
 		echoContent green " ---> Nginx关闭成功"
 	fi
 }
+# 自定义端口
+customPortFunction_Reality() {
+	#local historyCustomPortStatus=
+	if [[ -n "${RealityPort}" ]]; then
+		echo
+		read -r -p "读取到上次安装时的端口，是否使用上次安装时的端口 ？[y/n]:" historyCustomPortStatus
+		if [[ "${historyCustomPortStatus}" == "y" ]]; then
+			echoContent yellow "\n ---> 端口: ${RealityPort}"
+		fi
+	fi
 
+	if [[ "${historyCustomPortStatus}" == "n" || -z "${RealityPort}" ]]; then
+		echo
+		echoContent yellow "请输入自定义端口[例: 2083]，[回车]使用443"
+		read -r -p "端口:" RealityPort
+		if [[ -n "${RealityPort}" ]]; then
+			if ((RealityPort >= 1 && RealityPort <= 65535)); then
+				checkCustomPort
+			else
+				echoContent red " ---> 端口输入错误"
+				exit
+			fi
+		else
+			RealityPort=443
+			checkCustomPort
+			echoContent yellow "\n ---> 端口: 443"
+		fi
+	fi
+	#删除其他自定义端口
+	#rm -rf "$(find ${configPath}* | grep "dokodemodoor")"
+
+}
 # 自定义端口
 customPortFunction() {
 	#local historyCustomPortStatus=
@@ -608,6 +674,40 @@ readAcmeTLS() {
 			TLSDomain=$(echo "${domain}" | awk -F "[.]" '{print $(NF-2)"."$(NF-1)"."$NF}')
 		fi
 	fi
+}
+
+# 初始化Reality证书配置
+initTLSRealityConfig() {
+	echoContent skyBlue "\n进度  $1/${totalProgress} : 初始化Reality证书配置"
+	if [[ -n "${RealityDestDomain}" ]]; then
+		read -r -p "读取到上次安装记录，是否使用上次安装时的域名 ？[y/n]:" historyDestStatus
+		if [[ "${historyDestStatus}" == "y" ]]; then
+			echoContent green "\n ---> 使用成功"
+		else
+			echoContent skyBlue "\n --->生成配置回落的域名 例如:[addons.mozilla.org:443]\n"
+			read -r -p '请输入:' RealityDestDomain
+		fi
+	else
+		echoContent skyBlue "\n --->生成配置回落的域名 例如:[addons.mozilla.org:443]\n"
+		read -r -p '请输入:' RealityDestDomain
+	fi
+	
+
+	if [[ -z "${RealityDestDomain}" ]]; then
+		echoContent red "  域名不可为空--->"
+		initTLSNginxConfig 3
+	fi
+
+	echoContent yellow "\n ${RealityDestDomain}"
+
+    echoContent skyBlue "\n >配置客户端可用的serverNames\n"
+    echoContent red "\n=============================================================="
+    echoContent yellow " # 注意事项\n"
+    echoContent yellow "录入示例:addons.mozilla.org\n"
+    read -r -p "请输入:" RealityServerNames
+    RealityServerNames=\"${RealityServerNames//,/\",\"}\"
+
+	customPortFunction_Reality
 }
 
 # 初始化Nginx申请证书配置
@@ -994,7 +1094,7 @@ installXray() {
 	readInstallType
 	echoContent skyBlue "\n进度  $1/${totalProgress} : 安装Xray"
 
-	if [[ "${coreInstallType}" != "1" ]]; then
+	if [[ -z "${coreInstallType}" ]]; then
 
 		version=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | jq -r '.[]|select (.prerelease==false)|.tag_name' | head -1)
 
@@ -1030,13 +1130,9 @@ installXrayService() {
 Description=Xray Service
 Documentation=https://github.com/XTLS/Xray-core
 After=network.target nss-lookup.target
-Wants=network-online.target
 
 [Service]
-Type=simple
 User=root
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_RAW
-NoNewPrivileges=yes
 ExecStart=${execStart}
 Restart=on-failure
 RestartPreventExitStatus=23
@@ -1052,33 +1148,133 @@ EOF
 	fi
 }
 
-# 初始化Xray 配置文件
-initXrayConfig() {
-	echoContent skyBlue "\n进度 $1/${totalProgress} : 初始化Xray配置"
-	echo
-	if [[ -n "${UUID}" ]]; then
+# 初始化 Reality 配置
+initXrayRealityConfig() {
+    echoContent skyBlue "\n进度 $1/${totalProgress} : 初始化 Xray-core Reality配置"
+    
+    echoContent skyBlue "\n --->生成key\n"
+    RealityX25519Key=$(/etc/v2ray-agent/xray/xray x25519)
+
+    RealityPrivateKey=$(echo "${RealityX25519Key}" | head -1 | awk '{print $3}')
+    RealityPublicKey=$(echo "${RealityX25519Key}" | tail -n 1 | awk '{print $3}')
+
+    echoContent green "\n privateKey:${RealityPrivateKey}"
+    echoContent green "\n publicKey:${RealityPublicKey}"
+
+
+	if [[ -n "${RealityUUID}" ]]; then
 		read -r -p "读取到上次安装记录，是否使用上次安装时的UUID ？[y/n]:" historyUUIDStatus
 		if [[ "${historyUUIDStatus}" == "y" ]]; then
 			echoContent green "\n ---> 使用成功"
 		else
 			echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
-			read -r -p 'UUID:' UUID
+			read -r -p 'UUID:' RealityUUID
 		fi
+	elif [[ -n "${UUID}" ]]; then
+		echoContent yellow "检测到VISION的UUID，将自动使用相同的UUID"
+		RealityUUID=$UUID
 	else
 		echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
-		read -r -p 'UUID:' UUID
+		read -r -p 'UUID:' RealityUUID
 	fi
 	
 
-	if [[ -z "${UUID}" ]]; then
+	if [[ -z "${RealityUUID}" ]]; then
 		echoContent red "\n ---> uuid读取错误，重新生成"
-		UUID=$(${ctlPath} uuid)
+		RealityUUID=$(${ctlPath} uuid)
 	fi
 
-	echoContent yellow "\n ${UUID}"
+	echoContent yellow "\n ${RealityUUID}"
 
-	# log
-	cat <<EOF >${configPath}00_log.json
+	cat <<EOF >${configPath}07_VLESS_vision_reality_inbounds.json
+{
+  "inbounds": [
+    {
+      "port": ${RealityPort},
+      "protocol": "vless",
+      "tag": "VLESSReality",
+      "settings": {
+        "clients": [
+          {
+            "id": "${RealityUUID}",
+            "flow": "xtls-rprx-vision"
+          }
+        ],
+        "decryption": "none",
+        "fallbacks":[
+            {
+                "dest": "31305",
+                "xver": 1
+            }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+            "show": false,
+            "dest": "${RealityDestDomain}",
+            "xver": 0,
+            "serverNames": [
+                ${RealityServerNames}
+            ],
+            "privateKey": "${RealityPrivateKey}",
+            "shortIds": [
+                ""
+            ]
+        }
+      },
+	  "sniffing": {
+        "enabled": true,
+        "destOverride": [
+			"http",
+			"tls"
+        ],
+		"routeOnly": false
+	  }
+    }
+  ]
+}
+EOF
+
+cat <<EOF >${configPath}08_VLESS_reality_h2_inbounds.json
+{
+  "inbounds": [
+    {
+      "port": 31305,
+      "listen": "127.0.0.1",
+      "protocol": "vless",
+      "tag": "VLESSRealityH2",
+      "settings": {
+        "clients": [
+          {
+            "id": "${RealityUUID}",
+            "flow": ""
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+            "network": "h2",
+            "sockopt": {
+                "acceptProxyProtocol": true
+            }
+      },
+	  "sniffing": {
+        "enabled": true,
+        "destOverride": [
+			"http",
+			"tls"
+        ],
+		"routeOnly": false
+	  }
+    }
+  ]
+}
+EOF
+	if [[ "${coreInstallType}" != "1" ]]; then
+		# log
+		cat <<EOF >${configPath}00_log.json
 {
   "log": {
     "error": "/etc/xray-agent/xray/error.log",
@@ -1087,8 +1283,8 @@ initXrayConfig() {
 }
 EOF
 
-	# 本地策略Policy
-	cat <<EOF >${configPath}01_policy.json
+		# 本地策略Policy
+		cat <<EOF >${configPath}01_policy.json
 {
   "policy": {
     "levels": {
@@ -1102,7 +1298,7 @@ EOF
 }
 EOF
 
-	cat <<EOF >${configPath}10_ipv4_outbounds.json
+		cat <<EOF >${configPath}10_ipv4_outbounds.json
 {
     "outbounds":[
         {
@@ -1127,11 +1323,11 @@ EOF
 }
 EOF
 
-	# routing
-	rm -f ${configPath}09_routing.json
+		# routing
+		rm -f ${configPath}09_routing.json
 
-	# dns
-	cat <<EOF >${configPath}11_dns.json
+		# dns
+		cat <<EOF >${configPath}11_dns.json
 {
     "dns": {
         "servers": [
@@ -1140,6 +1336,105 @@ EOF
   }
 }
 EOF
+
+fi
+}
+
+# 初始化Xray 配置文件
+initXrayConfig() {
+	echoContent skyBlue "\n进度 $1/${totalProgress} : 初始化Xray配置"
+	echo
+	
+	if [[ -n "${UUID}" ]]; then
+		read -r -p "读取到上次安装记录，是否使用上次安装时的UUID ？[y/n]:" historyUUIDStatus
+		if [[ "${historyUUIDStatus}" == "y" ]]; then
+			echoContent green "\n ---> 使用成功"
+		else
+			echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
+			read -r -p 'UUID:' UUID
+		fi
+	elif [[ -n "${RealityUUID}" ]]; then
+		echoContent yellow "检测到Reality的UUID，将自动使用相同的UUID"
+		UUID=$RealityUUID
+	else
+		echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
+		read -r -p 'UUID:' UUID
+	fi
+	
+
+	if [[ -z "${UUID}" ]]; then
+		echoContent red "\n ---> uuid读取错误，重新生成"
+		UUID=$(${ctlPath} uuid)
+	fi
+
+	echoContent yellow "\n ${UUID}"
+
+	if [[ "${coreInstallType}" != "2" ]]; then
+		# log
+		cat <<EOF >${configPath}00_log.json
+{
+  "log": {
+    "error": "/etc/xray-agent/xray/error.log",
+    "loglevel": "warning"
+  }
+}
+EOF
+
+		# 本地策略Policy
+		cat <<EOF >${configPath}01_policy.json
+{
+  "policy": {
+    "levels": {
+      "0": {
+        "handshake": 3,
+        "connIdle": 360,
+		"bufferSize": 1024
+      }
+    }
+  }
+}
+EOF
+
+		cat <<EOF >${configPath}10_ipv4_outbounds.json
+{
+    "outbounds":[
+        {
+            "protocol":"freedom",
+            "settings":{
+                "domainStrategy":"UseIPv4"
+            },
+            "tag":"IPv4-out"
+        },
+        {
+            "protocol":"freedom",
+            "settings":{
+                "domainStrategy":"UseIPv6"
+            },
+            "tag":"IPv6-out"
+        },
+        {
+            "protocol":"blackhole",
+            "tag":"blackhole-out"
+        }
+    ]
+}
+EOF
+
+		# routing
+		rm -f ${configPath}09_routing.json
+
+		# dns
+		cat <<EOF >${configPath}11_dns.json
+{
+    "dns": {
+        "servers": [
+          "localhost"
+        ]
+  }
+}
+EOF
+
+fi
 
 	# VLESS_TCP_TLS/XTLS
 	# 回落nginx
@@ -1156,7 +1451,6 @@ EOF
 		"clients": [
 		  {
 			"password": "${UUID}",
-			"email": "${domain}@${UUID}"
 		  }
 		],
 		"fallbacks":[
@@ -1196,8 +1490,7 @@ EOF
 	  "settings": {
 		"clients": [
 		  {
-			"id": "${UUID}",
-			"email": "${UUID}"
+			"id": "${UUID}"
 		  }
 		],
 		"decryption": "none"
@@ -1235,8 +1528,7 @@ EOF
 	  "settings": {
 		"clients": [
 		  {
-			"password": "${UUID}",
-			"email": "${domain}@${UUID}"
+			"password": "${UUID}"
 		  }
 		],
 		"fallbacks": [
@@ -1278,8 +1570,7 @@ EOF
 		"clients": [
 		  {
 			"id": "${UUID}",
-			"alterId": 0,
-			"email": "${domain}@${UUID}"
+			"alterId": 0
 		  }
 		]
 	  },
@@ -1316,8 +1607,7 @@ EOF
 	  "settings": {
 		"clients": [
 		  {
-			"id": "${UUID}",
-			"email": "${domain}@${UUID}"
+			"id": "${UUID}"
 		  }
 		],
 		"decryption": "none"
@@ -1354,8 +1644,7 @@ EOF
     "clients": [
      {
         "id": "${UUID}",
-        "flow":"xtls-rprx-vision",
-        "email": "${domain}@${UUID}"
+        "flow":"xtls-rprx-vision"
       }
     ],
     "decryption": "none",
@@ -1425,11 +1714,6 @@ server {
 
 	client_header_timeout 1071906480m;
     keepalive_timeout 1071906480m;
-
-	location /s/ {
-    	add_header Content-Type text/plain;
-    	alias /etc/xray-agent/subscribe/;
-    }
 
     location /${path}grpc {
  		client_max_body_size 0;
@@ -1506,7 +1790,7 @@ EOF
 checkGFWStatue() {
 	readInstallType
 	echoContent skyBlue "\n进度 $1/${totalProgress} : 验证服务启动状态"
-	if [[ "${coreInstallType}" == "1" ]] && [[ -n $(pgrep -f xray/xray) ]]; then
+	if [[ -n "${coreInstallType}" ]] && [[ -n $(pgrep -f xray/xray) ]]; then
 		echoContent green " ---> 服务启动成功"
 	else
 		echoContent red " ---> 服务启动失败，请检查终端是否有日志打印"
@@ -1515,77 +1799,80 @@ checkGFWStatue() {
 
 }
 
+# 获取公网IP
+getPublicIP() {
+    local currentIP=
+    currentIP=$(curl -s -4 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | awk -F "[=]" '{print $2}')
+    if [[ -z "${currentIP}" ]]; then
+        currentIP=$(curl -s -6 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | awk -F "[=]" '{print $2}')
+    fi
+    echo "${currentIP}"
+}
+
 # 通用
 defaultBase64Code() {
 	local type=$1
-	local email=$2
-	local id=$3
+	local id=$2
 
-	local subAccount
-	subAccount=$(echo "${email}" | awk -F "[_]" '{print $1}')_$(echo "${id}_currentHost" | md5sum | awk '{print $1}')
 	if [[ "${type}" == "vlesstcp" ]]; then
 		echoContent yellow " ---> 通用格式(VLESS+TCP+TLS/xtls-rprx-vision)"
-		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=tcp&host=${domain}&headerType=none&sni=${domain}&flow=xtls-rprx-vision#${email}\n"
+		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=tcp&host=${domain}&headerType=none&sni=${domain}&flow=xtls-rprx-vision#${id}\n"
 
 		echoContent yellow " ---> 格式化明文(VLESS+TCP+TLS/xtls-rprx-vision)"
-		echoContent green "协议类型:VLESS，地址:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:tcp，flow:xtls-rprx-vision，账户名:${email}\n"
-		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
-vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=tcp&host=${domain}&headerType=none&sni=${domain}&flow=xtls-rprx-vision#${email}
-EOF
+		echoContent green "协议类型:VLESS，地址:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:tcp，flow:xtls-rprx-vision，账户名:${id}\n"
 
 	elif [[ "${type}" == "vmessws" ]]; then
-		qrCodeBase64Default=$(echo -n "{\"port\":${Port},\"ps\":\"${email}\",\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}" | base64 -w 0)
+		qrCodeBase64Default=$(echo -n "{\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}" | base64 -w 0)
 		qrCodeBase64Default="${qrCodeBase64Default// /}"
 
 		echoContent yellow " ---> 通用json(VMess+WS+TLS)"
-		echoContent green "    {\"port\":${Port},\"ps\":\"${email}\",\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}\n"
+		echoContent green "    {\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}\n"
 		echoContent yellow " ---> 通用vmess(VMess+WS+TLS)链接"
 		echoContent green "    vmess://${qrCodeBase64Default}\n"
 
-		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
-vmess://${qrCodeBase64Default}
-EOF
 
 	elif [[ "${type}" == "vlessws" ]]; then
 
 		echoContent yellow " ---> 通用格式(VLESS+WS+TLS)"
-		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=ws&host=${domain}&sni=${domain}&path=/${path}ws#${email}\n"
+		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=ws&host=${domain}&sni=${domain}&path=/${path}ws#${id}\n"
 
 		echoContent yellow " ---> 格式化明文(VLESS+WS+TLS)"
-		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:ws，路径:/${path}ws，账户名:${email}\n"
+		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:ws，路径:/${path}ws，账户名:${id}\n"
 
-		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
-vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=ws&host=${domain}&sni=${domain}&path=/${path}ws#${email}
-EOF
 
 	elif [[ "${type}" == "vlessgrpc" ]]; then
 
 		echoContent yellow " ---> 通用格式(VLESS+gRPC+TLS)"
-		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=grpc&host=${domain}&path=${path}grpc&serviceName=${path}grpc&alpn=h2&sni=${domain}#${email}\n"
+		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=grpc&host=${domain}&path=${path}grpc&serviceName=${path}grpc&alpn=h2&sni=${domain}#${id}\n"
 
 		echoContent yellow " ---> 格式化明文(VLESS+gRPC+TLS)"
-		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:gRPC，alpn:h2，serviceName:${path}grpc，账户名:${email}\n"
+		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:gRPC，alpn:h2，serviceName:${path}grpc，账户名:${id}\n"
 
-		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
-vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=grpc&host=${domain}&path=${path}grpc&serviceName=${path}grpc&alpn=h2&sni=${domain}#${email}
-EOF
 	elif [[ "${type}" == "trojan" ]]; then
 		# URLEncode
 		echoContent yellow " ---> Trojan(TLS)"
 		echoContent green "    trojan://${id}@${domain}:${Port}?peer=${domain}&sni=${domain}&alpn=http/1.1#${domain}_Trojan\n"
 
-		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
-trojan://${id}@${domain}:${Port}?peer=${domain}&sni=${domain}&alpn=http/1.1#${email}_Trojan
-EOF
 	elif [[ "${type}" == "trojangrpc" ]]; then
 		# URLEncode
 
 		echoContent yellow " ---> Trojan gRPC(TLS)"
-		echoContent green "    trojan://${id}@${domain}:${Port}?encryption=none&peer=${domain}&security=tls&type=grpc&sni=${domain}&alpn=h2&path=${path}trojangrpc&serviceName=${path}trojangrpc#${email}\n"
-		cat <<EOF >>"/etc/xray-agent/subscribe_tmp/${subAccount}"
-trojan://${id}@${domain}:${Port}?encryption=none&peer=${domain}&security=tls&type=grpc&sni=${domain}&alpn=h2&path=${path}trojangrpc&serviceName=${path}trojangrpc#${email}
-EOF
-	fi
+		echoContent green "    trojan://${id}@${domain}:${Port}?encryption=none&peer=${domain}&security=tls&type=grpc&sni=${domain}&alpn=h2&path=${path}trojangrpc&serviceName=${path}trojangrpc#${id}\n"
+	
+    elif [[ "${type}" == "vlesstcpreality" ]]; then
+        echoContent yellow " ---> 通用格式(VLESS+tcp+reality)"
+        echoContent green "    vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&security=reality&type=tcp&sni=${RealityServerNames}&fp=chrome&pbk=${RealityPublicKey}&flow=xtls-rprx-vision#${id}\n"
+
+        echoContent yellow " ---> 格式化明文(VLESS+tcp+reality)"
+        echoContent green "协议类型:VLESS reality，地址:$(getPublicIP)，publicKey:${RealityPublicKey}，serverNames：${RealityServerNames}，端口:${RealityPort}，用户ID:${id}，传输方式:tcp，账户名:${id}\n"
+
+    elif [[ "${type}" == "vlessRealityGRPC" ]]; then
+        echoContent yellow " ---> 通用格式(VLESS+h2+reality)"
+        echoContent green "    vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&security=reality&type=h2&sni=${RealityServerNames}&fp=chrome&pbk=${RealityPublicKey}#${id}\n"
+
+        echoContent yellow " ---> 格式化明文(VLESS+h2+reality)"
+        echoContent green "协议类型:VLESS reality，serviceName:grpc，地址:$(getPublicIP)，publicKey:${RealityPublicKey}，serverNames：${RealityServerNames}，端口:${RealityPort}，用户ID:${id}，传输方式:h2，client-fingerprint：chrome，账户名:${id}\n"
+    fi
 
 }
 
@@ -1605,11 +1892,11 @@ showAccounts() {
 		if echo "${currentInstallProtocolType}" | grep -q 0; then
 			echoContent skyBlue "===================== VLESS TCP TLS/XTLS-VISION ======================\n"
 			jq .inbounds[0].settings.clients ${configPath}${frontingType}.json | jq -c '.[]' | while read -r user; do
-				local email=
-				email=$(echo "${user}" | jq -r .email)
-				echoContent skyBlue "\n ---> 账号:${email}"
+				local uuid=
+				uuid=$(echo "${user}" | jq -r .id)
+				echoContent skyBlue "\n ---> 账号:${uuid}"
 				echo
-				defaultBase64Code vlesstcp "${email}" "$(echo "${user}" | jq -r .id)"
+				defaultBase64Code vlesstcp  "$(echo "${user}" | jq -r .id)"
 			done
 		fi
 
@@ -1618,11 +1905,23 @@ showAccounts() {
 			echoContent skyBlue "\n================================ VLESS WS TLS CDN ================================\n"
 
 			jq .inbounds[0].settings.clients ${configPath}03_VLESS_WS_inbounds.json | jq -c '.[]' | while read -r user; do
-				local email=
-				email=$(echo "${user}" | jq -r .email)
-				echoContent skyBlue "\n ---> 账号:${email}"
+				local uuid=
+				uuid=$(echo "${user}" | jq -r .id)
+				echoContent skyBlue "\n ---> 账号:${uuid}"
 				echo
-				defaultBase64Code vlessws "${email}" "$(echo "${user}" | jq -r .id)"
+				defaultBase64Code vlessws  "$(echo "${user}" | jq -r .id)"
+			done
+		fi
+
+		if echo ${currentInstallProtocolType} | grep -q 2; then
+			echoContent skyBlue "\n================================  Trojan gRPC TLS  ================================\n"
+			echoContent red "\n --->gRPC处于测试阶段，可能对你使用的客户端不兼容，如不能使用请忽略"
+				jq .inbounds[0].settings.clients ${configPath}04_trojan_gRPC_inbounds.json | jq -c '.[]' | while read -r user; do
+					local uuid=
+					uuid=$(echo "${user}" | jq -r .password)
+					echoContent skyBlue "\n ---> 账号:${uuid}"
+					echo
+					defaultBase64Code trojangrpc "$(echo "${user}" | jq -r .password)"
 			done
 		fi
 
@@ -1632,54 +1931,61 @@ showAccounts() {
 			local path="${path}vws"
 			path="${path}vws"
 			jq .inbounds[0].settings.clients ${configPath}05_VMess_WS_inbounds.json | jq -c '.[]' | while read -r user; do
-				local email=
-				email=$(echo "${user}" | jq -r .email)
-				echoContent skyBlue "\n ---> 账号:${email}"
+				local uuid=
+				uuid=$(echo "${user}" | jq -r .id)
+				echoContent skyBlue "\n ---> 账号:${uuid}"
 				echo
-				defaultBase64Code vmessws "${email}" "$(echo "${user}" | jq -r .id)"
+				defaultBase64Code vmessws "$(echo "${user}" | jq -r .id)"
+			done
+		fi
+
+			# trojan tcp
+		if echo ${currentInstallProtocolType} | grep -q 4; then
+			echoContent skyBlue "\n==================================  Trojan TLS  ==================================\n"
+			jq .inbounds[0].settings.clients ${configPath}04_trojan_TCP_inbounds.json | jq -c '.[]' | while read -r user; do
+				local uuid=
+				uuid=$(echo "${user}" | jq -r .password)
+				echoContent skyBlue "\n ---> 账号:${uuid}"
+				echo
+				defaultBase64Code trojan "$(echo "${user}" | jq -r .password)"
 			done
 		fi
 
 		# VLESS grpc
 		if echo ${currentInstallProtocolType} | grep -q 5; then
 			echoContent skyBlue "\n=============================== VLESS gRPC TLS CDN ===============================\n"
-			echoContent red "\n --->gRPC处于测试阶段，可能对你使用的客户端不兼容，如不能使用请忽略"
-			#			local serviceName
-			#			serviceName=$(jq -r .inbounds[0].streamSettings.grpcSettings.serviceName ${configPath}06_VLESS_gRPC_inbounds.json)
 			jq .inbounds[0].settings.clients ${configPath}06_VLESS_gRPC_inbounds.json | jq -c '.[]' | while read -r user; do
-				local email=
-				email=$(echo "${user}" | jq -r .email)
-				echoContent skyBlue "\n ---> 账号:${email}"
+				local uuid=
+				uuid=$(echo "${user}" | jq -r .id)
+				echoContent skyBlue "\n ---> 账号:${uuid}"
 				echo
-				defaultBase64Code vlessgrpc "${email}" "$(echo "${user}" | jq -r .id)"
+				defaultBase64Code vlessgrpc "$(echo "${user}" | jq -r .id)"
 			done
 		fi
-	fi
 
-	# trojan tcp
-	if echo ${currentInstallProtocolType} | grep -q 4; then
-		echoContent skyBlue "\n==================================  Trojan TLS  ==================================\n"
-		jq .inbounds[0].settings.clients ${configPath}04_trojan_TCP_inbounds.json | jq -c '.[]' | while read -r user; do
-				local email=
-				email=$(echo "${user}" | jq -r .email)
-				echoContent skyBlue "\n ---> 账号:${email}"
+		# VLESS reality tcp
+		if echo ${currentInstallProtocolType} | grep -q 7; then
+			echoContent skyBlue "\n=============================== VLESS TCP Reality ===============================\n"
+			jq .inbounds[0].settings.clients ${configPath}${RealityfrontingType}.json | jq -c '.[]' | while read -r user; do
+				local uuid=
+				uuid=$(echo "${user}" | jq -r .id)
+				echoContent skyBlue "\n ---> 账号:${uuid}"
 				echo
-				defaultBase64Code trojan "${email}" "$(echo "${user}" | jq -r .password)"
-		done
-	fi
+				defaultBase64Code vlesstcpreality "$(echo "${user}" | jq -r .id)"
+			done
+		fi
 
-	if echo ${currentInstallProtocolType} | grep -q 2; then
-		echoContent skyBlue "\n================================  Trojan gRPC TLS  ================================\n"
-		echoContent red "\n --->gRPC处于测试阶段，可能对你使用的客户端不兼容，如不能使用请忽略"
-		#		local serviceName=
-		#		serviceName=$(jq -r .inbounds[0].streamSettings.grpcSettings.serviceName ${configPath}04_trojan_gRPC_inbounds.json)
-		jq .inbounds[0].settings.clients ${configPath}04_trojan_gRPC_inbounds.json | jq -c '.[]' | while read -r user; do
-				local email=
-				email=$(echo "${user}" | jq -r .email)
-				echoContent skyBlue "\n ---> 账号:${email}"
+		# VLESS reality h2
+		if echo ${currentInstallProtocolType} | grep -q 8; then
+			echoContent skyBlue "\n=============================== VLESS TCP Reality ===============================\n"
+			jq .inbounds[0].settings.clients ${configPath}08_VLESS_reality_h2_inbounds.json | jq -c '.[]' | while read -r user; do
+				local uuid=
+				uuid=$(echo "${user}" | jq -r .id)
+				echoContent skyBlue "\n ---> 账号:${uuid}"
 				echo
-				defaultBase64Code trojangrpc "${email}" "$(echo "${user}" | jq -r .password)"
-		done
+				defaultBase64Code vlessh2reality "$(echo "${user}" | jq -r .id)"
+			done
+		fi
 	fi
 
 	if [[ -z ${show} ]]; then
@@ -1740,7 +2046,7 @@ xrayVersionManageMenu() {
 # 更新Xray
 updateXray() {
 	readInstallType
-	if [[ "${coreInstallType}" != "1" ]]; then
+	if [[ -z "${coreInstallType}" ]]; then
 		if [[ -n "$1" ]]; then
 			version=$1
 		else
@@ -1820,7 +2126,7 @@ backupNginxConfig() {
 
 # 更新伪装站
 updateNginxBlog() {
-	if [[ "${coreInstallType}" != "1" ]]; then
+	if [[ "${coreInstallType}" != "1" ]] && [[ "${coreInstallType}" != "3" ]]; then
 		echoContent red " ---> 未安装，请使用脚本安装"
 		menu
 		exit 0
@@ -1911,7 +2217,7 @@ allowPort() {
 
 # 添加新端口
 addCorePort() {
-	if [[ "${coreInstallType}" != "1" ]]; then
+	if [[ "${coreInstallType}" != "1" ]] && [[ "${coreInstallType}" != "3" ]]; then
 		echoContent red " ---> 未安装，请使用脚本安装"
 		menu
 		exit 0
@@ -1996,7 +2302,7 @@ EOF
 
 # manageUser 用户管理
 manageUser() {
-	if [[ "${coreInstallType}" != "1" ]]; then
+	if [[ -z "${coreInstallType}" ]]; then
 		echoContent red " ---> 未安装，请使用脚本安装"
 		menu
 		exit 0
@@ -2016,135 +2322,199 @@ manageUser() {
 	fi
 }
 
+# 自定义uuid
+customUUID() {
+    read -r -p "请输入合法的UUID，[回车]随机UUID:" currentCustomUUID
+    echo
+    if [[ -z "${currentCustomUUID}" ]]; then
+        currentCustomUUID=$(${ctlPath} uuid)
+        echoContent yellow "uuid：${currentCustomUUID}\n"
+
+    else
+        jq -r -c '.inbounds[0].settings.clients[].id' ${configPath}${frontingType}.json | while read -r line; do
+            if [[ "${line}" == "${currentCustomUUID}" ]]; then
+                echo >/tmp/xray-agent
+            fi
+        done
+        jq -r -c '.inbounds[0].settings.clients[].id' ${configPath}${RealityfrontingType}.json | while read -r line; do
+            if [[ "${line}" == "${currentCustomUUID}" ]]; then
+                echo >/tmp/xray-agent
+            fi
+        done
+        if [[ -f "/tmp/xray-agent" && -n $(cat /tmp/xray-agent) ]]; then
+            echoContent red " ---> UUID不可重复"
+            rm /tmp/xray-agent
+            exit 0
+        fi
+    fi
+}
+
 # 添加用户
 addUser() {
-	echoContent yellow "添加新用户后，需要重新查看订阅"
-	read -r -p "请输入要添加的用户数量:" userNum
-	echo
-	if [[ -z ${userNum} || ${userNum} -le 0 ]]; then
-		echoContent red " ---> 输入有误，请重新输入"
-		exit 0
-	fi
 
-	while [[ ${userNum} -gt 0 ]]; do
-		local users=
-		((userNum--)) || true
-		uuid=$(${ctlPath} uuid)
+    echoContent yellow "添加新用户后，需要重新查看订阅"
+    read -r -p "请输入要添加的用户数量:" userNum
+    echo
+    if [[ -z ${userNum} || ${userNum} -le 0 ]]; then
+        echoContent red " ---> 输入有误，请重新输入"
+        exit 0
+    fi
 
-		email=${domain}_${uuid}
+    # 生成用户
+    if [[ "${userNum}" == "1" ]]; then
+        customUUID
+    fi
 
-		users="{\"id\":\"${uuid}\",\"flow\":\"xtls-rprx-vision\",\"email\":\"${email}\",\"alterId\":0}"
+    while [[ ${userNum} -gt 0 ]]; do
+        local users=
+        ((userNum--)) || true
+        if [[ -n "${currentCustomUUID}" ]]; then
+            uuid=${currentCustomUUID}
+        else
+            uuid=$(${ctlPath} uuid)
+        fi
 
+        users="{\"id\":\"${uuid}\",\"flow\":\"xtls-rprx-vision\",\"alterId\":0}"
 
-		if echo ${currentInstallProtocolType} | grep -q 0; then
-			local vlessUsers="${users//\,\"alterId\":0/}"
+        if echo ${currentInstallProtocolType} | grep -q 0; then
+            local vlessUsers="${users//\,\"alterId\":0/}"
+            local vlessTcpResult
+            vlessTcpResult=$(jq -r ".inbounds[0].settings.clients += [${vlessUsers}]" ${configPath}${frontingType}.json)
+            echo "${vlessTcpResult}" | jq . >${configPath}${frontingType}.json
+        fi
 
-			local vlessTcpResult
-			vlessTcpResult=$(jq -r ".inbounds[0].settings.clients += [${vlessUsers}]" ${configPath}${frontingType}.json)
-			echo "${vlessTcpResult}" | jq . >${configPath}${frontingType}.json
-		fi
+        if echo ${currentInstallProtocolType} | grep -q 1; then
+            local vlessUsers="${users//\,\"alterId\":0/}"
+            vlessUsers="${vlessUsers//\"flow\":\"xtls-rprx-vision\"\,/}"
+            local vlessWsResult
+            vlessWsResult=$(jq -r ".inbounds[0].settings.clients += [${vlessUsers}]" ${configPath}03_VLESS_WS_inbounds.json)
+            echo "${vlessWsResult}" | jq . >${configPath}03_VLESS_WS_inbounds.json
+        fi
 
-		if echo ${currentInstallProtocolType} | grep -q 1; then
-			local vlessUsers="${users//\,\"alterId\":0/}"
-			vlessUsers="${vlessUsers//\"flow\":\"xtls-rprx-vision\"\,/}"
-			local vlessWsResult
-			vlessWsResult=$(jq -r ".inbounds[0].settings.clients += [${vlessUsers}]" ${configPath}03_VLESS_WS_inbounds.json)
-			echo "${vlessWsResult}" | jq . >${configPath}03_VLESS_WS_inbounds.json
-		fi
+        if echo ${currentInstallProtocolType} | grep -q 2; then
+            local trojangRPCUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
+            trojangRPCUsers="${trojangRPCUsers//\,\"alterId\":0/}"
+            trojangRPCUsers=${trojangRPCUsers//"id"/"password"}
 
-		if echo ${currentInstallProtocolType} | grep -q 2; then
-			local trojangRPCUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
-			trojangRPCUsers="${trojangRPCUsers//\,\"alterId\":0/}"
-			trojangRPCUsers=${trojangRPCUsers//"id"/"password"}
+            local trojangRPCResult
+            trojangRPCResult=$(jq -r ".inbounds[0].settings.clients += [${trojangRPCUsers}]" ${configPath}04_trojan_gRPC_inbounds.json)
+            echo "${trojangRPCResult}" | jq . >${configPath}04_trojan_gRPC_inbounds.json
+        fi
 
-			local trojangRPCResult
-			trojangRPCResult=$(jq -r ".inbounds[0].settings.clients += [${trojangRPCUsers}]" ${configPath}04_trojan_gRPC_inbounds.json)
-			echo "${trojangRPCResult}" | jq . >${configPath}04_trojan_gRPC_inbounds.json
-		fi
+        if echo ${currentInstallProtocolType} | grep -q 3; then
+            local vmessUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
+            local vmessWsResult
+            vmessWsResult=$(jq -r ".inbounds[0].settings.clients += [${vmessUsers}]" ${configPath}05_VMess_WS_inbounds.json)
+            echo "${vmessWsResult}" | jq . >${configPath}05_VMess_WS_inbounds.json
+        fi
 
-		if echo ${currentInstallProtocolType} | grep -q 3; then
-			local vmessUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
+        if echo ${currentInstallProtocolType} | grep -q 5; then
+            local vlessGRPCUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
+            vlessGRPCUsers="${vlessGRPCUsers//\,\"alterId\":0/}"
+            local vlessGRPCResult
+            vlessGRPCResult=$(jq -r ".inbounds[0].settings.clients += [${vlessGRPCUsers}]" ${configPath}06_VLESS_gRPC_inbounds.json)
+            echo "${vlessGRPCResult}" | jq . >${configPath}06_VLESS_gRPC_inbounds.json
+        fi
 
-			local vmessWsResult
-			vmessWsResult=$(jq -r ".inbounds[0].settings.clients += [${vmessUsers}]" ${configPath}05_VMess_WS_inbounds.json)
-			echo "${vmessWsResult}" | jq . >${configPath}05_VMess_WS_inbounds.json
-		fi
+        if echo ${currentInstallProtocolType} | grep -q 4; then
+            local trojanUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
+            trojanUsers="${trojanUsers//id/password}"
+            trojanUsers="${trojanUsers//\,\"alterId\":0/}"
+            local trojanTCPResult
+            trojanTCPResult=$(jq -r ".inbounds[0].settings.clients += [${trojanUsers}]" ${configPath}04_trojan_TCP_inbounds.json)
+            echo "${trojanTCPResult}" | jq . >${configPath}04_trojan_TCP_inbounds.json
+        fi
 
-		if echo ${currentInstallProtocolType} | grep -q 5; then
-			local vlessGRPCUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
-			vlessGRPCUsers="${vlessGRPCUsers//\,\"alterId\":0/}"
+		if echo ${currentInstallProtocolType} | grep -q 7; then
+            local vlessUsers="${users//\,\"alterId\":0/}"
+            local vlessTcpResult
+            vlessTcpResult=$(jq -r ".inbounds[0].settings.clients += [${vlessUsers}]" ${configPath}${RealityfrontingType}.json)
+            echo "${vlessTcpResult}" | jq . >${configPath}${RealityfrontingType}.json
+        fi
 
-			local vlessGRPCResult
-			vlessGRPCResult=$(jq -r ".inbounds[0].settings.clients += [${vlessGRPCUsers}]" ${configPath}06_VLESS_gRPC_inbounds.json)
-			echo "${vlessGRPCResult}" | jq . >${configPath}06_VLESS_gRPC_inbounds.json
-		fi
+		if echo ${currentInstallProtocolType} | grep -q 8; then
+            local vlessUsers="${users//\,\"alterId\":0/}"
+            local vlessTcpResult
+            vlessTcpResult=$(jq -r ".inbounds[0].settings.clients += [${vlessUsers}]" ${configPath}08_VLESS_reality_h2_inbounds.json)
+            echo "${vlessTcpResult}" | jq . >${configPath}08_VLESS_reality_h2_inbounds.json
+        fi
 
-		if echo ${currentInstallProtocolType} | grep -q 4; then
-			local trojanUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
-			trojanUsers="${trojanUsers//id/password}"
-			trojanUsers="${trojanUsers//\,\"alterId\":0/}"
+    done
 
-			local trojanTCPResult
-			trojanTCPResult=$(jq -r ".inbounds[0].settings.clients += [${trojanUsers}]" ${configPath}04_trojan_TCP_inbounds.json)
-			echo "${trojanTCPResult}" | jq . >${configPath}04_trojan_TCP_inbounds.json
-		fi
-	done
-
-	reloadCore
-	echoContent green " ---> 添加完成"
-	manageAccount 1
+    reloadCore
+    echoContent green " ---> 添加完成"
+    manageAccount 1
 }
 
 # 移除用户
 removeUser() {
 
-	if echo ${currentInstallProtocolType} | grep -q 0; then
-		jq -r -c .inbounds[0].settings.clients[].email ${configPath}${frontingType}.json | awk '{print NR""":"$0}'
-		read -r -p "请选择要删除的用户编号[仅支持单个删除]:" delUserIndex
-		if [[ $(jq -r '.inbounds[0].settings.clients|length' ${configPath}${frontingType}.json) -lt ${delUserIndex} ]]; then
-			echoContent red " ---> 选择错误"
-		else
-			delUserIndex=$((delUserIndex - 1))
+	userIds=$(jq -r -c .inbounds[0].settings.clients[].id ${configPath}${frontingType}.json ${configPath}${RealityfrontingType}.json | sort | uniq)
+	echo "${userIds}" | awk '{print NR""":"$0}'
+	read -r -p "请选择要删除的用户编号[仅支持单个删除]:" delUserIndex
+
+	userIdsArray=("$userIds")
+	
+	if [[ -z ${userIdsArray[$((delUserIndex-1))]} ]]; then
+    	echoContent red " ---> 选择错误"
+	else
+    	userIdToDelete=${userIdsArray[$((delUserIndex-1))]}
+	fi
+	
+	if [[ -n "${delUserIndex}" ]]; then
+		if echo ${currentInstallProtocolType} | grep -q 0; then
 			local vlessTcpResult
-			vlessTcpResult=$(jq -r 'del(.inbounds[0].settings.clients['${delUserIndex}'])' ${configPath}${frontingType}.json)
+			vlessTcpResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}${frontingType}.json)
 			echo "${vlessTcpResult}" | jq . >${configPath}${frontingType}.json
 		fi
-	fi
-	if [[ -n "${delUserIndex}" ]]; then
+		
 		if echo ${currentInstallProtocolType} | grep -q 1; then
 			local vlessWSResult
-			vlessWSResult=$(jq -r 'del(.inbounds[0].settings.clients['"${delUserIndex}"'])' ${configPath}03_VLESS_WS_inbounds.json)
+			vlessWSResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}03_VLESS_WS_inbounds.json)
 			echo "${vlessWSResult}" | jq . >${configPath}03_VLESS_WS_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 2; then
 			local trojangRPCUsers
-			trojangRPCUsers=$(jq -r 'del(.inbounds[0].settings.clients['"${delUserIndex}"'])' ${configPath}04_trojan_gRPC_inbounds.json)
+			trojangRPCUsers=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.password == '"${userIdToDelete}"')))' ${configPath}04_trojan_gRPC_inbounds.json)
 			echo "${trojangRPCUsers}" | jq . >${configPath}04_trojan_gRPC_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 3; then
 			local vmessWSResult
-			vmessWSResult=$(jq -r 'del(.inbounds[0].settings.clients['"${delUserIndex}"'])' ${configPath}05_VMess_WS_inbounds.json)
+			vmessWSResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}05_VMess_WS_inbounds.json)
 			echo "${vmessWSResult}" | jq . >${configPath}05_VMess_WS_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 5; then
 			local vlessGRPCResult
-			vlessGRPCResult=$(jq -r 'del(.inbounds[0].settings.clients['"${delUserIndex}"'])' ${configPath}06_VLESS_gRPC_inbounds.json)
+			vlessGRPCResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}06_VLESS_gRPC_inbounds.json)
 			echo "${vlessGRPCResult}" | jq . >${configPath}06_VLESS_gRPC_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 4; then
 			local trojanTCPResult
-			trojanTCPResult=$(jq -r 'del(.inbounds[0].settings.clients['"${delUserIndex}"'])' ${configPath}04_trojan_TCP_inbounds.json)
+			trojanTCPResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.password == '"${userIdToDelete}"')))' ${configPath}04_trojan_TCP_inbounds.json)
 			echo "${trojanTCPResult}" | jq . >${configPath}04_trojan_TCP_inbounds.json
+		fi
+
+		if echo ${currentInstallProtocolType} | grep -q 7; then
+			local vlessRealitytcpResult
+			vlessRealitytcpResult=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}${RealityfrontingType}.json)
+			echo "${vlessRealitytcpResult}" | jq . >${configPath}${RealityfrontingType}.json
+		fi
+
+		if echo ${currentInstallProtocolType} | grep -q 8; then
+			local vlessRealityh2Result
+			vlessRealityh2Result=$(jq -r '(.inbounds[0].settings.clients|=. - map(select(.id == '"${userIdToDelete}"')))' ${configPath}08_VLESS_Reality_H2_inbounds.json)
+			echo "${vlessRealityh2Result}" | jq . >${configPath}08_VLESS_Reality_H2_inbounds.json
 		fi
 
 		reloadCore
 	fi
 	manageAccount 1
 }
+
 # 更新脚本
 updateXRayAgent() {
 	echoContent skyBlue "\n进度  $1/${totalProgress} : 更新xray-agent脚本"
@@ -2170,7 +2540,7 @@ updateXRayAgent() {
 
 # 查看、检查日志
 checkLog() {
-	if [[ "${coreInstallType}" != "1" ]]; then
+	if [[ -z "${coreInstallType}" ]]; then
 		echoContent red " ---> 没有检测到安装目录，请执行脚本安装内容"
 	fi
 	local logStatus=false
@@ -2243,7 +2613,7 @@ EOF
 }
 
 warpRouting() {
-	if [[ "${coreInstallType}" != "1" ]]; then
+	if [[ -z "${coreInstallType}" ]]; then
 		echoContent red " ---> 未安装，请使用脚本安装"
 		menu
 		exit 0
@@ -2383,7 +2753,7 @@ EOF
 
 # 阻止访问黑名单及中国大陆IP
 blacklist() {
-	if [[ "${coreInstallType}" != "1" ]]; then
+	if [[ -z "${coreInstallType}" ]]; then
 		echoContent red " ---> 未安装，请使用脚本安装"
 		menu
 		exit 0
@@ -2492,26 +2862,20 @@ EOF
 	reloadCore
 }
 
-# 检查ipv6、ipv4
-checkIPv6() {
-	# pingIPv6=$(ping6 -c 1 www.google.com | sed '2{s/[^(]*(//;s/).*//;q;}' | tail -n +2)
+# ipv6 分流
+ipv6Routing() {
+	if [[ -z "${coreInstallType}" ]]; then
+		echoContent red " ---> 未安装，请使用脚本安装"
+		menu
+		exit 0
+	fi
+
 	pingIPv6=$(ping6 -c 1 www.google.com | sed -n '1p' | sed 's/.*(//g;s/).*//g')
 
 	if [[ -z "${pingIPv6}" ]]; then
 		echoContent red " ---> 不支持ipv6"
 		exit 0
 	fi
-}
-
-# ipv6 分流
-ipv6Routing() {
-	if [[ "${coreInstallType}" != "1" ]]; then
-		echoContent red " ---> 未安装，请使用脚本安装"
-		menu
-		exit 0
-	fi
-
-	checkIPv6
 	
 	echoContent skyBlue "\n功能 1/${totalProgress} : IPv6分流"
 	echoContent red "\n=============================================================="
@@ -2660,7 +3024,7 @@ unInstallOutbounds() {
 }
 
 manageSniffing() {
-	if [[ "${coreInstallType}" != "1" ]]; then
+	if [[ -z "${coreInstallType}" ]]; then
 		echoContent red " ---> 未安装，请使用脚本安装"
 		menu
 		exit 0
@@ -2717,6 +3081,7 @@ reloadCore() {
 
 # xray-core 安装
 xrayCoreInstall() {
+
 	totalProgress=11
 	installTools 1
 	# 申请tls
@@ -2744,6 +3109,31 @@ xrayCoreInstall() {
 	showAccounts 11
 }
 
+# xray-core 安装
+xrayCoreInstall_Reality() {
+
+	totalProgress=7
+	installTools 1
+
+	handleXray stop
+	# 安装Xray
+	installXray 2
+	installXrayService 3
+
+	initTLSRealityConfig 4
+
+	initXrayRealityConfig 5
+	
+	handleXray stop
+	sleep 2
+	handleXray start
+
+	auto_update_geodata
+	# 生成账号
+	checkGFWStatue 6
+	showAccounts 7
+}
+
 # 定时任务检查证书
 cronRenewTLS() {
 	if [[ "${renewTLS}" == "RenewTLS" ]]; then
@@ -2753,7 +3143,7 @@ cronRenewTLS() {
 }
 # 账号管理
 manageAccount() {
-	if [[ "${coreInstallType}" != "1" ]]; then
+	if [[ -z "${coreInstallType}" ]]; then
 		echoContent red " ---> 未安装，请使用脚本安装"
 		menu
 		exit 0
@@ -2762,57 +3152,18 @@ manageAccount() {
 	echoContent red "\n=============================================================="
 	echoContent yellow "# 每次删除、添加账号后，需要重新查看订阅生成订阅\n"
 	echoContent yellow "1.查看账号"
-	echoContent yellow "2.查看订阅"
 	echoContent yellow "3.添加用户"
 	echoContent yellow "4.删除用户"
 	echoContent red "=============================================================="
 	read -r -p "请输入:" manageAccountStatus
 	if [[ "${manageAccountStatus}" == "1" ]]; then
 		showAccounts 1
-	elif [[ "${manageAccountStatus}" == "2" ]]; then
-		subscribe 1
 	elif [[ "${manageAccountStatus}" == "3" ]]; then
 		addUser
 	elif [[ "${manageAccountStatus}" == "4" ]]; then
 		removeUser
 	else
 		echoContent red " ---> 选择错误"
-	fi
-}
-
-# 订阅
-subscribe() {
-	if [[ "${coreInstallType}" == "1" ]]; then
-		echoContent skyBlue "-------------------------备注---------------------------------"
-		echoContent yellow "# 查看订阅时会重新生成订阅"
-		echoContent yellow "# 每次添加、删除账号需要重新查看订阅"
-		rm -rf /etc/xray-agent/subscribe/*
-		rm -rf /etc/xray-agent/subscribe_tmp/*
-		showAccounts >/dev/null
-		mv /etc/xray-agent/subscribe_tmp/* /etc/xray-agent/subscribe/
-
-		if [[ -n $(ls /etc/xray-agent/subscribe/) ]]; then
-			find /etc/xray-agent/subscribe/* | while read -r email; do
-				email=$(echo "${email}" | awk -F "[b][e][/]" '{print $2}')
-
-				local base64Result
-				base64Result=$(base64 -w 0 "/etc/xray-agent/subscribe/${email}")
-				echo "${base64Result}" >"/etc/xray-agent/subscribe/${email}"
-				echoContent skyBlue "--------------------------------------------------------------"
-				echoContent yellow "email:${email}\n"
-				local currentDomain=${domain}
-
-				if [[ -n "${Port}" && "${Port}" != "443" ]]; then
-					currentDomain="${domain}:${Port}"
-				fi
-
-				echoContent yellow "url:https://${currentDomain}/s/${email}\n"
-				echo "https://${currentDomain}/s/${email}" | qrencode -s 10 -m 1 -t UTF8
-				echoContent skyBlue "--------------------------------------------------------------"
-			done
-		fi
-	else
-		echoContent red " ---> 未安装"
 	fi
 }
 
@@ -2830,7 +3181,7 @@ unInstall() {
 		echoContent green " ---> 停止Nginx成功"
 	fi
 
-	if [[ "${coreInstallType}" == "1" ]]; then
+	if [[ -n "${coreInstallType}" ]]; then
 		handleXray stop
 		rm -rf /etc/systemd/system/xray.service
 		echoContent green " ---> 删除Xray开机自启完成"
@@ -2939,31 +3290,36 @@ menu() {
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
 	echoContent red "\n=============================================================="
-	if [[ "${coreInstallType}" == "1" ]]; then
-		echoContent yellow "1.重新安装"
+	if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]] ; then
+		echoContent yellow "1.重新安装TLS+Vison"
 	else
-		echoContent yellow "1.安装"
+		echoContent yellow "1.安装TLS+Vison"
+	fi
+	if [[ "${coreInstallType}" == "2" ]] || [[ "${coreInstallType}" == "3" ]] ; then
+		echoContent yellow "2.重新安装Reality+Vison"
+	else
+		echoContent yellow "2.安装Reality+Vison"
 	fi
 	echoContent skyBlue "-------------------------工具管理-----------------------------"
-	echoContent yellow "2.账号管理"
-	echoContent yellow "3.更换伪装站"
-	echoContent yellow "4.更新证书"
-	echoContent yellow "5.IPv6分流"
-	echoContent yellow "6.阻止访问黑名单及中国大陆IP"
-	echoContent yellow "7.WARP分流及中国大陆域名+IP"
-	echoContent yellow "8.添加新端口"
-	echoContent yellow "9.流量嗅探管理"
+	echoContent yellow "3.账号管理"
+	echoContent yellow "4.更换伪装站"
+	echoContent yellow "5.更新证书"
+	echoContent yellow "6.IPv6分流"
+	echoContent yellow "7.阻止访问黑名单及中国大陆IP"
+	echoContent yellow "8.WARP分流及中国大陆域名+IP"
+	echoContent yellow "9.添加新端口"
+	echoContent yellow "10.流量嗅探管理"
 	echoContent skyBlue "-------------------------版本管理-----------------------------"
-	echoContent yellow "10.core管理"
-	echoContent yellow "11.更新脚本"
+	echoContent yellow "11.core管理"
+	echoContent yellow "12.更新脚本"
 	echoContent skyBlue "-------------------------脚本管理-----------------------------"
-	echoContent yellow "12.查看日志"
-	echoContent yellow "13.卸载脚本"
+	echoContent yellow "13.查看日志"
+	echoContent yellow "14.卸载脚本"
 	echoContent skyBlue "-------------------------其他功能-----------------------------"
-	echoContent yellow "14.Adguardhome"
-	echoContent yellow "15.WARP"
-	echoContent yellow "16.内核管理及BBR优化"
-	echoContent yellow "17.Hysteria一键"
+	echoContent yellow "15.Adguardhome"
+	echoContent yellow "16.WARP"
+	echoContent yellow "17.内核管理及BBR优化"
+	echoContent yellow "18.Hysteria一键"
 	echoContent red "=============================================================="
 	mkdirTools
 	aliasInstall
@@ -2973,51 +3329,54 @@ menu() {
 		xrayCoreInstall
 		;;
 	2)
-		manageAccount 1
+		xrayCoreInstall_Reality
 		;;
 	3)
-		updateNginxBlog 1
+		manageAccount 1
 		;;
 	4)
-		renewalTLS 1
+		updateNginxBlog 1
 		;;
 	5)
-		ipv6Routing 1
+		renewalTLS 1
 		;;
 	6)
-		blacklist 1
+		ipv6Routing 1
 		;;
 	7)
-		warpRouting 1
+		blacklist 1
 		;;
 	8)
-		addCorePort 1
+		warpRouting 1
 		;;
 	9)
-		manageSniffing 1
+		addCorePort 1
 		;;
 	10)
-		xrayVersionManageMenu 1
+		manageSniffing 1
 		;;
 	11)
-		updateXRayAgent 1
+		xrayVersionManageMenu 1
 		;;
 	12)
-		checkLog 1
+		updateXRayAgent 1
 		;;
 	13)
-		unInstall 1
+		checkLog 1
 		;;
 	14)
-		AdguardManageMenu 1
+		unInstall 1
 		;;
 	15)
-		wget -N https://raw.githubusercontent.com/suysker/warp/main/warp-go.sh && bash warp-go.sh
+		AdguardManageMenu 1
 		;;
 	16)
-		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
+		wget -N https://raw.githubusercontent.com/fscarmen/warp/main/warp-go.sh && bash warp-go.sh
 		;;
 	17)
+		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
+		;;
+	18)
 		bash <(curl -fsSL https://git.io/hysteria.sh)
 		;;
 	esac
