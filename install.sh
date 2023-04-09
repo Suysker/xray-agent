@@ -822,7 +822,7 @@ acmeInstallSSL() {
 
 		echoContent green " ---> 生成证书中"
 	
-		eval "${dnsEnvVars}" sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns "${dnsType}" -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+		eval "${dnsEnvVars}" sudo -E "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns "${dnsType}" -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
 
 	elif [[ "${installSSLType}" == "2" ]]; then
 		sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
