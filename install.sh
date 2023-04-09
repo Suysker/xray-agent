@@ -675,7 +675,7 @@ initTLSRealityConfig() {
 	fi
 
 	if [[ -z "${RealityServerNames}" ]]; then
-        RealityServerNames="$(echo "${RealityDestDomain}" | awk -F: '{print $1}')"
+        RealityServerNames="\"$(echo "${RealityDestDomain}" | awk -F: '{print $1}')\""
     else
         RealityServerNames=\"${RealityServerNames//,/\",\"}\"
     fi
@@ -1356,8 +1356,7 @@ cat <<EOF >${configPath}08_VLESS_Reality_h2_inbounds.json
 EOF
 
 	if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
-		echoContent yellow "是否保留路由和分流规则？[y/n] "
-		read -r -p '是否保留路由和分流规则:' keepconfigstatus
+		read -r -p "是否保留路由和分流规则 ？[y/n]:" keepconfigstatus
 	fi
 
 	if [[ "${keepconfigstatus}" == "n" ]]; then
@@ -1458,8 +1457,7 @@ initXrayConfig() {
 	echoContent yellow "\n ${UUID}"
 
 	if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
-		echoContent yellow "是否保留路由和分流规则？[y/n] "
-		read -r -p 'keepconfigstatus:' keepconfigstatus
+		read -r -p "是否保留路由和分流规则 ？[y/n]:" keepconfigstatus
 	fi
 
 	if [[ "${keepconfigstatus}" == "n" ]]; then
@@ -1792,7 +1790,7 @@ server {
 	listen 127.0.0.1:31302 http2 so_keepalive=on;
 	server_name ${domain};
 
-	client_header_timeout 1071906480m;
+    client_header_timeout 1071906480m;
     keepalive_timeout 1071906480m;
 
     location /${path}grpc {
@@ -3428,7 +3426,7 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
-	echoContent green "当前版本:v2.7.0"
+	echoContent green "当前版本:v2.9.0"
 	echoContent green "Github:https://github.com/mack-a/xray-agent"
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
