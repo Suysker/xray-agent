@@ -2681,7 +2681,7 @@ checkLog() {
 }
 EOF
 			if [[ "${coreInstallType}" == "2" ]] || [[ "${coreInstallType}" == "3" ]]; then
-				sed -i 's/"show": false/"show": true/' "${configfile}${RealityfrontingType}.json"
+				sed -i 's/"show": false/"show": true/' "${configPath}${RealityfrontingType}.json"
 			fi
 		elif [[ "${logStatus}" == "true" ]]; then
 			cat <<EOF >${configPath}00_log.json
@@ -2693,7 +2693,7 @@ EOF
 }
 EOF
 			if [[ "${coreInstallType}" == "2" ]] || [[ "${coreInstallType}" == "3" ]]; then
-				sed -i 's/"show": true/"show": false/' "${configfile}${RealityfrontingType}.json"
+				sed -i 's/"show": true/"show": false/' "${configPath}${RealityfrontingType}.json"
 			fi
 		fi
 
