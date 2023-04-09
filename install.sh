@@ -255,7 +255,7 @@ readConfigHostPathUUID() {
 	if [[ -f "${configPath}${RealityfrontingType}.json" ]]; then
 		#RealityUUID=$(jq -r .inbounds[0].settings.clients[0].id ${configPath}${RealityfrontingType}.json)
 		RealityUUID=$(jq -r '.inbounds[0].settings.clients[] | .id' ${configPath}${RealityfrontingType}.json | paste -sd, -)
-		RealityServerNames=$(jq -r .inbounds[0].streamSettings.realitySettings.serverNames[0] ${configPath}${RealityfrontingType}.json)
+		RealityServerNames=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames | join(",")' ${configPath}${RealityfrontingType}.json)
         RealityPublicKey=$(jq -r .inbounds[0].streamSettings.realitySettings.publicKey ${configPath}${RealityfrontingType}.json)
         RealityPort=$(jq -r .inbounds[0].port ${configPath}${RealityfrontingType}.json)
 		RealityDestDomain=$(jq -r .inbounds[0].streamSettings.realitySettings.dest ${configPath}${RealityfrontingType}.json)
@@ -323,7 +323,6 @@ mkdirTools() {
 	mkdir -p /etc/xray-agent/tls
 	mkdir -p /etc/xray-agent/xray/conf
 	mkdir -p /etc/systemd/system/
-	mkdir -p /tmp/xray-agent-tls/
 }
 
 # 脚本快捷方式
@@ -619,7 +618,9 @@ customPortFunction() {
 	fi
 
 	#删除其他自定义端口
-	#rm -rf "$(find ${configPath}* | grep "dokodemodoor")"
+	if [[ "${historyCustomPortStatus}" == "n" ]] && [[ "$1" == "Vision" ]]; then
+		rm -rf "$(find ${configPath}* | grep "dokodemodoor")"
+	fi
 
 }
 # 检测端口是否占用
@@ -660,11 +661,19 @@ initTLSRealityConfig() {
 
     echoContent skyBlue "\n >配置客户端可用的serverNames\n"
     echoContent red "\n=============================================================="
-    echoContent yellow " # 注意事项\n"
-    echoContent yellow "录入示例:addons.mozilla.org,services.addons.mozilla.org\n"
-	echoContent yellow " # 支持逗号输入多个域名,但不支持通配符\n"
-    read -r -p "请输入:" RealityServerNames
-    
+
+	if [[ "${historyDestStatus}" == "y" ]]; then
+		echoContent green "\n ---> 使用成功"
+	else
+		echoContent yellow " # 注意事项\n"
+		tlsPingResult=$(${ctlPath} tls ping "$(echo "${RealityDestDomain}" | awk -F: '{print $1}')")
+		echoContent yellow "\n ---> 可以输入的域名: ${tlsPingResult}\n"
+		echoContent red "\n=============================================================="
+		echoContent yellow "录入示例:addons.mozilla.org,services.addons.mozilla.org\n"
+		echoContent yellow " # 支持逗号输入多个域名,但不支持通配符\n"
+		read -r -p "请输入:" RealityServerNames
+	fi
+
 	if [[ -z "${RealityServerNames}" ]]; then
         RealityServerNames="$(echo "${RealityDestDomain}" | awk -F: '{print $1}')"
     else
@@ -816,7 +825,7 @@ acmeInstallSSL() {
 		eval "${dnsEnvVars}" sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns "${dnsType}" -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
 
 	elif [[ "${installSSLType}" == "2" ]]; then
-		sudo "$HOME/.acme.sh/acme.sh" --issue -d "*.${TLSDomain}" -d "${TLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+		sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
 
         local txtValue=
         txtValue=$(tail -n 10 /etc/xray-agent/tls/acme.log | grep "TXT value" | awk -F "'" '{print $2}')
@@ -835,7 +844,7 @@ acmeInstallSSL() {
                 if echo "${txtAnswer}" | grep -q "^${txtValue}"; then
                     echoContent green " ---> TXT记录验证通过"
                     echoContent green " ---> 生成证书中"
-                    sudo "$HOME/.acme.sh/acme.sh" --renew -d "*.${TLSDomain}" -d "${TLSDomain}" --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+                    sudo "$HOME/.acme.sh/acme.sh" --renew -d "${TLSDomain}" -d "*.${TLSDomain}" --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
                 else
                     echoContent red " ---> 验证失败，请等待1-2分钟后重新尝试"
                     acmeInstallSSL
@@ -1022,12 +1031,12 @@ updateTLSCertificate() {
 		((remainingDays = sslRenewalDays - days))
 
 		if [[ ${remainingDays} -le 0 ]]; then
-			echoContent red " ---> 证书未过期，是否强制更新"
+			echoContent red " ---> 证书未过期，是否强制更新${TLSDomain}"
 			tlsStatus="已过期"
 		else
 			tlsStatus=${remainingDays}
 		fi
-
+		echoContent skyBlue " --->${TLSDomain}"
 		echoContent skyBlue " ---> 证书检查日期:$(date "+%F %H:%M:%S")"
 		echoContent skyBlue " ---> 证书生成日期:$(date -d @"${modifyTime}" +"%F %H:%M:%S")"
 		echoContent skyBlue " ---> 证书生成天数:${days}"
@@ -1035,14 +1044,14 @@ updateTLSCertificate() {
 		echoContent skyBlue " ---> 证书过期前最后14天内自动更新，如更新失败请手动更新"
 
 		if [[ ${remainingDays} -le 14 ]]; then
-			echoContent yellow " ---> 重新生成证书"
+			echoContent yellow " ---> 重新生成证书${TLSDomain}"
 			handleNginx stop
 			sudo "$HOME/.acme.sh/acme.sh" --cron --home "$HOME/.acme.sh" -d "${TLSDomain}"
 			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath /etc/xray-agent/tls/"${TLSDomain}.crt" --keypath /etc/xray-agent/tls/"${TLSDomain}.key" --ecc
 			reloadCore
 			handleNginx start
 		else
-			echoContent green " ---> 证书有效"
+			echoContent green " ---> 证书有效${TLSDomain}"
 		fi
 	else
 		echoContent red " ---> 未安装"
@@ -1153,7 +1162,7 @@ EOF
 	fi
 }
 
-# 创建一个新的函数，用于根据协议类型生成clients
+# 根据协议类型生成clients
 generate_clients() {
   local protocol="$1"
   local uuid_list_string="$2"
@@ -1348,7 +1357,7 @@ EOF
 
 	if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
 		echoContent yellow "是否保留路由和分流规则？[y/n] "
-		read -r -p 'keepconfigstatus:' keepconfigstatus
+		read -r -p '是否保留路由和分流规则:' keepconfigstatus
 	fi
 
 	if [[ "${keepconfigstatus}" == "n" ]]; then
@@ -1890,25 +1899,24 @@ defaultBase64Code() {
 
 	if [[ "${type}" == "vlesstcp" ]]; then
 		echoContent yellow " ---> 通用格式(VLESS+TCP+TLS/xtls-rprx-vision)"
-		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=tcp&host=${domain}&headerType=none&sni=${domain}&flow=xtls-rprx-vision#${id}\n"
+		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
 
 		echoContent yellow " ---> 格式化明文(VLESS+TCP+TLS/xtls-rprx-vision)"
 		echoContent green "协议类型:VLESS，地址:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:tcp，flow:xtls-rprx-vision，账户名:${id}\n"
 
 	elif [[ "${type}" == "vmessws" ]]; then
-		qrCodeBase64Default=$(echo -n "{\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}" | base64 -w 0)
-		qrCodeBase64Default="${qrCodeBase64Default// /}"
+        qrCodeBase64Default=$(echo -n "{\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\",\"alpn\":\"h2,http/1.1\",\"fp\":\"chrome\"}" | base64 -w 0)
+        qrCodeBase64Default="${qrCodeBase64Default// /}"
 
-		echoContent yellow " ---> 通用json(VMess+WS+TLS)"
-		echoContent green "    {\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\"}\n"
-		echoContent yellow " ---> 通用vmess(VMess+WS+TLS)链接"
+        echoContent yellow " ---> 通用json(VMess+WS+TLS)"
+        echoContent green "    {\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\",\"alpn\":\"h2,http/1.1\",\"fp\":\"chrome\"}\n"
 		echoContent green "    vmess://${qrCodeBase64Default}\n"
 
 
 	elif [[ "${type}" == "vlessws" ]]; then
 
 		echoContent yellow " ---> 通用格式(VLESS+WS+TLS)"
-		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=ws&host=${domain}&sni=${domain}&path=/${path}ws#${id}\n"
+		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=ws&host=${domain}&path=%2F${path}ws#${id}\n"
 
 		echoContent yellow " ---> 格式化明文(VLESS+WS+TLS)"
 		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:ws，路径:/${path}ws，账户名:${id}\n"
@@ -1917,7 +1925,7 @@ defaultBase64Code() {
 	elif [[ "${type}" == "vlessgrpc" ]]; then
 
 		echoContent yellow " ---> 通用格式(VLESS+gRPC+TLS)"
-		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&type=grpc&host=${domain}&path=${path}grpc&serviceName=${path}grpc&alpn=h2&sni=${domain}#${id}\n"
+		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&sni=${domain}&alpn=h2&fp=chrome&type=grpc&serviceName=${path}grpc#${id}\n"
 
 		echoContent yellow " ---> 格式化明文(VLESS+gRPC+TLS)"
 		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:gRPC，alpn:h2，serviceName:${path}grpc，账户名:${id}\n"
@@ -1925,24 +1933,24 @@ defaultBase64Code() {
 	elif [[ "${type}" == "trojan" ]]; then
 		# URLEncode
 		echoContent yellow " ---> Trojan(TLS)"
-		echoContent green "    trojan://${id}@${domain}:${Port}?peer=${domain}&sni=${domain}&alpn=http/1.1#${domain}_Trojan\n"
+		echoContent green "    trojan://${id}@${domain}:${Port}?security=tls&sni=${domain}&alpn=http%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
 
 	elif [[ "${type}" == "trojangrpc" ]]; then
 		# URLEncode
 
 		echoContent yellow " ---> Trojan gRPC(TLS)"
-		echoContent green "    trojan://${id}@${domain}:${Port}?encryption=none&peer=${domain}&security=tls&type=grpc&sni=${domain}&alpn=h2&path=${path}trojangrpc&serviceName=${path}trojangrpc#${id}\n"
+		echoContent green "    trojan://${id}@${domain}:${Port}?security=tls&sni=${domain}&alpn=h2&fp=chrome&type=grpc&serviceName=${path}trojangrpc&mode=gun#${id}\n"
 	
     elif [[ "${type}" == "vlesstcpreality" ]]; then
         echoContent yellow " ---> 通用格式(VLESS+tcp+reality)"
-        echoContent green "    vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&security=reality&type=tcp&sni=${RealityServerNames}&fp=chrome&pbk=${RealityPublicKey}&flow=xtls-rprx-vision#${id}\n"
+        echoContent green "    vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&security=reality&type=tcp&sni=$(echo "${RealityServerNames}" | cut -d ',' -f 1)&fp=chrome&pbk=${RealityPublicKey}&flow=xtls-rprx-vision#${id}\n"
 
         echoContent yellow " ---> 格式化明文(VLESS+tcp+reality)"
         echoContent green "协议类型:VLESS reality，地址:$(getPublicIP)，publicKey:${RealityPublicKey}，serverNames：${RealityServerNames}，端口:${RealityPort}，用户ID:${id}，传输方式:tcp，账户名:${id}\n"
 
     elif [[ "${type}" == "vlessh2reality" ]]; then
         echoContent yellow " ---> 通用格式(VLESS+h2+reality)"
-        echoContent green "    vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&security=reality&type=h2&sni=${RealityServerNames}&fp=chrome&pbk=${RealityPublicKey}#${id}\n"
+        echoContent green "    vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&security=reality&type=h2&sni=$(echo "${RealityServerNames}" | cut -d ',' -f 1)&fp=chrome&pbk=${RealityPublicKey}#${id}\n"
 
         echoContent yellow " ---> 格式化明文(VLESS+h2+reality)"
         echoContent green "协议类型:VLESS reality，serviceName:grpc，地址:$(getPublicIP)，publicKey:${RealityPublicKey}，serverNames：${RealityServerNames}，端口:${RealityPort}，用户ID:${id}，传输方式:h2，client-fingerprint：chrome，账户名:${id}\n"
@@ -1989,7 +1997,6 @@ showAccounts() {
 
 		if echo ${currentInstallProtocolType} | grep -q 2; then
 			echoContent skyBlue "\n================================  Trojan gRPC TLS  ================================\n"
-			echoContent red "\n --->gRPC处于测试阶段，可能对你使用的客户端不兼容，如不能使用请忽略"
 				jq .inbounds[0].settings.clients ${configPath}04_trojan_gRPC_inbounds.json | jq -c '.[]' | while read -r user; do
 					local uuid=
 					uuid=$(echo "${user}" | jq -r .password)
@@ -2051,7 +2058,7 @@ showAccounts() {
 
 		# VLESS reality h2
 		if echo ${currentInstallProtocolType} | grep -q 8; then
-			echoContent skyBlue "\n=============================== VLESS TCP Reality ===============================\n"
+			echoContent skyBlue "\n=============================== VLESS H2 Reality ===============================\n"
 			jq .inbounds[0].settings.clients ${configPath}08_VLESS_Reality_h2_inbounds.json | jq -c '.[]' | while read -r user; do
 				local uuid=
 				uuid=$(echo "${user}" | jq -r .id)
@@ -2306,6 +2313,7 @@ addCorePort() {
 		exit 0
 	fi
 	echoContent skyBlue "\n功能 1/${totalProgress} : 添加新端口"
+	echoContent yellow "# 只给TLS+VISION添加新端口，永远不会支持Reality(Reality只建议用443)\n"
 	echoContent red "\n=============================================================="
 	echoContent yellow "# 注意事项\n"
 	echoContent yellow "支持批量添加"
