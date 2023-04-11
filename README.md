@@ -1,10 +1,10 @@
 # 目录
 
-# 1.八合一共存脚本+伪装站点
+# 1.N合一共存脚本
 ## 特性
 - 只支持[Xray-core[XTLS]](https://github.com/XTLS/Xray-core)
-- 支持VLESS[VLESS XTLS]
-- 支持 VLESS/VMess/trojan 协议
+- 支持VLESS[VLESS TLS/REALITY VISION]
+- 兼容 VLESS/VMess/trojan 协议
 - 支持Debian、Ubuntu、Centos系统，支持主流的cpu架构。
 - 支持任意组合安装、支持多用户管理、支持添加多端口、
 - 支持卸载后保留tls证书
@@ -12,11 +12,12 @@
 - 支持日志管理、域名黑名单管理、核心管理、伪装站点管理
 - **支持XTLS-RPRX-VISION一键安装**
 - **支持将CNIP分流至WARP或者直接阻止**
-- **TLS证书申请方式：仅支持ACME以API的方式申请泛域名证书【XRAY前置可进行SNI分流】**
+- **TLS证书申请方式：支持ACME以API的方式申请泛域名证书、DNS申请、80端口申请**
 
 ## 支持的安装类型
-
-- VLESS+TCP+xtls-rprx-vision【**⭐推荐⭐**】
+- VLESS+Reality+xtls-rprx-vision【**⭐推荐⭐**】
+- VLESS+Reality+H2【支持0-rtt】
+- VLESS+TCP+xtls-rprx-vision【**推荐**】
 - VLESS+TCP+TLS
 - VLESS+gRPC+TLS【支持CDN、延迟低】
 - VLESS+WS+TLS【支持CDN】
