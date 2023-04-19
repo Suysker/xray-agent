@@ -166,6 +166,9 @@ checkCPUVendor() {
 
 # 检测xray是否完成安装
 readInstallType() {
+
+	coreInstallType=
+
 	# 1.检测安装目录
 	if [[ -d "/etc/xray-agent" ]]; then
 		if [[ -d "/etc/xray-agent/xray" && -f "${ctlPath}" ]]; then
@@ -1376,8 +1379,8 @@ EOF
   "policy": {
     "levels": {
       "0": {
-        "handshake": 3,
-        "connIdle": 360,
+        "handshake": $((RANDOM % 4 + 2)),
+        "connIdle": $(((RANDOM % 11) * 30 + 300)),
 		"bufferSize": 1024
       }
     }
@@ -2144,6 +2147,12 @@ updateXray() {
 		fi
 
 		unzip -o "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip" -d /etc/xray-agent/xray >/dev/null
+		
+		if [ ! -f "/etc/xray-agent/xray/xray" ]; then
+			echoContent red "下载或解压新版本Xray失败，请重试"
+			return 1
+		fi
+
 		rm -rf "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip"
 		chmod 655 ${ctlPath}
 		handleXray stop
@@ -3426,7 +3435,7 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
-	echoContent green "当前版本:v2.9.0"
+	echoContent green "当前版本:v2.9.1"
 	echoContent green "Github:https://github.com/mack-a/xray-agent"
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
