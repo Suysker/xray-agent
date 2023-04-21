@@ -3476,17 +3476,23 @@ AdguardManageMenu() {
 	if [[ -d "/opt/AdGuardHome/" ]]; then
 		if systemctl is-active --quiet AdGuardHome; then
 
-			sudo cp /etc/resolv.conf /etc/resolv.conf.bak
+			echoContent green " ---> Adguardhome运行中"	
 
         	current_dns=$(grep -oP '(?<=nameserver ).*' /etc/resolv.conf)
 			if [[ "$current_dns" != "127.0.0.1" ]]; then
+				sudo cp /etc/resolv.conf /etc/resolv.conf.bak
 				echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf
 			fi
+			echoContent green " ---> Aguardhome设置为DNS服务器成功"
 		else
+		
+			echoContent green " ---> Adguardhome未运行"	
+
 			current_dns=$(grep -oP '(?<=nameserver ).*' /etc/resolv.conf)
 			if [[ "$current_dns" == "127.0.0.1" ]]; then
 				sudo mv /etc/resolv.conf.bak /etc/resolv.conf
 			fi
+			echoContent green " ---> 复原DNS服务器成功"
     	fi
 	fi
 
@@ -3497,7 +3503,7 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
-	echoContent green "当前版本:v2.9.1"
+	echoContent green "当前版本:v2.9.2"
 	echoContent green "Github:https://github.com/mack-a/xray-agent"
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
