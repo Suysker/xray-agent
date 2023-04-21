@@ -91,10 +91,10 @@ initVar() {
 	# Reality
 	RealityUUID=
 	RealityfrontingType=
-    RealityPrivateKey=
+	RealityPrivateKey=
 	RealityPublicKey=
-    RealityServerNames=
-    RealityDestDomain=
+	RealityServerNames=
+	RealityDestDomain=
 	RealityPort=
 }
 
@@ -190,6 +190,8 @@ readInstallType() {
 # 读取协议类型
 readInstallProtocolType() {
 	currentInstallProtocolType=
+	frontingType=
+	RealityfrontingType=
 
 		while read -r row; do
 			if echo "${row}" | grep -q VLESS_TCP_inbounds; then
@@ -259,8 +261,8 @@ readConfigHostPathUUID() {
 		#RealityUUID=$(jq -r .inbounds[0].settings.clients[0].id ${configPath}${RealityfrontingType}.json)
 		RealityUUID=$(jq -r '.inbounds[0].settings.clients[] | .id' ${configPath}${RealityfrontingType}.json | paste -sd, -)
 		RealityServerNames=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames | join(",")' ${configPath}${RealityfrontingType}.json)
-        RealityPublicKey=$(jq -r .inbounds[0].streamSettings.realitySettings.publicKey ${configPath}${RealityfrontingType}.json)
-        RealityPort=$(jq -r .inbounds[0].port ${configPath}${RealityfrontingType}.json)
+		RealityPublicKey=$(jq -r .inbounds[0].streamSettings.realitySettings.publicKey ${configPath}${RealityfrontingType}.json)
+		RealityPort=$(jq -r .inbounds[0].port ${configPath}${RealityfrontingType}.json)
 		RealityDestDomain=$(jq -r .inbounds[0].streamSettings.realitySettings.dest ${configPath}${RealityfrontingType}.json)
 		RealityPrivateKey=$(jq -r .inbounds[0].streamSettings.realitySettings.privateKey ${configPath}${RealityfrontingType}.json)
 	fi
@@ -1297,6 +1299,9 @@ initXrayRealityConfig() {
       },
       "streamSettings": {
         "network": "tcp",
+        "tcpSettings": {
+          "acceptProxyProtocol": false
+        },
         "security": "reality",
         "realitySettings": {
             "show": false,
@@ -1481,8 +1486,8 @@ EOF
   "policy": {
     "levels": {
       "0": {
-        "handshake": 3,
-        "connIdle": 360,
+        "handshake": $((RANDOM % 4 + 2)),
+        "connIdle": $(((RANDOM % 11) * 30 + 300)),
 		"bufferSize": 1024
       }
     }
@@ -1735,6 +1740,9 @@ EOF
   },
   "streamSettings": {
     "network": "tcp",
+    "tcpSettings": {
+      "acceptProxyProtocol": false
+    },
     "security": "tls",
     "tlsSettings": {
       "rejectUnknownSni": true,
@@ -3349,6 +3357,11 @@ unInstall() {
 		echoContent green " ---> 删除Xray开机自启完成"
 	fi
 
+	#删除更新geoip和geosite
+	crontab -l | grep -v 'auto_update_geodata.sh' | crontab -
+	#删除自动更新证书
+	crontab -l | grep -v 'install.sh RenewTLS' | crontab -
+
 	rm -rf /etc/xray-agent
 	rm -rf ${nginxConfigPath}alone.conf
 
@@ -3470,6 +3483,10 @@ menu() {
 	echoContent yellow "16.WARP"
 	echoContent yellow "17.内核管理及BBR优化"
 	echoContent yellow "18.Hysteria一键"
+	echoContent yellow "19.五网测速+IPV6"
+	echoContent yellow "20.三网回程路由测试"
+	echoContent yellow "21.流媒体解锁检测"
+	echoContent yellow "22.VPS基本信息"
 	echoContent red "=============================================================="
 	mkdirTools
 	aliasInstall
@@ -3528,6 +3545,18 @@ menu() {
 		;;
 	18)
 		bash <(curl -fsSL https://git.io/hysteria.sh)
+		;;
+	19)
+		bash <(curl -Lso- https://bench.im/hyperspeed)
+		;;
+	20)
+		bash <(curl https://raw.githubusercontent.com/zhanghanyun/backtrace/main/install.sh -sSf)
+		;;
+	21)
+		bash <(curl -L -s check.unlock.media) 
+		;;
+	22)
+		wget -q https://github.com/Aniverse/A/raw/i/a && bash a
 		;;
 	esac
 }
