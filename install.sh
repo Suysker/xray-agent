@@ -3371,6 +3371,26 @@ unInstall() {
 	echoContent green " ---> 卸载xray-agent脚本完成"
 }
 
+manage_systemd_resolved() {
+	if [[ "$1" == "close" ]]; then
+		if systemctl is-active --quiet systemd-resolved; then
+        	systemctl stop systemd-resolved
+    	fi
+
+    	if systemctl is-enabled --quiet systemd-resolved; then
+        	systemctl disable systemd-resolved
+    	fi
+	elif [[ "$1" == "open" ]]; then
+	    if ! systemctl is-active --quiet systemd-resolved; then
+        	systemctl start systemd-resolved
+    	fi
+
+    	if ! systemctl is-enabled --quiet systemd-resolved; then
+        	systemctl enable systemd-resolved
+    	fi
+	fi
+}
+
 # Adguardhome管理
 AdguardManageMenu() {
 	echoContent skyBlue "\nAdguardhome管理"
@@ -3398,15 +3418,19 @@ AdguardManageMenu() {
 		fi
 		#官方的安装脚本
 		curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
-		#解除53端口占用
-		systemctl stop systemd-resolved
-		systemctl disable systemd-resolved
+
 	fi
 
 	if [[ ! -d "/opt/AdGuardHome/" ]]; then
 		echoContent red " ---> 没有检测到安装目录，请执行脚本安装内容"
 		menu
 		exit 0
+	else
+		#解除53端口占用
+		manage_systemd_resolved "close"
+
+		systemctl start AdGuardHome
+		systemctl enable AdGuardHome
 	fi
 
 	if [[ "${selectADGType}" == "2" ]]; then
@@ -3420,25 +3444,50 @@ AdguardManageMenu() {
 		#将最新版复制到安装目录
 		cp /tmp/AdGuardHome/AdGuardHome /opt/AdGuardHome/AdGuardHome
 		#开始运行
+		manage_systemd_resolved "close"
+		
 		systemctl start AdGuardHome
+		systemctl enable AdGuardHome
 
 	elif [[ "${selectADGType}" == "3" ]]; then
 		/opt/AdGuardHome/AdGuardHome -s uninstall
 		rm -rf /opt/AdGuardHome
-		systemctl start systemd-resolved
-		systemctl enable systemd-resolved
+
+		manage_systemd_resolved "open"
 	elif [[ "${selectADGType}" == "4" ]]; then
 		systemctl stop AdGuardHome
-		systemctl start systemd-resolved
-		systemctl enable systemd-resolved
+		systemctl disable AdGuardHome
+
+		manage_systemd_resolved "open"
 	elif [[ "${selectADGType}" == "5" ]]; then
-		systemctl stop systemd-resolved
-		systemctl disable systemd-resolved
+		manage_systemd_resolved "close"
+
 		systemctl start AdGuardHome
+		systemctl enable AdGuardHome
 	elif [[ "${selectADGType}" == "6" ]]; then
-		systemctl stop systemd-resolved
-		systemctl disable systemd-resolved
+		manage_systemd_resolved "close"
+
 		systemctl restart AdGuardHome
+		systemctl enable AdGuardHome
+	fi
+
+	sleep 0.8
+	
+	if [[ -d "/opt/AdGuardHome/" ]]; then
+		if systemctl is-active --quiet AdGuardHome; then
+
+			sudo cp /etc/resolv.conf /etc/resolv.conf.bak
+
+        	current_dns=$(grep -oP '(?<=nameserver ).*' /etc/resolv.conf)
+			if [[ "$current_dns" != "127.0.0.1" ]]; then
+				echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf
+			fi
+		else
+			current_dns=$(grep -oP '(?<=nameserver ).*' /etc/resolv.conf)
+			if [[ "$current_dns" == "127.0.0.1" ]]; then
+				sudo mv /etc/resolv.conf.bak /etc/resolv.conf
+			fi
+    	fi
 	fi
 
 }
