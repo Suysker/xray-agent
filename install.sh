@@ -748,9 +748,9 @@ switchSSLType() {
 #acme申请证书
 acmeInstallSSL() {
 
-	pingIPv6=$(ping6 -c 1 www.google.com | sed -n '1p' | sed 's/.*(//g;s/).*//g')
+	currentIPv6IP=$(curl -s -6 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | cut -d "=" -f 2)
 
-	if [[ -z "${pingIPv6}" ]]; then
+	if [[ -z "${currentIPv6IP}" ]]; then
 		installSSLIPv6=""
 	else
 		installSSLIPv6="--listen-v6"
@@ -1282,6 +1282,7 @@ initXrayRealityConfig() {
 {
   "inbounds": [
     {
+	  "listen": "0.0.0.0",
       "port": ${RealityPort},
       "protocol": "vless",
       "tag": "VLESSReality",
@@ -1321,7 +1322,8 @@ initXrayRealityConfig() {
         "enabled": true,
         "destOverride": [
 			"http",
-			"tls"
+			"tls",
+			"quic"
         ],
 		"routeOnly": false
 	  }
@@ -1334,8 +1336,8 @@ cat <<EOF >${configPath}08_VLESS_Reality_h2_inbounds.json
 {
   "inbounds": [
     {
-      "port": 31305,
       "listen": "127.0.0.1",
+      "port": 31305,
       "protocol": "vless",
       "tag": "VLESSRealityH2",
       "settings": {
@@ -1354,7 +1356,8 @@ cat <<EOF >${configPath}08_VLESS_Reality_h2_inbounds.json
         "enabled": true,
         "destOverride": [
 			"http",
-			"tls"
+			"tls",
+			"quic"
         ],
 		"routeOnly": false
 	  }
@@ -1543,8 +1546,8 @@ fi
 {
 "inbounds":[
 	{
-	  "port": 31296,
 	  "listen": "127.0.0.1",
+	  "port": 31296,
 	  "protocol": "trojan",
 	  "tag":"trojanTCP",
 	  "settings": {
@@ -1566,7 +1569,8 @@ fi
         "enabled": true,
         "destOverride": [
 			"http",
-			"tls"
+			"tls",
+			"quic"
         ],
 		"routeOnly": false
 	  }
@@ -1581,8 +1585,8 @@ EOF
 {
 "inbounds":[
     {
-	  "port": 31297,
 	  "listen": "127.0.0.1",
+	  "port": 31297,
 	  "protocol": "vless",
 	  "tag":"VLESSWS",
 	  "settings": {
@@ -1603,7 +1607,8 @@ EOF
         "enabled": true,
         "destOverride": [
 			"http",
-			"tls"
+			"tls",
+			"quic"
         ],
 		"routeOnly": false
 	  }
@@ -1617,8 +1622,8 @@ EOF
 {
 "inbounds": [
     {
-	  "port": 31304,
 	  "listen": "127.0.0.1",
+	  "port": 31304,
 	  "protocol": "trojan",
 	  "tag": "trojangRPCTCP",
 	  "settings": {
@@ -1641,7 +1646,8 @@ EOF
         "enabled": true,
         "destOverride": [
 			"http",
-			"tls"
+			"tls",
+			"quic"
         ],
 		"routeOnly": false
 	  }
@@ -1677,7 +1683,8 @@ EOF
         "enabled": true,
         "destOverride": [
 			"http",
-			"tls"
+			"tls",
+			"quic"
         ],
 		"routeOnly": false
 	  }
@@ -1691,8 +1698,8 @@ EOF
 {
 "inbounds":[
     {
-	  "port": 31301,
 	  "listen": "127.0.0.1",
+	  "port": 31301,
 	  "protocol": "vless",
 	  "tag":"VLESSGRPC",
 	  "settings": {
@@ -1711,7 +1718,8 @@ EOF
         "enabled": true,
         "destOverride": [
 			"http",
-			"tls"
+			"tls",
+			"quic"
         ],
 		"routeOnly": false
 	  }
@@ -1726,6 +1734,7 @@ EOF
 {
 "inbounds":[
 {
+  "listen": "0.0.0.0",
   "port": ${Port},
   "protocol": "vless",
   "tag":"VLESSTCP",
@@ -1760,7 +1769,8 @@ EOF
       "enabled": true,
       "destOverride": [
         "http",
-        "tls"
+        "tls",
+        "quic"
       ],
 	  "routeOnly": false
   }
@@ -3004,9 +3014,9 @@ ipv6Routing() {
 		exit 0
 	fi
 
-	pingIPv6=$(ping6 -c 1 www.google.com | sed -n '1p' | sed 's/.*(//g;s/).*//g')
+	currentIPv6IP=$(curl -s -6 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | cut -d "=" -f 2)
 
-	if [[ -z "${pingIPv6}" ]]; then
+	if [[ -z "${currentIPv6IP}" ]]; then
 		echoContent red " ---> 不支持ipv6"
 		exit 0
 	fi
@@ -3134,7 +3144,7 @@ unInstallRouting() {
 				fi
 
 				if [[ ${delStatus} == 1 ]]; then
-					routing=$(jq -r 'del(.routing.rules['"$(("${index}" - 1))"'])' ${configPath}09_routing.json)
+					routing=$(jq -r 'del(.routing.rules['$((index - 1))'])' ${configPath}09_routing.json)
 					echo "${routing}" | jq . >${configPath}09_routing.json
 				fi
 			done
@@ -3150,7 +3160,7 @@ unInstallOutbounds() {
 		local ipv6OutIndex
 		ipv6OutIndex=$(jq .outbounds[].tag ${configPath}10_ipv4_outbounds.json | awk '{print ""NR""":"$0}' | grep "${tag}" | awk -F "[:]" '{print $1}' | head -1)
 		if [[ ${ipv6OutIndex} -gt 0 ]]; then
-			routing=$(jq -r 'del(.outbounds['$(("${ipv6OutIndex}" - 1))'])' ${configPath}10_ipv4_outbounds.json)
+			routing=$(jq -r 'del(.outbounds['$((ipv6OutIndex - 1))'])' ${configPath}10_ipv4_outbounds.json)
 			echo "${routing}" | jq . >${configPath}10_ipv4_outbounds.json
 		fi
 	fi
@@ -3421,7 +3431,7 @@ AdguardManageMenu() {
 	
 	read -r -p "请选择:" selectADGType
 	if [[ "${selectADGType}" == "1" ]]; then
-		if [[ -d "/opt/AdGuardHome/" ]]; then
+		if [[ -f "/opt/AdGuardHome/AdGuardHome" ]]; then
 			echoContent red " ---> 检测到安装目录，请执行脚本卸载内容"
 			menu
 			exit 0
@@ -3431,7 +3441,7 @@ AdguardManageMenu() {
 
 	fi
 
-	if [[ ! -d "/opt/AdGuardHome/" ]]; then
+	if [[ ! -f "/opt/AdGuardHome/AdGuardHome" ]]; then
 		echoContent red " ---> 没有检测到安装目录，请执行脚本安装内容"
 		menu
 		exit 0
@@ -3483,7 +3493,7 @@ AdguardManageMenu() {
 
 	sleep 0.8
 	
-	if [[ -d "/opt/AdGuardHome/" ]]; then
+	if [[ -f "/opt/AdGuardHome/AdGuardHome" ]]; then
 		if systemctl is-active --quiet AdGuardHome; then
 
 			echoContent green " ---> Adguardhome运行中"	
@@ -3494,9 +3504,14 @@ AdguardManageMenu() {
 				echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf
 			fi
 			echoContent green " ---> Aguardhome设置为DNS服务器成功"
+
+			if [[ -f "/opt/AdGuardHome/AdGuardHome.yaml" ]]; then
+				echoContent red " ---> 未检测到Aguardhome配置文件，请尽快完成初始化配置，否则DNS无法解析"
+			fi
+
 		else
 		
-			echoContent green " ---> Adguardhome未运行"	
+			echoContent red " ---> Adguardhome未运行"	
 
 			current_dns=$(grep -oP '(?<=nameserver ).*' /etc/resolv.conf)
 			if [[ "$current_dns" == "127.0.0.1" ]]; then
