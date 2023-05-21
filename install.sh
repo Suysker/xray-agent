@@ -660,6 +660,10 @@ initTLSRealityConfig() {
 	if [[ -z "${RealityDestDomain}" ]]; then
 		echoContent red "  域名不可为空--->"
 		initTLSRealityConfig 3
+
+	elif ! echo "${RealityDestDomain}" | grep -q ":"; then
+		echoContent red "\n ---> 域名不合规范，请重新输入"
+		initTLSRealityConfig 3
 	fi
 
 	echoContent yellow "\n ${RealityDestDomain}"
@@ -862,6 +866,7 @@ acmeInstallSSL() {
 
 	elif [[ "${installSSLType}" == "3" ]]; then
 		allowPort 80
+		allowPort 443
 		TLSDomain=${domain}
 		echoContent green " ---> 生成证书中"
         sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" --standalone -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
@@ -1026,7 +1031,7 @@ updateTLSCertificate() {
 
 	if [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
 
-		modifyTime=$(stat "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" | sed -n '7,6p' | awk '{print $2" "$3" "$4" "$5}')
+		modifyTime=$(stat --format=%z "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer")
 
 		modifyTime=$(date +%s -d "${modifyTime}")
 		currentTime=$(date +%s)
@@ -1051,6 +1056,7 @@ updateTLSCertificate() {
 		if [[ ${remainingDays} -le 14 ]]; then
 			echoContent yellow " ---> 重新生成证书${TLSDomain}"
 			handleNginx stop
+			handleXray stop
 			sudo "$HOME/.acme.sh/acme.sh" --cron --home "$HOME/.acme.sh" -d "${TLSDomain}"
 			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath /etc/xray-agent/tls/"${TLSDomain}.crt" --keypath /etc/xray-agent/tls/"${TLSDomain}.key" --ecc
 			reloadCore
@@ -1152,6 +1158,7 @@ After=network.target nss-lookup.target
 
 [Service]
 User=root
+Nice=-20
 ExecStart=${execStart}
 Restart=on-failure
 RestartPreventExitStatus=23
@@ -1243,10 +1250,18 @@ initXrayRealityConfig() {
     		RealityPublicKey=$(echo "${RealityX25519Key}" | tail -n 1 | awk '{print $3}')
         fi
 	else
-		RealityX25519Key=$(${ctlPath} x25519)
+		echoContent yellow "请输入自定义PrivateKey[需合法],[回车]随机"
+		read -r -p 'PrivateKey:' RealityPrivateKey
+		echoContent yellow "请输入自定义PublicKey[需合法],[回车]随机"
+		read -r -p 'PrivateKey:' RealityPublicKey
 
-    	RealityPrivateKey=$(echo "${RealityX25519Key}" | head -1 | awk '{print $3}')
-    	RealityPublicKey=$(echo "${RealityX25519Key}" | tail -n 1 | awk '{print $3}')
+		if [[ -z "${RealityPrivateKey}" ]] || [[ -z "${RealityPublicKey}" ]]; then
+
+			RealityX25519Key=$(${ctlPath} x25519)
+
+    		RealityPrivateKey=$(echo "${RealityX25519Key}" | head -1 | awk '{print $3}')
+    		RealityPublicKey=$(echo "${RealityX25519Key}" | tail -n 1 | awk '{print $3}')
+		fi
     fi
 
     echoContent green "\n privateKey:${RealityPrivateKey}"
@@ -1754,6 +1769,10 @@ EOF
     },
     "security": "tls",
     "tlsSettings": {
+      "alpn": [
+          "http/1.1",
+          "h2"
+      ],
       "rejectUnknownSni": true,
 	  "minVersion": "1.2",
       "certificates": [
