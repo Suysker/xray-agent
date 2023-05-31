@@ -1253,7 +1253,7 @@ initXrayRealityConfig() {
 		echoContent yellow "请输入自定义PrivateKey[需合法],[回车]随机"
 		read -r -p 'PrivateKey:' RealityPrivateKey
 		echoContent yellow "请输入自定义PublicKey[需合法],[回车]随机"
-		read -r -p 'PrivateKey:' RealityPublicKey
+		read -r -p 'PublicKey:' RealityPublicKey
 
 		if [[ -z "${RealityPrivateKey}" ]] || [[ -z "${RealityPublicKey}" ]]; then
 
@@ -1381,6 +1381,7 @@ cat <<EOF >${configPath}08_VLESS_Reality_h2_inbounds.json
 }
 EOF
 
+	keepconfigstatus="n"
 	if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
 		read -r -p "是否保留路由和分流规则 ？[y/n]:" keepconfigstatus
 	fi
@@ -1482,6 +1483,7 @@ initXrayConfig() {
 
 	echoContent yellow "\n ${UUID}"
 
+	keepconfigstatus="n"
 	if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
 		read -r -p "是否保留路由和分流规则 ？[y/n]:" keepconfigstatus
 	fi
@@ -3524,7 +3526,7 @@ AdguardManageMenu() {
 			fi
 			echoContent green " ---> Aguardhome设置为DNS服务器成功"
 
-			if [[ -f "/opt/AdGuardHome/AdGuardHome.yaml" ]]; then
+			if [[ ! -f "/opt/AdGuardHome/AdGuardHome.yaml" ]]; then
 				echoContent red " ---> 未检测到Aguardhome配置文件，请尽快完成初始化配置，否则DNS无法解析"
 			fi
 
@@ -3547,7 +3549,7 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
-	echoContent green "当前版本:v2.9.2"
+	echoContent green "当前版本:v2.9.3"
 	echoContent green "Github:https://github.com/mack-a/xray-agent"
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
