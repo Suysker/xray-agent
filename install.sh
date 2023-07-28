@@ -3588,6 +3588,7 @@ menu() {
 	echoContent yellow "20.三网回程路由测试"
 	echoContent yellow "21.流媒体解锁检测"
 	echoContent yellow "22.VPS基本信息"
+ 	echoContent yellow "23.tuic一键"
 	echoContent red "=============================================================="
 	mkdirTools
 	aliasInstall
@@ -3658,6 +3659,9 @@ menu() {
 		;;
 	22)
 		wget -q https://github.com/Aniverse/A/raw/i/a && bash a
+		;;
+	23)
+		wget -N --no-check-certificate https://gitlab.com/Misaka-blog/tuic-script/-/raw/main/tuic.sh && bash tuic.sh
 		;;
 	esac
 }
