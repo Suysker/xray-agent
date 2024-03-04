@@ -3239,6 +3239,7 @@ manageSniffing() {
 		fT=${frontingType}
 	elif [[ "${coreInstallType}" == "2" ]]; then
 		fT=${RealityfrontingType}
+	fi
 	
 	echoContent skyBlue "\n功能 1/${totalProgress} : 流量嗅探管理"
 	echoContent red "\n=============================================================="
@@ -3293,7 +3294,8 @@ manageSockopt() {
 		fT=${frontingType}
 	elif [[ "${coreInstallType}" == "2" ]]; then
 		fT=${RealityfrontingType}
-
+	fi
+	
 	echoContent skyBlue "\n功能 1/${totalProgress} : 进阶功能管理"
 	echoContent red "\n=============================================================="
 
