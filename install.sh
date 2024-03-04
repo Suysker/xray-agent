@@ -3234,15 +3234,20 @@ manageSniffing() {
 		menu
 		exit 0
 	fi
+
+	if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]] ; then
+		fT=${frontingType}
+	elif [[ "${coreInstallType}" == "2" ]]; then
+		fT=${RealityfrontingType}
 	
 	echoContent skyBlue "\n功能 1/${totalProgress} : 流量嗅探管理"
 	echoContent red "\n=============================================================="
 
-	if [[ $(jq '.inbounds[0].sniffing.enabled' ${configPath}${frontingType}.json) ]]; then
+	if [[ $(jq '.inbounds[0].sniffing.enabled' ${configPath}${fT}.json) ]]; then
 		echoContent red "\n流量嗅探功能默认开启,关闭将会导致routing规则失效"
 		echoContent yellow "1.关闭流量嗅探"
 		
-		if [[ $(jq '.inbounds[0].sniffing.routeOnly' ${configPath}${frontingType}.json) ]]; then
+		if [[ $(jq '.inbounds[0].sniffing.routeOnly' ${configPath}${fT}.json) ]]; then
 			echoContent yellow "3.关闭流量嗅探仅供路由"
 		else
 			echoContent red "\n流量嗅探仅供路由默认关闭，开启将会导致routing规则失效"
@@ -3284,22 +3289,27 @@ manageSockopt() {
 		exit 0
 	fi
 
+	if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]] ; then
+		fT=${frontingType}
+	elif [[ "${coreInstallType}" == "2" ]]; then
+		fT=${RealityfrontingType}
+
 	echoContent skyBlue "\n功能 1/${totalProgress} : 进阶功能管理"
 	echoContent red "\n=============================================================="
 
-	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpMptcp' ${configPath}${frontingType}.json) ]]; then
+	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpMptcp' ${configPath}${fT}.json) ]]; then
 		echoContent yellow "2.关闭tcpMptcp"
 	else
 		echoContent yellow "1.开启tcpMptcp"
 	fi
 
-	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpNoDelay' ${configPath}${frontingType}.json) ]]; then
+	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpNoDelay' ${configPath}${fT}.json) ]]; then
 		echoContent yellow "4.关闭tcpNoDelay"
 	else
 		echoContent yellow "3.开启tcpNoDelay"
 	fi
 
-	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpFastOpen' ${configPath}${frontingType}.json) ]]; then
+	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpFastOpen' ${configPath}${fT}.json) ]]; then
 		echoContent yellow "6.关闭tcpFastOpen"
 	else
 		echoContent yellow "5.开启tcpFastOpen"
@@ -3675,7 +3685,7 @@ menu() {
 	echoContent yellow "8.WARP分流及中国大陆域名+IP"
 	echoContent yellow "9.添加新端口"
 	echoContent yellow "10.流量嗅探管理"
-	echoContent yellow "11.流量嗅探管理"
+	echoContent yellow "11.sockopt进阶管理"
 	echoContent skyBlue "-------------------------版本管理-----------------------------"
 	echoContent yellow "12.core管理"
 	echoContent yellow "13.更新脚本"
