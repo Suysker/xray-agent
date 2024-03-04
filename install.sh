@@ -3339,10 +3339,17 @@ manageSockopt() {
 		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
 			sed -i 's/"tcpFastOpen": false/"tcpFastOpen": true/' "${configfile}"
 		done
+		
+		sed -i '/net.ipv4.tcp_fastopen/d' /etc/sysctl.conf
+		sed -i '$a net.ipv4.tcp_fastopen=3' /etc/sysctl.conf
+		sysctl -p
 	elif [[ "${sockopttype}" == "6" ]]; then
 		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
 			sed -i 's/"tcpFastOpen": true/"tcpFastOpen": false/' "${configfile}"
 		done
+		
+		sed -i '/net.ipv4.tcp_fastopen/d' /etc/sysctl.conf
+		sysctl -p
 	else
 		echoContent red " ---> 选择错误"
 		exit 0
