@@ -1331,6 +1331,11 @@ initXrayRealityConfig() {
             "shortIds": [
                 ""
             ]
+        },
+        "sockopt": {
+			"tcpFastOpen": true,
+			"tcpMptcp": false,
+			"tcpMptcp": false
         }
       },
 	  "sniffing": {
@@ -1364,7 +1369,10 @@ cat <<EOF >${configPath}08_VLESS_Reality_h2_inbounds.json
       "streamSettings": {
             "network": "h2",
             "sockopt": {
-                "acceptProxyProtocol": true
+                "acceptProxyProtocol": true,
+				"tcpFastOpen": true,
+				"tcpMptcp": false,
+				"tcpMptcp": false
             }
       },
 	  "sniffing": {
@@ -1446,7 +1454,8 @@ EOF
     "dns": {
         "servers": [
           "localhost"
-        ]
+        ],
+		"queryStrategy": "UseIP"
   }
 }
 EOF
@@ -1549,7 +1558,8 @@ EOF
     "dns": {
         "servers": [
           "localhost"
-        ]
+        ],
+		"queryStrategy": "UseIP"
   }
 }
 EOF
@@ -1580,7 +1590,12 @@ fi
 		"security": "none",
 		"tcpSettings": {
 			"acceptProxyProtocol": true
-		}
+		},
+        "sockopt": {
+		  "tcpFastOpen": true,
+		  "tcpMptcp": false,
+		  "tcpMptcp": false
+        }
 	  },
 	  "sniffing": {
         "enabled": true,
@@ -1618,7 +1633,12 @@ EOF
 		"wsSettings": {
 		  "acceptProxyProtocol": true,
 		  "path": "/${path}ws"
-		}
+		},
+        "sockopt": {
+		  "tcpFastOpen": true,
+		  "tcpMptcp": false,
+		  "tcpMptcp": false
+        }
 	  },
 	  "sniffing": {
         "enabled": true,
@@ -1657,7 +1677,12 @@ EOF
 		"network": "grpc",
 		"grpcSettings": {
 		  "serviceName": "${path}trojangrpc"
-		}
+		},
+        "sockopt": {
+		  "tcpFastOpen": true,
+		  "tcpMptcp": false,
+		  "tcpMptcp": false
+        }
 	  },
 	  "sniffing": {
         "enabled": true,
@@ -1694,7 +1719,12 @@ EOF
 		"wsSettings": {
 		  "acceptProxyProtocol": true,
 		  "path": "/${path}vws"
-		}
+		},
+        "sockopt": {
+		  "tcpFastOpen": true,
+		  "tcpMptcp": false,
+		  "tcpMptcp": false
+        }
 	  },
 	  "sniffing": {
         "enabled": true,
@@ -1729,7 +1759,12 @@ EOF
 		"network": "grpc",
 		"grpcSettings": {
 		  "serviceName": "${path}grpc"
-		}
+		},
+        "sockopt": {
+		  "tcpFastOpen": true,
+		  "tcpMptcp": false,
+		  "tcpMptcp": false
+        }
 	  },
 	  "sniffing": {
         "enabled": true,
@@ -1750,52 +1785,57 @@ EOF
 	cat <<EOF >${configPath}02_VLESS_TCP_inbounds.json
 {
 "inbounds":[
-{
-  "listen": "0.0.0.0",
-  "port": ${Port},
-  "protocol": "vless",
-  "tag":"VLESSTCP",
-  "settings": {
-    "clients": [
-     $(generate_clients "VLESS_TCP" "${UUID}")
-    ],
-    "decryption": "none",
-    "fallbacks": [
-        ${fallbacksList}
-    ]
-  },
-  "streamSettings": {
-    "network": "tcp",
-    "tcpSettings": {
-      "acceptProxyProtocol": false
-    },
-    "security": "tls",
-    "tlsSettings": {
-      "alpn": [
-          "http/1.1",
-          "h2"
-      ],
-      "rejectUnknownSni": true,
-	  "minVersion": "1.2",
-      "certificates": [
-        {
-          "ocspStapling": 3600,
-          "certificateFile": "/etc/xray-agent/tls/${TLSDomain}.crt",
-          "keyFile": "/etc/xray-agent/tls/${TLSDomain}.key"
+    {
+	  "listen": "0.0.0.0",
+	  "port": ${Port},
+	  "protocol": "vless",
+	  "tag":"VLESSTCP",
+	  "settings": {
+		"clients": [
+		  $(generate_clients "VLESS_TCP" "${UUID}")
+		],
+		"decryption": "none",
+		"fallbacks": [
+		  ${fallbacksList}
+		]
+	  },
+	  "streamSettings": {
+		"network": "tcp",
+		"tcpSettings": {
+          "acceptProxyProtocol": false
+		},
+		"security": "tls",
+		"tlsSettings": {
+          "alpn": [
+            "http/1.1",
+            "h2"
+          ],
+          "rejectUnknownSni": true,
+          "minVersion": "1.2",
+          "certificates": [
+            {
+              "ocspStapling": 3600,
+              "certificateFile": "/etc/xray-agent/tls/${TLSDomain}.crt",
+              "keyFile": "/etc/xray-agent/tls/${TLSDomain}.key"
+            }
+          ]
+		},
+        "sockopt": {
+		  "tcpFastOpen": true,
+		  "tcpMptcp": false,
+		  "tcpMptcp": false
         }
-      ]
+	  },
+	  "sniffing": {
+        "enabled": true,
+        "destOverride": [
+			"http",
+			"tls",
+			"quic"
+        ],
+		"routeOnly": false
+	  }
     }
-  },
-    "sniffing": {
-      "enabled": true,
-      "destOverride": [
-        "http",
-        "tls",
-        "quic"
-      ],
-	  "routeOnly": false
-  }
-}
 ]
 }
 EOF
@@ -3211,7 +3251,7 @@ manageSniffing() {
 	else
 		echoContent yellow "2.开启流量嗅探"
 	fi
-	read -r -p "请按照上面示例录入域名:" sniffingtype
+	read -r -p "请按照上面示例输入:" sniffingtype
 
 	if [[ "${sniffingtype}" == "1" ]]; then
 		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
@@ -3228,6 +3268,68 @@ manageSniffing() {
 	elif [[ "${sniffingtype}" == "4" ]]; then
 		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
 			sed -i 's/"routeOnly": false/"routeOnly": true/' "${configfile}"
+		done
+	else
+		echoContent red " ---> 选择错误"
+		exit 0
+	fi
+
+	reloadCore
+}
+
+manageSockopt() {
+	if [[ -z "${coreInstallType}" ]]; then
+		echoContent red " ---> 未安装，请使用脚本安装"
+		menu
+		exit 0
+	fi
+
+	echoContent skyBlue "\n功能 1/${totalProgress} : 进阶功能管理"
+	echoContent red "\n=============================================================="
+
+	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpMptcp' ${configPath}${frontingType}.json) ]]; then
+		echoContent yellow "2.关闭tcpMptcp"
+	else
+		echoContent yellow "1.开启tcpMptcp"
+	fi
+
+	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpNoDelay' ${configPath}${frontingType}.json) ]]; then
+		echoContent yellow "4.关闭tcpNoDelay"
+	else
+		echoContent yellow "3.开启tcpNoDelay"
+	fi
+
+	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpFastOpen' ${configPath}${frontingType}.json) ]]; then
+		echoContent yellow "6.关闭tcpFastOpen"
+	else
+		echoContent yellow "5.开启tcpFastOpen"
+	fi
+
+	read -r -p "请按照上面示例输入:" sockopttype
+
+	if [[ "${sockopttype}" == "1" ]]; then
+		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
+			sed -i 's/"tcpMptcp": false/"tcpMptcp": true/' "${configfile}"
+		done
+	elif [[ "${sockopttype}" == "2" ]]; then
+		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
+			sed -i 's/"tcpMptcp": true/"tcpMptcp": false/' "${configfile}"
+		done
+	elif [[ "${sockopttype}" == "3" ]]; then
+		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
+			sed -i 's/"tcpNoDelay": false/"tcpNoDelay": true/' "${configfile}"
+		done
+	elif [[ "${sockopttype}" == "4" ]]; then
+		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
+			sed -i 's/"tcpNoDelay": true/"tcpNoDelay": false/' "${configfile}"
+		done
+	elif [[ "${sockopttype}" == "5" ]]; then
+		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
+			sed -i 's/"tcpFastOpen": false/"tcpFastOpen": true/' "${configfile}"
+		done
+	elif [[ "${sockopttype}" == "6" ]]; then
+		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
+			sed -i 's/"tcpFastOpen": true/"tcpFastOpen": false/' "${configfile}"
 		done
 	else
 		echoContent red " ---> 选择错误"
@@ -3549,7 +3651,7 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
-	echoContent green "当前版本:v2.9.3"
+	echoContent green "当前版本:v2.9.4"
 	echoContent green "Github:https://github.com/mack-a/xray-agent"
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
@@ -3573,22 +3675,22 @@ menu() {
 	echoContent yellow "8.WARP分流及中国大陆域名+IP"
 	echoContent yellow "9.添加新端口"
 	echoContent yellow "10.流量嗅探管理"
+	echoContent yellow "11.流量嗅探管理"
 	echoContent skyBlue "-------------------------版本管理-----------------------------"
-	echoContent yellow "11.core管理"
-	echoContent yellow "12.更新脚本"
+	echoContent yellow "12.core管理"
+	echoContent yellow "13.更新脚本"
 	echoContent skyBlue "-------------------------脚本管理-----------------------------"
-	echoContent yellow "13.查看日志"
-	echoContent yellow "14.卸载脚本"
+	echoContent yellow "14.查看日志"
+	echoContent yellow "15.卸载脚本"
 	echoContent skyBlue "-------------------------其他功能-----------------------------"
-	echoContent yellow "15.Adguardhome"
-	echoContent yellow "16.WARP"
-	echoContent yellow "17.内核管理及BBR优化"
-	echoContent yellow "18.Hysteria一键"
-	echoContent yellow "19.五网测速+IPV6"
-	echoContent yellow "20.三网回程路由测试"
-	echoContent yellow "21.流媒体解锁检测"
-	echoContent yellow "22.VPS基本信息"
- 	echoContent yellow "23.tuic一键"
+	echoContent yellow "16.Adguardhome"
+	echoContent yellow "17.WARP"
+	echoContent yellow "18.内核管理及BBR优化"
+	echoContent yellow "19.Hysteria一键"
+	echoContent yellow "20.五网测速+IPV6"
+	echoContent yellow "21.三网回程路由测试"
+	echoContent yellow "22.流媒体解锁检测"
+	echoContent yellow "23.VPS基本信息"
 	echoContent red "=============================================================="
 	mkdirTools
 	aliasInstall
@@ -3625,43 +3727,43 @@ menu() {
 		manageSniffing 1
 		;;
 	11)
-		xrayVersionManageMenu 1
+		manageSockopt 1
 		;;
 	12)
-		updateXRayAgent 1
+		xrayVersionManageMenu 1
 		;;
 	13)
-		checkLog 1
+		updateXRayAgent 1
 		;;
 	14)
-		unInstall 1
+		checkLog 1
 		;;
 	15)
-		AdguardManageMenu 1
+		unInstall 1
 		;;
 	16)
-		wget -N https://raw.githubusercontent.com/fscarmen/warp/main/warp-go.sh && bash warp-go.sh
+		AdguardManageMenu 1
 		;;
 	17)
-		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
+		wget -N https://raw.githubusercontent.com/fscarmen/warp/main/warp-go.sh && bash warp-go.sh
 		;;
 	18)
-		bash <(curl -fsSL https://git.io/hysteria.sh)
+		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
 		;;
 	19)
-		bash <(curl -Lso- https://bench.im/hyperspeed)
+		bash <(curl -fsSL https://git.io/hysteria.sh)
 		;;
 	20)
-		bash <(curl https://raw.githubusercontent.com/zhanghanyun/backtrace/main/install.sh -sSf)
+		bash <(curl -Lso- https://bench.im/hyperspeed)
 		;;
 	21)
-		bash <(curl -L -s check.unlock.media) 
+		bash <(curl https://raw.githubusercontent.com/zhanghanyun/backtrace/main/install.sh -sSf)
 		;;
 	22)
-		wget -q https://github.com/Aniverse/A/raw/i/a && bash a
+		bash <(curl -L -s check.unlock.media) 
 		;;
 	23)
-		wget -N --no-check-certificate https://gitlab.com/Misaka-blog/tuic-script/-/raw/main/tuic.sh && bash tuic.sh
+		wget -q https://github.com/Aniverse/A/raw/i/a && bash a
 		;;
 	esac
 }
