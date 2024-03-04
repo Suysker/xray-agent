@@ -3244,11 +3244,11 @@ manageSniffing() {
 	echoContent skyBlue "\n功能 1/${totalProgress} : 流量嗅探管理"
 	echoContent red "\n=============================================================="
 
-	if [[ $(jq '.inbounds[0].sniffing.enabled' ${configPath}${fT}.json) ]]; then
+	if [[ $(jq '.inbounds[0].sniffing.enabled' ${configPath}${fT}.json) == "true" ]]; then
 		echoContent red "\n流量嗅探功能默认开启,关闭将会导致routing规则失效"
 		echoContent yellow "1.关闭流量嗅探"
 		
-		if [[ $(jq '.inbounds[0].sniffing.routeOnly' ${configPath}${fT}.json) ]]; then
+		if [[ $(jq '.inbounds[0].sniffing.routeOnly' ${configPath}${fT}.json) == "true" ]]; then
 			echoContent yellow "3.关闭流量嗅探仅供路由"
 		else
 			echoContent red "\n流量嗅探仅供路由默认关闭，开启将会导致routing规则失效"
@@ -3299,19 +3299,19 @@ manageSockopt() {
 	echoContent skyBlue "\n功能 1/${totalProgress} : 进阶功能管理"
 	echoContent red "\n=============================================================="
 
-	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpMptcp' ${configPath}${fT}.json) ]]; then
+	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpMptcp' ${configPath}${fT}.json) == "true" ]]; then
 		echoContent yellow "2.关闭tcpMptcp"
 	else
 		echoContent yellow "1.开启tcpMptcp"
 	fi
 
-	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpNoDelay' ${configPath}${fT}.json) ]]; then
+	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpNoDelay' ${configPath}${fT}.json) == "true" ]]; then
 		echoContent yellow "4.关闭tcpNoDelay"
 	else
 		echoContent yellow "3.开启tcpNoDelay"
 	fi
 
-	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpFastOpen' ${configPath}${fT}.json) ]]; then
+	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpFastOpen' ${configPath}${fT}.json) == "true" ]]; then
 		echoContent yellow "6.关闭tcpFastOpen"
 	else
 		echoContent yellow "5.开启tcpFastOpen"
