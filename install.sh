@@ -1335,7 +1335,7 @@ initXrayRealityConfig() {
         "sockopt": {
 			"tcpFastOpen": true,
 			"tcpMptcp": false,
-			"tcpMptcp": false
+			"tcpNoDelay": false
         }
       },
 	  "sniffing": {
@@ -1372,7 +1372,7 @@ cat <<EOF >${configPath}08_VLESS_Reality_h2_inbounds.json
                 "acceptProxyProtocol": true,
 				"tcpFastOpen": true,
 				"tcpMptcp": false,
-				"tcpMptcp": false
+				"tcpNoDelay": false
             }
       },
 	  "sniffing": {
@@ -1594,7 +1594,7 @@ fi
         "sockopt": {
 		  "tcpFastOpen": true,
 		  "tcpMptcp": false,
-		  "tcpMptcp": false
+		  "tcpNoDelay": false
         }
 	  },
 	  "sniffing": {
@@ -1637,7 +1637,7 @@ EOF
         "sockopt": {
 		  "tcpFastOpen": true,
 		  "tcpMptcp": false,
-		  "tcpMptcp": false
+		  "tcpNoDelay": false
         }
 	  },
 	  "sniffing": {
@@ -1681,7 +1681,7 @@ EOF
         "sockopt": {
 		  "tcpFastOpen": true,
 		  "tcpMptcp": false,
-		  "tcpMptcp": false
+		  "tcpNoDelay": false
         }
 	  },
 	  "sniffing": {
@@ -1723,7 +1723,7 @@ EOF
         "sockopt": {
 		  "tcpFastOpen": true,
 		  "tcpMptcp": false,
-		  "tcpMptcp": false
+		  "tcpNoDelay": false
         }
 	  },
 	  "sniffing": {
@@ -1763,7 +1763,7 @@ EOF
         "sockopt": {
 		  "tcpFastOpen": true,
 		  "tcpMptcp": false,
-		  "tcpMptcp": false
+		  "tcpNoDelay": false
         }
 	  },
 	  "sniffing": {
@@ -1823,7 +1823,7 @@ EOF
         "sockopt": {
 		  "tcpFastOpen": true,
 		  "tcpMptcp": false,
-		  "tcpMptcp": false
+		  "tcpNoDelay": false
         }
 	  },
 	  "sniffing": {
