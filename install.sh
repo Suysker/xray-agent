@@ -1289,7 +1289,7 @@ initXrayRealityConfig() {
       "streamSettings": {
             "network": "xhttp",
             "xhttpSettings": {
-                "path": "${path}"
+                "path": "/${path}"
             },
             "sockopt": {
                 "acceptProxyProtocol": true,
@@ -1673,7 +1673,6 @@ EOF
 EOF
 
 	# VLESS_XHTTP
-	fallbacksList=${fallbacksList}',{"dest":31305,"xver":1}'
 	cat <<EOF >${configPath}08_VLESS_XHTTP_inbounds.json
 {
   "inbounds": [
@@ -1691,7 +1690,7 @@ EOF
       "streamSettings": {
             "network": "xhttp",
             "xhttpSettings": {
-                "path": "${path}"
+                "path": "/${path}"
             },
             "sockopt": {
                 "acceptProxyProtocol": true,
@@ -1827,6 +1826,15 @@ server {
 
     client_header_timeout 1071906480m;
     keepalive_timeout 1071906480m;
+
+    location /${path} {
+ 		client_max_body_size 0;
+        grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
+        client_body_timeout 1071906480m;
+        grpc_read_timeout 1071906480m;
+        client_body_buffer_size 1m;
+        grpc_pass grpc://127.0.0.1:31305;
+	}
 
 	location / {
         add_header Strict-Transport-Security "max-age=15552000; preload" always;
