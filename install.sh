@@ -1821,7 +1821,6 @@ updateRedirectNginxConf() {
 
 server {
 	listen 127.0.0.1:31300;
-	listen 127.0.0.1:31302 http2 so_keepalive=on;
 	${listen_flags}
     ${http2_flag}
 	server_name ${domain};
