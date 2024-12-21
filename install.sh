@@ -1271,7 +1271,7 @@ initXrayRealityConfig() {
 
 	echoContent yellow "\n ${UUID}"
 
-	fallbacksList='{"dest":31305,"xver":1}'
+	fallbacksList='{"dest":31305,"xver":0}'
 	cat <<EOF >${configPath}08_VLESS_XHTTP_inbounds.json
 {
   "inbounds": [
@@ -1292,7 +1292,6 @@ initXrayRealityConfig() {
                 "path": "/${path}"
             },
             "sockopt": {
-                "acceptProxyProtocol": true,
 				"tcpFastOpen": true,
 				"tcpMptcp": false,
 				"tcpNoDelay": false
@@ -1542,53 +1541,8 @@ EOF
 
 fi
 
-	# trojan_TCP
-	# 回落nginx
-	fallbacksList='{"dest":31296,"xver":1},{"alpn":"h2","dest":31302,"xver":0}'
-	cat <<EOF >${configPath}04_trojan_TCP_inbounds.json
-{
-"inbounds":[
-	{
-	  "listen": "127.0.0.1",
-	  "port": 31296,
-	  "protocol": "trojan",
-	  "tag":"trojanTCP",
-	  "settings": {
-		"clients": [
-		  $(generate_clients "TROJAN_TCP" "${UUID}")
-		],
-		"fallbacks":[
-			{"dest":"31300"}
-		]
-	  },
-	  "streamSettings": {
-		"network": "raw",
-		"security": "none",
-		"rawSettings": {
-			"acceptProxyProtocol": true
-		},
-        "sockopt": {
-		  "tcpFastOpen": true,
-		  "tcpMptcp": false,
-		  "tcpNoDelay": false
-        }
-	  },
-	  "sniffing": {
-        "enabled": true,
-        "destOverride": [
-			"http",
-			"tls",
-			"quic"
-        ],
-		"routeOnly": false
-	  }
-	}
-	]
-}
-EOF
-
 	# VLESS_WS_TLS
-	fallbacksList=${fallbacksList}',{"path":"/'${path}'ws","dest":31297,"xver":1}'
+	fallbacksList='{"path":"/'${path}'ws","dest":31297,"xver":1}'
 	cat <<EOF >${configPath}03_VLESS_WS_inbounds.json
 {
 "inbounds":[
@@ -1673,6 +1627,7 @@ EOF
 EOF
 
 	# VLESS_XHTTP
+	fallbacksList=${fallbacksList}',{"alpn":"h2","dest":31302,"xver":0}'
 	cat <<EOF >${configPath}08_VLESS_XHTTP_inbounds.json
 {
   "inbounds": [
@@ -1693,7 +1648,6 @@ EOF
                 "path": "/${path}"
             },
             "sockopt": {
-                "acceptProxyProtocol": true,
 				"tcpFastOpen": true,
 				"tcpMptcp": false,
 				"tcpNoDelay": false
@@ -1710,6 +1664,51 @@ EOF
 	  }
     }
   ]
+}
+EOF
+
+	# trojan_TCP
+	# 回落nginx
+	fallbacksList=${fallbacksList}',{"dest":31296,"xver":1}'
+	cat <<EOF >${configPath}04_trojan_TCP_inbounds.json
+{
+"inbounds":[
+	{
+	  "listen": "127.0.0.1",
+	  "port": 31296,
+	  "protocol": "trojan",
+	  "tag":"trojanTCP",
+	  "settings": {
+		"clients": [
+		  $(generate_clients "TROJAN_TCP" "${UUID}")
+		],
+		"fallbacks":[
+			{"dest":"31300"}
+		]
+	  },
+	  "streamSettings": {
+		"network": "raw",
+		"security": "none",
+		"rawSettings": {
+			"acceptProxyProtocol": true
+		},
+        "sockopt": {
+		  "tcpFastOpen": true,
+		  "tcpMptcp": false,
+		  "tcpNoDelay": false
+        }
+	  },
+	  "sniffing": {
+        "enabled": true,
+        "destOverride": [
+			"http",
+			"tls",
+			"quic"
+        ],
+		"routeOnly": false
+	  }
+	}
+	]
 }
 EOF
 
@@ -1821,48 +1820,48 @@ updateRedirectNginxConf() {
 server {
 	listen 127.0.0.1:31300;
 	${listen_flags}
-    ${http2_flag}
+	${http2_flag}
 	server_name ${domain};
 
-    client_header_timeout 1071906480m;
-    keepalive_timeout 1071906480m;
+	client_header_timeout 1071906480m;
+	keepalive_timeout 1071906480m;
 
-    location /${path} {
- 		client_max_body_size 0;
-        grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
-        client_body_timeout 1071906480m;
-        grpc_read_timeout 1071906480m;
-        client_body_buffer_size 1m;
-        grpc_pass grpc://127.0.0.1:31305;
+	location /${path} {
+		client_max_body_size 0;
+		grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
+		client_body_timeout 1071906480m;
+		grpc_read_timeout 1071906480m;
+		client_body_buffer_size 1m;
+		grpc_pass grpc://127.0.0.1:31305;
 	}
 
 	location / {
-        add_header Strict-Transport-Security "max-age=15552000; preload" always;
-        sub_filter \$proxy_host \$host;
-        sub_filter_once off;
+		add_header Strict-Transport-Security "max-age=15552000; preload" always;
+		sub_filter \$proxy_host \$host;
+		sub_filter_once off;
 
-        proxy_pass https://www.kaggle.com;
-        proxy_set_header Host \$proxy_host;
+		proxy_pass https://www.kaggle.com;
+		proxy_set_header Host \$proxy_host;
 
-        proxy_http_version 1.1;
-        proxy_cache_bypass \$http_upgrade;
+		proxy_http_version 1.1;
+		proxy_cache_bypass \$http_upgrade;
 
-        proxy_ssl_server_name on;
-        proxy_ssl_name \$proxy_host;
-        proxy_ssl_protocols TLSv1.2 TLSv1.3;
+		proxy_ssl_server_name on;
+		proxy_ssl_name \$proxy_host;
+		proxy_ssl_protocols TLSv1.2 TLSv1.3;
 
-        proxy_set_header Upgrade \$http_upgrade;
-        #proxy_set_header Connection \$connection_upgrade;
-        proxy_set_header X-Real-IP \$proxy_protocol_addr;
-        #proxy_set_header Forwarded \$proxy_add_forwarded;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Host \$host;
-        proxy_set_header X-Forwarded-Port \$server_port;
+		proxy_set_header Upgrade \$http_upgrade;
+		#proxy_set_header Connection \$connection_upgrade;
+		proxy_set_header X-Real-IP \$proxy_protocol_addr;
+		#proxy_set_header Forwarded \$proxy_add_forwarded;
+		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto \$scheme;
+		proxy_set_header X-Forwarded-Host \$host;
+		proxy_set_header X-Forwarded-Port \$server_port;
 
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+		proxy_connect_timeout 60s;
+		proxy_send_timeout 60s;
+		proxy_read_timeout 60s;
 	}
 }
 EOF
