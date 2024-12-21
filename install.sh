@@ -197,7 +197,7 @@ readInstallProtocolType() {
 				currentInstallProtocolType=${currentInstallProtocolType}'0'
 				frontingType=02_VLESS_TCP_inbounds
 			fi
-			if echo "${row}" | grep -q VLESS_XHTTP_inbounds; then
+			if echo "${row}" | grep -q VLESS_WS_inbounds; then
 				currentInstallProtocolType=${currentInstallProtocolType}'1'
 			fi
 			if echo "${row}" | grep -q VMess_WS_inbounds; then
