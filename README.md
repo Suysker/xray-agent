@@ -4,25 +4,24 @@
 ## 特性
 - 只支持[Xray-core[XTLS]](https://github.com/XTLS/Xray-core)
 - 支持VLESS[VLESS TLS/REALITY VISION]
+- 支持VLESS[VLESS TLS/REALITY XHTTP]
 - 兼容 VLESS/VMess/trojan 协议
 - 支持Debian、Ubuntu、Centos系统，支持主流的cpu架构。
 - 支持任意组合安装、支持多用户管理、支持添加多端口、
 - 支持卸载后保留tls证书
 - 支持WARP分流、IPv6分流
 - 支持日志管理、域名黑名单管理、核心管理、伪装站点管理
-- **支持XTLS-RPRX-VISION一键安装**
+- **支持Reality和XHTTP一键安装**
 - **支持将CNIP分流至WARP或者直接阻止**
 - **TLS证书申请方式：支持ACME以API的方式申请泛域名证书、DNS申请、80端口申请**
 
 ## 支持的安装类型
 - VLESS+Reality+xtls-rprx-vision【**⭐推荐⭐**】
-- VLESS+Reality+H2【支持0-rtt】
+- VLESS+Reality+XHTTP【支持0-rtt、支持CDN、延迟低】【**⭐推荐⭐**】
 - VLESS+TCP+xtls-rprx-vision【**推荐**】
-- VLESS+TCP+TLS
-- VLESS+gRPC+TLS【支持CDN、延迟低】
+- VLESS+TLS+XHTTP【支持0-rtt、支持CDN、延迟低】【**推荐**】
 - VLESS+WS+TLS【支持CDN】
 - Trojan+TCP+TLS
-- Trojan+gRPC+TLS【支持CDN、延迟低】
 - VMess+WS+TLS【支持CDN】
 
 ## 注意事项

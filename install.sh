@@ -89,7 +89,6 @@ initVar() {
 	TLSDomain=
 
 	# Reality
-	RealityUUID=
 	RealityfrontingType=
 	RealityPrivateKey=
 	RealityPublicKey=
@@ -198,26 +197,20 @@ readInstallProtocolType() {
 				currentInstallProtocolType=${currentInstallProtocolType}'0'
 				frontingType=02_VLESS_TCP_inbounds
 			fi
-			if echo "${row}" | grep -q VLESS_WS_inbounds; then
+			if echo "${row}" | grep -q VLESS_XHTTP_inbounds; then
 				currentInstallProtocolType=${currentInstallProtocolType}'1'
 			fi
-			if echo "${row}" | grep -q trojan_gRPC_inbounds; then
+			if echo "${row}" | grep -q VMess_WS_inbounds; then
 				currentInstallProtocolType=${currentInstallProtocolType}'2'
 			fi
-			if echo "${row}" | grep -q VMess_WS_inbounds; then
+			if echo "${row}" | grep -q trojan_TCP_inbounds; then
 				currentInstallProtocolType=${currentInstallProtocolType}'3'
-			fi
-			if echo "${row}" | grep -q 04_trojan_TCP_inbounds; then
-				currentInstallProtocolType=${currentInstallProtocolType}'4'
-			fi
-			if echo "${row}" | grep -q VLESS_gRPC_inbounds; then
-				currentInstallProtocolType=${currentInstallProtocolType}'5'
 			fi
 			if echo "${row}" | grep -q VLESS_Reality_TCP_inbounds; then
             	currentInstallProtocolType=${currentInstallProtocolType}'7'
 				RealityfrontingType=07_VLESS_Reality_TCP_inbounds
         	fi
-        	if echo "${row}" | grep -q VLESS_Reality_h2_inbounds; then
+        	if echo "${row}" | grep -q VLESS_XHTTP_inbounds; then
             	currentInstallProtocolType=${currentInstallProtocolType}'8'
         	fi
 		done < <(find ${configPath} -name "*inbounds.json" | awk -F "[.]" '{print $1}')
@@ -258,13 +251,19 @@ readConfigHostPathUUID() {
 	fi
 	
 	if [[ -f "${configPath}${RealityfrontingType}.json" ]]; then
-		#RealityUUID=$(jq -r .inbounds[0].settings.clients[0].id ${configPath}${RealityfrontingType}.json)
-		RealityUUID=$(jq -r '.inbounds[0].settings.clients[] | .id' ${configPath}${RealityfrontingType}.json | paste -sd, -)
+		#UUID=$(jq -r .inbounds[0].settings.clients[0].id ${configPath}${RealityfrontingType}.json)
+		if [[ -z "${path}" ]]; then
+			UUID=$(jq -r '.inbounds[0].settings.clients[] | .id' ${configPath}${RealityfrontingType}.json | paste -sd, -)
+		fi
 		RealityServerNames=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames | join(",")' ${configPath}${RealityfrontingType}.json)
 		RealityPublicKey=$(jq -r .inbounds[0].streamSettings.realitySettings.publicKey ${configPath}${RealityfrontingType}.json)
 		RealityPort=$(jq -r .inbounds[0].port ${configPath}${RealityfrontingType}.json)
 		RealityDestDomain=$(jq -r .inbounds[0].streamSettings.realitySettings.dest ${configPath}${RealityfrontingType}.json)
 		RealityPrivateKey=$(jq -r .inbounds[0].streamSettings.realitySettings.privateKey ${configPath}${RealityfrontingType}.json)
+		
+		if [[ -z "${path}" ]] && [[ -f "${configPath}08_VLESS_XHTTP_inbounds.json" ]]; then
+			path=$(jq -r .inbounds[0].streamSettings.xhttpSettings.path ${configPath}08_VLESS_XHTTP_inbounds.json)
+		fi
 	fi
 }
 
@@ -300,25 +299,18 @@ showInstallStatus() {
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 2; then
-			echoContent yellow "Trojan+gRPC[TLS] \c"
-		fi
-
-		if echo ${currentInstallProtocolType} | grep -q 3; then
 			echoContent yellow "VMess+WS[TLS] \c"
 		fi
 
-		if echo ${currentInstallProtocolType} | grep -q 4; then
+		if echo ${currentInstallProtocolType} | grep -q 3; then
 			echoContent yellow "Trojan+TCP[TLS] \c"
 		fi
 
-		if echo ${currentInstallProtocolType} | grep -q 5; then
-			echoContent yellow "VLESS+gRPC[TLS] \c"
-		fi
 		if echo ${currentInstallProtocolType} | grep -q 7; then
 			echoContent yellow "VLESS+TCP[Reality] \c"
 		fi
 		if echo ${currentInstallProtocolType} | grep -q 8; then
-			echoContent yellow "VLESS+h2[Reality] \c"
+			echoContent yellow "VLESS+XHTTP \c"
 		fi
 	fi
 }
@@ -1189,10 +1181,9 @@ generate_clients() {
           \"flow\": \"xtls-rprx-vision\"
         },"
         ;;
-      "VLESS_H2")
+      "VLESS_XHTTP")
         clients="${clients}{
-          \"id\": \"${uuid}\",
-          \"flow\": \"\"
+          \"id\": \"${uuid}\"
         },"
         ;;
       "VLESS_WS")
@@ -1205,20 +1196,10 @@ generate_clients() {
           \"password\": \"${uuid}\"
         },"
         ;;
-      "VLESS_GRPC")
-        clients="${clients}{
-          \"id\": \"${uuid}\"
-        },"
-        ;;
       "VMess_WS")
         clients="${clients}{
           \"id\": \"${uuid}\",
           \"alterId\": 0
-        },"
-        ;;
-      "TROJAN_GRPC")
-        clients="${clients}{
-          \"password\": \"${uuid}\"
         },"
         ;;
       *)
@@ -1269,29 +1250,67 @@ initXrayRealityConfig() {
 
 	echoContent skyBlue "\n========================== 生成UUID ==========================\n"
 
-	if [[ -n "${RealityUUID}" ]]; then
+	if [[ -n "${UUID}" ]]; then
 		read -r -p "读取到上次安装记录，是否使用上次安装时的UUID ？[y/n]:" historyUUIDStatus
 		if [[ "${historyUUIDStatus}" == "y" ]]; then
 			echoContent green "\n ---> 使用成功"
 		else
 			echoContent yellow "请输入自定义UUID[需合法](支持以逗号为分割输入多个)，[回车]随机UUID"
-			read -r -p 'UUID:' RealityUUID
+			read -r -p 'UUID:' UUID
 		fi
-	elif [[ -n "${UUID}" ]]; then
-		echoContent yellow "检测到VISION的UUID，将自动使用相同的UUID"
-		RealityUUID=$UUID
 	else
 		echoContent yellow "请输入自定义UUID[需合法](支持以逗号为分割输入多个)，[回车]随机UUID"
-		read -r -p 'UUID:' RealityUUID
+		read -r -p 'UUID:' UUID
 	fi
 	
 
-	if [[ -z "${RealityUUID}" ]]; then
+	if [[ -z "${UUID}" ]]; then
 		echoContent red "\n ---> uuid读取错误，重新生成"
-		RealityUUID=$(${ctlPath} uuid)
+		UUID=$(${ctlPath} uuid)
 	fi
 
-	echoContent yellow "\n ${RealityUUID}"
+	echoContent yellow "\n ${UUID}"
+
+	fallbacksList='{"dest":31305,"xver":1}'
+	cat <<EOF >${configPath}08_VLESS_XHTTP_inbounds.json
+{
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": 31305,
+      "protocol": "vless",
+      "tag": "VLESSXHTTP",
+      "settings": {
+        "clients": [
+          $(generate_clients "VLESS_XHTTP" "${UUID}")
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+            "network": "xhttp",
+            "xhttpSettings": {
+                "path": "${path}"
+            },
+            "sockopt": {
+                "acceptProxyProtocol": true,
+				"tcpFastOpen": true,
+				"tcpMptcp": false,
+				"tcpNoDelay": false
+            }
+      },
+	  "sniffing": {
+        "enabled": true,
+        "destOverride": [
+			"http",
+			"tls",
+			"quic"
+        ],
+		"routeOnly": false
+	  }
+    }
+  ]
+}
+EOF
 
 	cat <<EOF >${configPath}07_VLESS_Reality_TCP_inbounds.json
 {
@@ -1303,19 +1322,16 @@ initXrayRealityConfig() {
       "tag": "VLESSReality",
       "settings": {
         "clients": [
-          $(generate_clients "VLESS_TCP" "${RealityUUID}")
+          $(generate_clients "VLESS_TCP" "${UUID}")
         ],
         "decryption": "none",
         "fallbacks":[
-            {
-                "dest": "31305",
-                "xver": 1
-            }
+			${fallbacksList}
         ]
       },
       "streamSettings": {
-        "network": "tcp",
-        "tcpSettings": {
+        "network": "raw",
+        "rawSettings": {
           "acceptProxyProtocol": false
         },
         "security": "reality",
@@ -1337,43 +1353,6 @@ initXrayRealityConfig() {
 			"tcpMptcp": false,
 			"tcpNoDelay": false
         }
-      },
-	  "sniffing": {
-        "enabled": true,
-        "destOverride": [
-			"http",
-			"tls",
-			"quic"
-        ],
-		"routeOnly": false
-	  }
-    }
-  ]
-}
-EOF
-
-cat <<EOF >${configPath}08_VLESS_Reality_h2_inbounds.json
-{
-  "inbounds": [
-    {
-      "listen": "127.0.0.1",
-      "port": 31305,
-      "protocol": "vless",
-      "tag": "VLESSRealityH2",
-      "settings": {
-        "clients": [
-          $(generate_clients "VLESS_H2" "${RealityUUID}")
-        ],
-        "decryption": "none"
-      },
-      "streamSettings": {
-            "network": "h2",
-            "sockopt": {
-                "acceptProxyProtocol": true,
-				"tcpFastOpen": true,
-				"tcpMptcp": false,
-				"tcpNoDelay": false
-            }
       },
 	  "sniffing": {
         "enabled": true,
@@ -1476,9 +1455,6 @@ initXrayConfig() {
 			echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
 			read -r -p 'UUID:' UUID
 		fi
-	elif [[ -n "${RealityUUID}" ]]; then
-		echoContent yellow "检测到Reality的UUID，将自动使用相同的UUID"
-		UUID=$RealityUUID
 	else
 		echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
 		read -r -p 'UUID:' UUID
@@ -1566,7 +1542,7 @@ EOF
 
 fi
 
-	# VLESS_TCP_TLS/XTLS
+	# trojan_TCP
 	# 回落nginx
 	fallbacksList='{"dest":31296,"xver":1},{"alpn":"h2","dest":31302,"xver":0}'
 	cat <<EOF >${configPath}04_trojan_TCP_inbounds.json
@@ -1586,9 +1562,9 @@ fi
 		]
 	  },
 	  "streamSettings": {
-		"network": "tcp",
+		"network": "raw",
 		"security": "none",
-		"tcpSettings": {
+		"rawSettings": {
 			"acceptProxyProtocol": true
 		},
         "sockopt": {
@@ -1654,50 +1630,6 @@ EOF
 }
 EOF
 
-	# trojan_grpc
-	cat <<EOF >${configPath}04_trojan_gRPC_inbounds.json
-{
-"inbounds": [
-    {
-	  "listen": "127.0.0.1",
-	  "port": 31304,
-	  "protocol": "trojan",
-	  "tag": "trojangRPCTCP",
-	  "settings": {
-		"clients": [
-		  $(generate_clients "TROJAN_GRPC" "${UUID}")
-		],
-		"fallbacks": [
-		  {
-			"dest": "31300"
-		  }
-		]
-	  },
-	  "streamSettings": {
-		"network": "grpc",
-		"grpcSettings": {
-		  "serviceName": "${path}trojangrpc"
-		},
-        "sockopt": {
-		  "tcpFastOpen": true,
-		  "tcpMptcp": false,
-		  "tcpNoDelay": false
-        }
-	  },
-	  "sniffing": {
-        "enabled": true,
-        "destOverride": [
-			"http",
-			"tls",
-			"quic"
-        ],
-		"routeOnly": false
-	  }
-    }
-]
-}
-EOF
-
 	# VMess_WS
 	fallbacksList=${fallbacksList}',{"path":"/'${path}'vws","dest":31299,"xver":1}'
 	cat <<EOF >${configPath}05_VMess_WS_inbounds.json
@@ -1740,32 +1672,34 @@ EOF
 }
 EOF
 
-	#VLESS_GRCP
-	cat <<EOF >${configPath}06_VLESS_gRPC_inbounds.json
+	# VLESS_XHTTP
+	fallbacksList=${fallbacksList}',{"dest":31305,"xver":1}'
+	cat <<EOF >${configPath}08_VLESS_XHTTP_inbounds.json
 {
-"inbounds":[
+  "inbounds": [
     {
-	  "listen": "127.0.0.1",
-	  "port": 31301,
-	  "protocol": "vless",
-	  "tag":"VLESSGRPC",
-	  "settings": {
-		"clients": [
-		  $(generate_clients "VLESS_GRPC" "${UUID}")
-		],
-		"decryption": "none"
-	  },
-	  "streamSettings": {
-		"network": "grpc",
-		"grpcSettings": {
-		  "serviceName": "${path}grpc"
-		},
-        "sockopt": {
-		  "tcpFastOpen": true,
-		  "tcpMptcp": false,
-		  "tcpNoDelay": false
-        }
-	  },
+      "listen": "127.0.0.1",
+      "port": 31305,
+      "protocol": "vless",
+      "tag": "VLESSXHTTP",
+      "settings": {
+        "clients": [
+          $(generate_clients "VLESS_XHTTP" "${UUID}")
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+            "network": "xhttp",
+            "xhttpSettings": {
+                "path": "${path}"
+            },
+            "sockopt": {
+                "acceptProxyProtocol": true,
+				"tcpFastOpen": true,
+				"tcpMptcp": false,
+				"tcpNoDelay": false
+            }
+      },
 	  "sniffing": {
         "enabled": true,
         "destOverride": [
@@ -1776,12 +1710,11 @@ EOF
 		"routeOnly": false
 	  }
     }
-]
+  ]
 }
 EOF
 
 	# VLESS_TCP
-
 	cat <<EOF >${configPath}02_VLESS_TCP_inbounds.json
 {
 "inbounds":[
@@ -1800,8 +1733,8 @@ EOF
 		]
 	  },
 	  "streamSettings": {
-		"network": "tcp",
-		"tcpSettings": {
+		"network": "raw",
+		"rawSettings": {
           "acceptProxyProtocol": false
 		},
 		"security": "tls",
@@ -1861,9 +1794,23 @@ installCronTLS() {
 # 修改nginx重定向配置
 updateRedirectNginxConf() {
 	echoContent skyBlue "\n进度  $1/${totalProgress} : 配置镜像站点，默认使用kaggle官网"
+    
+	# 获取 Nginx 的版本号
+    nginx_version=$(nginx -v 2>&1 | grep -oP '\d+\.\d+\.\d+')
+    echoContent skyBlue "检测到的Nginx版本: $nginx_version"
 
 	rm -f ${nginxConfigPath}default.conf
 	echoContent skyBlue "删除nginx默认站点"
+
+	if [ "$(printf '%s\n' "$nginx_version" "1.25.1" | sort -V | head -n1)" != "1.25.1" ]; then
+		# 如果版本大于等于 1.25.1
+		http2_flag="http2 on;"
+		listen_flags="listen 127.0.0.1:31302 so_keepalive=on;"
+	else
+		# 如果版本小于 1.25.1
+		http2_flag=""
+		listen_flags="listen 127.0.0.1:31302 http2 so_keepalive=on;"
+	fi
 	
 	cat <<EOF >${nginxConfigPath}alone.conf
 # acme使用standalone模式申请/更新证书时会监听80端口，如果80端口被占用会导致失败。
@@ -1875,28 +1822,12 @@ updateRedirectNginxConf() {
 server {
 	listen 127.0.0.1:31300;
 	listen 127.0.0.1:31302 http2 so_keepalive=on;
+	${listen_flags}
+    ${http2_flag}
 	server_name ${domain};
 
     client_header_timeout 1071906480m;
     keepalive_timeout 1071906480m;
-
-    location /${path}grpc {
- 		client_max_body_size 0;
-        grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
-        client_body_timeout 1071906480m;
-        grpc_read_timeout 1071906480m;
-        client_body_buffer_size 1m;
-        grpc_pass grpc://127.0.0.1:31301;
-	}
-
-	location /${path}trojangrpc {
- 		client_max_body_size 0;
-        grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
-        client_body_timeout 1071906480m;
-        grpc_read_timeout 1071906480m;
-        client_body_buffer_size 1m;
-        grpc_pass grpc://127.0.0.1:31304;
-	}
 
 	location / {
         add_header Strict-Transport-Security "max-age=15552000; preload" always;
@@ -1984,69 +1915,73 @@ getPublicIP() {
 
 # 通用
 defaultBase64Code() {
-	local type=$1
-	local id=$2
+    local type=$1
+    local id=$2
 
-	if [[ "${type}" == "vlesstcp" ]]; then
-		echoContent yellow " ---> 通用格式(VLESS+TCP+TLS/xtls-rprx-vision)"
-		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
+    case "${type}" in
+        "vlesstcp")
+            echoContent yellow " ---> 通用格式 (VLESS+TCP+TLS)"
+            echoContent green "vless://${id}@${domain}:${Port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
 
-		echoContent yellow " ---> 格式化明文(VLESS+TCP+TLS/xtls-rprx-vision)"
-		echoContent green "协议类型:VLESS，地址:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:tcp，flow:xtls-rprx-vision，账户名:${id}\n"
+            echoContent yellow " ---> 格式化明文 (VLESS+TCP+TLS)"
+            echoContent green "协议类型: VLESS，地址: ${domain}，端口: ${Port}，用户ID: ${id}，安全: tls，传输方式: tcp，flow: xtls-rprx-vision，账户名: ${id}\n"
+            ;;
 
-	elif [[ "${type}" == "vmessws" ]]; then
-        qrCodeBase64Default=$(echo -n "{\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\",\"alpn\":\"h2,http/1.1\",\"fp\":\"chrome\"}" | base64 -w 0)
-        qrCodeBase64Default="${qrCodeBase64Default// /}"
+        "vlessws")
+            echoContent yellow " ---> 通用格式 (VLESS+WS+TLS)"
+            echoContent green "vless://${id}@${domain}:${Port}?encryption=none&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=ws&host=${domain}&path=%2F${path}ws#${id}\n"
 
-        echoContent yellow " ---> 通用json(VMess+WS+TLS)"
-        echoContent green "    {\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\",\"alpn\":\"h2,http/1.1\",\"fp\":\"chrome\"}\n"
-		echoContent green "    vmess://${qrCodeBase64Default}\n"
+            echoContent yellow " ---> 格式化明文 (VLESS+WS+TLS)"
+            echoContent green "协议类型: VLESS，地址: ${domain}，伪装域名/SNI: ${domain}，端口: ${Port}，用户ID: ${id}，安全: tls，传输方式: ws，路径: /${path}ws，账户名: ${id}\n"
+            ;;
 
+        "vmessws")
+            # 生成 Base64 编码
+            qrCodeBase64Default=$(echo -n "{\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\",\"alpn\":\"h2,http/1.1\",\"fp\":\"chrome\"}" | base64 -w 0)
+            qrCodeBase64Default="${qrCodeBase64Default// /}"
 
-	elif [[ "${type}" == "vlessws" ]]; then
+            echoContent yellow " ---> 通用json (VMess+WS+TLS)"
+            echoContent green "    {\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\",\"alpn\":\"h2,http/1.1\",\"fp\":\"chrome\"}\n"
 
-		echoContent yellow " ---> 通用格式(VLESS+WS+TLS)"
-		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=ws&host=${domain}&path=%2F${path}ws#${id}\n"
+            echoContent green "    vmess://${qrCodeBase64Default}\n"
+            ;;
 
-		echoContent yellow " ---> 格式化明文(VLESS+WS+TLS)"
-		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:ws，路径:/${path}ws，账户名:${id}\n"
+        "trojan")
+            echoContent yellow " ---> 通用格式 (Trojan+TLS)"
+            echoContent green "trojan://${id}@${domain}:${Port}?security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
 
+            echoContent yellow " ---> 格式化明文 (Trojan+TLS)"
+            echoContent green "协议类型: Trojan，地址: ${domain}，端口: ${Port}，用户ID: ${id}，安全: tls，传输方式: tcp，账户名: ${id}\n"
+            ;;
 
-	elif [[ "${type}" == "vlessgrpc" ]]; then
+        "vlesstcpreality")
+            echoContent yellow " ---> 通用格式 (VLESS+TCP+Reality)"
+            echoContent green "vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$(echo "${RealityServerNames}" | cut -d ',' -f 1)&fp=chrome&pbk=${RealityPublicKey}&spx=%2F&type=tcp&headerType=none#${id}\n"
 
-		echoContent yellow " ---> 通用格式(VLESS+gRPC+TLS)"
-		echoContent green "    vless://${id}@${domain}:${Port}?encryption=none&security=tls&sni=${domain}&alpn=h2&fp=chrome&type=grpc&serviceName=${path}grpc#${id}\n"
+            echoContent yellow " ---> 格式化明文 (VLESS+TCP+Reality)"
+            echoContent green "协议类型: VLESS Reality，地址: $(getPublicIP)，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: ${RealityPort}，用户ID: ${id}，传输方式: tcp，账户名: ${id}\n"
+            ;;
 
-		echoContent yellow " ---> 格式化明文(VLESS+gRPC+TLS)"
-		echoContent green "    协议类型:VLESS，地址:${domain}，伪装域名/SNI:${domain}，端口:${Port}，用户ID:${id}，安全:tls，传输方式:gRPC，alpn:h2，serviceName:${path}grpc，账户名:${id}\n"
+        "vlessxhttp")
+            if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]]; then
+                echoContent yellow " ---> 通用格式 (VLESS+XHTTP+TLS)"
+                echoContent green "vless://${id}@${domain}:${Port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
 
-	elif [[ "${type}" == "trojan" ]]; then
-		# URLEncode
-		echoContent yellow " ---> Trojan(TLS)"
-		echoContent green "    trojan://${id}@${domain}:${Port}?security=tls&sni=${domain}&alpn=http%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
+                echoContent yellow " ---> 格式化明文 (VLESS+XHTTP+TLS)"
+                echoContent green "协议类型: VLESS，地址: ${domain}，端口: ${Port}，用户ID: ${id}，安全: tls，传输方式: XHTTP，账户名: ${id}\n"
+            fi
 
-	elif [[ "${type}" == "trojangrpc" ]]; then
-		# URLEncode
+            if [[ "${coreInstallType}" == "2" ]] || [[ "${coreInstallType}" == "3" ]]; then
+                echoContent yellow " ---> 通用格式 (VLESS+XHTTP+Reality)"
+                echoContent green "vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&security=reality&type=h2&sni=$(echo "${RealityServerNames}" | cut -d ',' -f 1)&fp=chrome&pbk=${RealityPublicKey}&path=${RealityPath}#${id}\n"
 
-		echoContent yellow " ---> Trojan gRPC(TLS)"
-		echoContent green "    trojan://${id}@${domain}:${Port}?security=tls&sni=${domain}&alpn=h2&fp=chrome&type=grpc&serviceName=${path}trojangrpc&mode=gun#${id}\n"
-	
-    elif [[ "${type}" == "vlesstcpreality" ]]; then
-        echoContent yellow " ---> 通用格式(VLESS+tcp+reality)"
-        echoContent green "    vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&security=reality&type=tcp&sni=$(echo "${RealityServerNames}" | cut -d ',' -f 1)&fp=chrome&pbk=${RealityPublicKey}&flow=xtls-rprx-vision#${id}\n"
-
-        echoContent yellow " ---> 格式化明文(VLESS+tcp+reality)"
-        echoContent green "协议类型:VLESS reality，地址:$(getPublicIP)，publicKey:${RealityPublicKey}，serverNames：${RealityServerNames}，端口:${RealityPort}，用户ID:${id}，传输方式:tcp，账户名:${id}\n"
-
-    elif [[ "${type}" == "vlessh2reality" ]]; then
-        echoContent yellow " ---> 通用格式(VLESS+h2+reality)"
-        echoContent green "    vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&security=reality&type=h2&sni=$(echo "${RealityServerNames}" | cut -d ',' -f 1)&fp=chrome&pbk=${RealityPublicKey}#${id}\n"
-
-        echoContent yellow " ---> 格式化明文(VLESS+h2+reality)"
-        echoContent green "协议类型:VLESS reality，serviceName:grpc，地址:$(getPublicIP)，publicKey:${RealityPublicKey}，serverNames：${RealityServerNames}，端口:${RealityPort}，用户ID:${id}，传输方式:h2，client-fingerprint：chrome，账户名:${id}\n"
-    fi
-
+                echoContent yellow " ---> 格式化明文 (VLESS+XHTTP+Reality)"
+                echoContent green "协议类型: VLESS XHTTP，地址: $(getPublicIP)，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: ${RealityPort}，用户ID: ${id}，传输方式: XHTTP，client-fingerprint: chrome，账户名: ${id}\n"
+            fi
+            ;;
+    esac
 }
+
 
 
 # 账号
@@ -2058,11 +1993,12 @@ showAccounts() {
 	readConfigHostPathUUID
 	echoContent skyBlue "\n进度 $1/${totalProgress} : 账号"
 	local 
-	# VLESS TCP
+	
 	if [[ -n "${configPath}" ]]; then
 		show=1
+		# VLESS TCP
 		if echo "${currentInstallProtocolType}" | grep -q 0; then
-			echoContent skyBlue "===================== VLESS TCP TLS/XTLS-VISION ======================\n"
+			echoContent skyBlue "===================== VLESS TCP TLS ======================\n"
 			jq .inbounds[0].settings.clients ${configPath}${frontingType}.json | jq -c '.[]' | while read -r user; do
 				local uuid=
 				uuid=$(echo "${user}" | jq -r .id)
@@ -2085,19 +2021,8 @@ showAccounts() {
 			done
 		fi
 
-		if echo ${currentInstallProtocolType} | grep -q 2; then
-			echoContent skyBlue "\n================================  Trojan gRPC TLS  ================================\n"
-				jq .inbounds[0].settings.clients ${configPath}04_trojan_gRPC_inbounds.json | jq -c '.[]' | while read -r user; do
-					local uuid=
-					uuid=$(echo "${user}" | jq -r .password)
-					echoContent skyBlue "\n ---> 账号:${uuid}"
-					echo
-					defaultBase64Code trojangrpc "$(echo "${user}" | jq -r .password)"
-			done
-		fi
-
 		# VMess WS
-		if echo ${currentInstallProtocolType} | grep -q 3; then
+		if echo ${currentInstallProtocolType} | grep -q 2; then
 			echoContent skyBlue "\n================================ VMess WS TLS CDN ================================\n"
 			local path="${path}vws"
 			path="${path}vws"
@@ -2110,8 +2035,8 @@ showAccounts() {
 			done
 		fi
 
-			# trojan tcp
-		if echo ${currentInstallProtocolType} | grep -q 4; then
+		# trojan tcp
+		if echo ${currentInstallProtocolType} | grep -q 3; then
 			echoContent skyBlue "\n==================================  Trojan TLS  ==================================\n"
 			jq .inbounds[0].settings.clients ${configPath}04_trojan_TCP_inbounds.json | jq -c '.[]' | while read -r user; do
 				local uuid=
@@ -2119,18 +2044,6 @@ showAccounts() {
 				echoContent skyBlue "\n ---> 账号:${uuid}"
 				echo
 				defaultBase64Code trojan "$(echo "${user}" | jq -r .password)"
-			done
-		fi
-
-		# VLESS grpc
-		if echo ${currentInstallProtocolType} | grep -q 5; then
-			echoContent skyBlue "\n=============================== VLESS gRPC TLS CDN ===============================\n"
-			jq .inbounds[0].settings.clients ${configPath}06_VLESS_gRPC_inbounds.json | jq -c '.[]' | while read -r user; do
-				local uuid=
-				uuid=$(echo "${user}" | jq -r .id)
-				echoContent skyBlue "\n ---> 账号:${uuid}"
-				echo
-				defaultBase64Code vlessgrpc "$(echo "${user}" | jq -r .id)"
 			done
 		fi
 
@@ -2146,15 +2059,15 @@ showAccounts() {
 			done
 		fi
 
-		# VLESS reality h2
+		# VLESS XHTTP
 		if echo ${currentInstallProtocolType} | grep -q 8; then
-			echoContent skyBlue "\n=============================== VLESS H2 Reality ===============================\n"
-			jq .inbounds[0].settings.clients ${configPath}08_VLESS_Reality_h2_inbounds.json | jq -c '.[]' | while read -r user; do
+			echoContent skyBlue "\n=============================== VLESS XHTTP ===============================\n"
+			jq .inbounds[0].settings.clients ${configPath}08_VLESS_XHTTP_inbounds.json | jq -c '.[]' | while read -r user; do
 				local uuid=
 				uuid=$(echo "${user}" | jq -r .id)
 				echoContent skyBlue "\n ---> 账号:${uuid}"
 				echo
-				defaultBase64Code vlessh2reality "$(echo "${user}" | jq -r .id)"
+				defaultBase64Code vlessxhttp "$(echo "${user}" | jq -r .id)"
 			done
 		fi
 	fi
@@ -2287,7 +2200,6 @@ updateXray() {
 		fi
 	fi
 }
-
 
 # 备份恢复nginx文件
 backupNginxConfig() {
@@ -2454,7 +2366,7 @@ addCorePort() {
 	  "settings": {
 		"address": "127.0.0.1",
 		"port": ${Port},
-		"network": "tcp",
+		"network": "raw",
 		"followRedirect": false
 	  },
 	  "tag": "dokodemo-door-newPort-${port}"
@@ -2485,7 +2397,6 @@ EOF
         exit 0
 	fi
 }
-
 
 # manageUser 用户管理
 manageUser() {
@@ -2583,31 +2494,13 @@ addUser() {
         fi
 
         if echo ${currentInstallProtocolType} | grep -q 2; then
-            local trojangRPCUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
-            trojangRPCUsers="${trojangRPCUsers//\,\"alterId\":0/}"
-            trojangRPCUsers=${trojangRPCUsers//"id"/"password"}
-
-            local trojangRPCResult
-            trojangRPCResult=$(jq -r ".inbounds[0].settings.clients += [${trojangRPCUsers}]" ${configPath}04_trojan_gRPC_inbounds.json)
-            echo "${trojangRPCResult}" | jq . >${configPath}04_trojan_gRPC_inbounds.json
-        fi
-
-        if echo ${currentInstallProtocolType} | grep -q 3; then
             local vmessUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
             local vmessWsResult
             vmessWsResult=$(jq -r ".inbounds[0].settings.clients += [${vmessUsers}]" ${configPath}05_VMess_WS_inbounds.json)
             echo "${vmessWsResult}" | jq . >${configPath}05_VMess_WS_inbounds.json
         fi
 
-        if echo ${currentInstallProtocolType} | grep -q 5; then
-            local vlessGRPCUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
-            vlessGRPCUsers="${vlessGRPCUsers//\,\"alterId\":0/}"
-            local vlessGRPCResult
-            vlessGRPCResult=$(jq -r ".inbounds[0].settings.clients += [${vlessGRPCUsers}]" ${configPath}06_VLESS_gRPC_inbounds.json)
-            echo "${vlessGRPCResult}" | jq . >${configPath}06_VLESS_gRPC_inbounds.json
-        fi
-
-        if echo ${currentInstallProtocolType} | grep -q 4; then
+        if echo ${currentInstallProtocolType} | grep -q 3; then
             local trojanUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
             trojanUsers="${trojanUsers//id/password}"
             trojanUsers="${trojanUsers//\,\"alterId\":0/}"
@@ -2624,11 +2517,11 @@ addUser() {
         fi
 
 		if echo ${currentInstallProtocolType} | grep -q 8; then
-            local vlessUsers="${users//xtls-rprx-vision/}"
+            local vlessUsers="${users//\"flow\":\"xtls-rprx-vision\",/}"
 			vlessUsers="${users//\,\"alterId\":0/}"
             local vlessTcpResult
-            vlessTcpResult=$(jq -r ".inbounds[0].settings.clients += [${vlessUsers}]" ${configPath}08_VLESS_Reality_h2_inbounds.json)
-            echo "${vlessTcpResult}" | jq . >${configPath}08_VLESS_Reality_h2_inbounds.json
+            vlessTcpResult=$(jq -r ".inbounds[0].settings.clients += [${vlessUsers}]" ${configPath}08_VLESS_XHTTP_inbounds.json)
+            echo "${vlessTcpResult}" | jq . >${configPath}08_VLESS_XHTTP_inbounds.json
         fi
 
     done
@@ -2673,24 +2566,12 @@ removeUser() {
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 2; then
-			local trojangRPCUsers
-			trojangRPCUsers=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.password == $uid)))' ${configPath}04_trojan_gRPC_inbounds.json)
-			echo "${trojangRPCUsers}" | jq . >${configPath}04_trojan_gRPC_inbounds.json
-		fi
-
-		if echo ${currentInstallProtocolType} | grep -q 3; then
 			local vmessWSResult
 			vmessWSResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' ${configPath}05_VMess_WS_inbounds.json)
 			echo "${vmessWSResult}" | jq . >${configPath}05_VMess_WS_inbounds.json
 		fi
 
-		if echo ${currentInstallProtocolType} | grep -q 5; then
-			local vlessGRPCResult
-			vlessGRPCResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' ${configPath}06_VLESS_gRPC_inbounds.json)
-			echo "${vlessGRPCResult}" | jq . >${configPath}06_VLESS_gRPC_inbounds.json
-		fi
-
-		if echo ${currentInstallProtocolType} | grep -q 4; then
+		if echo ${currentInstallProtocolType} | grep -q 3; then
 			local trojanTCPResult
 			trojanTCPResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.password == $uid)))' ${configPath}04_trojan_TCP_inbounds.json)
 			echo "${trojanTCPResult}" | jq . >${configPath}04_trojan_TCP_inbounds.json
@@ -2703,9 +2584,9 @@ removeUser() {
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 8; then
-			local vlessRealityh2Result
-			vlessRealityh2Result=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' ${configPath}08_VLESS_Reality_h2_inbounds.json)
-			echo "${vlessRealityh2Result}" | jq . >${configPath}08_VLESS_Reality_h2_inbounds.json
+			local vlessXHTTPResult
+			vlessXHTTPResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' ${configPath}08_VLESS_XHTTP_inbounds.json)
+			echo "${vlessXHTTPResult}" | jq . >${configPath}08_VLESS_XHTTP_inbounds.json
 		fi
 
 		reloadCore
@@ -3460,8 +3341,8 @@ xrayCoreInstall_Reality() {
 	installXrayService 3
 
 	initTLSRealityConfig 4
-
-	initXrayRealityConfig 5
+	randomPathFunction 5
+	initXrayRealityConfig 6
 	
 	handleXray stop
 	sleep 2
@@ -3469,8 +3350,8 @@ xrayCoreInstall_Reality() {
 
 	auto_update_geodata
 	# 生成账号
-	checkGFWStatue 6
-	showAccounts 7
+	checkGFWStatue 7
+	showAccounts 8
 }
 
 # 账号管理
@@ -3670,20 +3551,20 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
-	echoContent green "当前版本:v2.9.4"
+	echoContent green "当前版本:v3.0.0"
 	echoContent green "Github:https://github.com/mack-a/xray-agent"
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
 	echoContent red "\n=============================================================="
 	if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]] ; then
-		echoContent yellow "1.重新安装TLS+Vison"
+		echoContent yellow "1.重新安装TLS+Vison+XHTTP"
 	else
-		echoContent yellow "1.安装TLS+Vison"
+		echoContent yellow "1.安装TLS+Vison+XHTTP"
 	fi
 	if [[ "${coreInstallType}" == "2" ]] || [[ "${coreInstallType}" == "3" ]] ; then
-		echoContent yellow "2.重新安装Reality+Vison"
+		echoContent yellow "2.重新安装Reality+Vison+XHTTP"
 	else
-		echoContent yellow "2.安装Reality+Vison"
+		echoContent yellow "2.安装Reality+Vison+XHTTP"
 	fi
 	echoContent skyBlue "-------------------------工具管理-----------------------------"
 	echoContent yellow "3.账号管理"
@@ -3770,7 +3651,7 @@ menu() {
 		wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
 		;;
 	19)
-		bash <(curl -fsSL https://git.io/hysteria.sh)
+		bash <(curl -fsSL https://get.hy2.sh)
 		;;
 	20)
 		bash <(curl -Lso- https://bench.im/hyperspeed)
