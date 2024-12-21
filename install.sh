@@ -203,9 +203,6 @@ readInstallProtocolType() {
 			if echo "${row}" | grep -q VMess_WS_inbounds; then
 				currentInstallProtocolType=${currentInstallProtocolType}'2'
 			fi
-			if echo "${row}" | grep -q trojan_TCP_inbounds; then
-				currentInstallProtocolType=${currentInstallProtocolType}'3'
-			fi
 			if echo "${row}" | grep -q VLESS_Reality_TCP_inbounds; then
             	currentInstallProtocolType=${currentInstallProtocolType}'7'
 				RealityfrontingType=07_VLESS_Reality_TCP_inbounds
@@ -262,7 +259,7 @@ readConfigHostPathUUID() {
 		RealityPrivateKey=$(jq -r .inbounds[0].streamSettings.realitySettings.privateKey ${configPath}${RealityfrontingType}.json)
 		
 		if [[ -z "${path}" ]] && [[ -f "${configPath}08_VLESS_XHTTP_inbounds.json" ]]; then
-			path=$(jq -r .inbounds[0].streamSettings.xhttpSettings.path ${configPath}08_VLESS_XHTTP_inbounds.json)
+			path=$(jq -r .inbounds[0].streamSettings.xhttpSettings.path ${configPath}08_VLESS_XHTTP_inbounds.json | awk -F "[/]" '{print $2}')
 		fi
 	fi
 }
@@ -300,10 +297,6 @@ showInstallStatus() {
 
 		if echo ${currentInstallProtocolType} | grep -q 2; then
 			echoContent yellow "VMess+WS[TLS] \c"
-		fi
-
-		if echo ${currentInstallProtocolType} | grep -q 3; then
-			echoContent yellow "Trojan+TCP[TLS] \c"
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 7; then
@@ -1191,11 +1184,6 @@ generate_clients() {
           \"id\": \"${uuid}\"
         },"
         ;;
-      "TROJAN_TCP")
-        clients="${clients}{
-          \"password\": \"${uuid}\"
-        },"
-        ;;
       "VMess_WS")
         clients="${clients}{
           \"id\": \"${uuid}\",
@@ -1627,7 +1615,7 @@ EOF
 EOF
 
 	# VLESS_XHTTP
-	fallbacksList=${fallbacksList}',{"alpn":"h2","dest":31302,"xver":0}'
+	fallbacksList=${fallbacksList}',{"dest":31300,"xver":0}'
 	cat <<EOF >${configPath}08_VLESS_XHTTP_inbounds.json
 {
   "inbounds": [
@@ -1664,51 +1652,6 @@ EOF
 	  }
     }
   ]
-}
-EOF
-
-	# trojan_TCP
-	# 回落nginx
-	fallbacksList=${fallbacksList}',{"dest":31296,"xver":1}'
-	cat <<EOF >${configPath}04_trojan_TCP_inbounds.json
-{
-"inbounds":[
-	{
-	  "listen": "127.0.0.1",
-	  "port": 31296,
-	  "protocol": "trojan",
-	  "tag":"trojanTCP",
-	  "settings": {
-		"clients": [
-		  $(generate_clients "TROJAN_TCP" "${UUID}")
-		],
-		"fallbacks":[
-			{"dest":"31300"}
-		]
-	  },
-	  "streamSettings": {
-		"network": "raw",
-		"security": "none",
-		"rawSettings": {
-			"acceptProxyProtocol": true
-		},
-        "sockopt": {
-		  "tcpFastOpen": true,
-		  "tcpMptcp": false,
-		  "tcpNoDelay": false
-        }
-	  },
-	  "sniffing": {
-        "enabled": true,
-        "destOverride": [
-			"http",
-			"tls",
-			"quic"
-        ],
-		"routeOnly": false
-	  }
-	}
-	]
 }
 EOF
 
@@ -1800,14 +1743,14 @@ updateRedirectNginxConf() {
 	rm -f ${nginxConfigPath}default.conf
 	echoContent skyBlue "删除nginx默认站点"
 
-	if [ "$(printf '%s\n' "$nginx_version" "1.25.1" | sort -V | head -n1)" != "1.25.1" ]; then
+	if [ "$(printf '%s\n' "1.25.1" "$nginx_version" | sort -V | head -n1)" = "1.25.1" ] && [ "$nginx_version" != "1.25.1" ]; then
 		# 如果版本大于等于 1.25.1
 		http2_flag="http2 on;"
-		listen_flags="listen 127.0.0.1:31302 so_keepalive=on;"
+		listen_flags="listen 127.0.0.1:31300 so_keepalive=on;"
 	else
 		# 如果版本小于 1.25.1
 		http2_flag=""
-		listen_flags="listen 127.0.0.1:31302 http2 so_keepalive=on;"
+		listen_flags="listen 127.0.0.1:31300 http2 so_keepalive=on;"
 	fi
 	
 	cat <<EOF >${nginxConfigPath}alone.conf
@@ -1818,7 +1761,6 @@ updateRedirectNginxConf() {
     #}
 
 server {
-	listen 127.0.0.1:31300;
 	${listen_flags}
 	${http2_flag}
 	server_name ${domain};
@@ -1952,14 +1894,6 @@ defaultBase64Code() {
             echoContent green "    vmess://${qrCodeBase64Default}\n"
             ;;
 
-        "trojan")
-            echoContent yellow " ---> 通用格式 (Trojan+TLS)"
-            echoContent green "trojan://${id}@${domain}:${Port}?security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
-
-            echoContent yellow " ---> 格式化明文 (Trojan+TLS)"
-            echoContent green "协议类型: Trojan，地址: ${domain}，端口: ${Port}，用户ID: ${id}，安全: tls，传输方式: tcp，账户名: ${id}\n"
-            ;;
-
         "vlesstcpreality")
             echoContent yellow " ---> 通用格式 (VLESS+TCP+Reality)"
             echoContent green "vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$(echo "${RealityServerNames}" | cut -d ',' -f 1)&fp=chrome&pbk=${RealityPublicKey}&spx=%2F&type=tcp&headerType=none#${id}\n"
@@ -2038,18 +1972,6 @@ showAccounts() {
 				echoContent skyBlue "\n ---> 账号:${uuid}"
 				echo
 				defaultBase64Code vmessws "$(echo "${user}" | jq -r .id)"
-			done
-		fi
-
-		# trojan tcp
-		if echo ${currentInstallProtocolType} | grep -q 3; then
-			echoContent skyBlue "\n==================================  Trojan TLS  ==================================\n"
-			jq .inbounds[0].settings.clients ${configPath}04_trojan_TCP_inbounds.json | jq -c '.[]' | while read -r user; do
-				local uuid=
-				uuid=$(echo "${user}" | jq -r .password)
-				echoContent skyBlue "\n ---> 账号:${uuid}"
-				echo
-				defaultBase64Code trojan "$(echo "${user}" | jq -r .password)"
 			done
 		fi
 
@@ -2506,15 +2428,6 @@ addUser() {
             echo "${vmessWsResult}" | jq . >${configPath}05_VMess_WS_inbounds.json
         fi
 
-        if echo ${currentInstallProtocolType} | grep -q 3; then
-            local trojanUsers="${users//\"flow\":\"xtls-rprx-vision\"\,/}"
-            trojanUsers="${trojanUsers//id/password}"
-            trojanUsers="${trojanUsers//\,\"alterId\":0/}"
-            local trojanTCPResult
-            trojanTCPResult=$(jq -r ".inbounds[0].settings.clients += [${trojanUsers}]" ${configPath}04_trojan_TCP_inbounds.json)
-            echo "${trojanTCPResult}" | jq . >${configPath}04_trojan_TCP_inbounds.json
-        fi
-
 		if echo ${currentInstallProtocolType} | grep -q 7; then
             local vlessUsers="${users//\,\"alterId\":0/}"
             local vlessTcpResult
@@ -2575,12 +2488,6 @@ removeUser() {
 			local vmessWSResult
 			vmessWSResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' ${configPath}05_VMess_WS_inbounds.json)
 			echo "${vmessWSResult}" | jq . >${configPath}05_VMess_WS_inbounds.json
-		fi
-
-		if echo ${currentInstallProtocolType} | grep -q 3; then
-			local trojanTCPResult
-			trojanTCPResult=$(jq --arg uid "${userIdToDelete}" -r '(.inbounds[0].settings.clients|=. - map(select(.password == $uid)))' ${configPath}04_trojan_TCP_inbounds.json)
-			echo "${trojanTCPResult}" | jq . >${configPath}04_trojan_TCP_inbounds.json
 		fi
 
 		if echo ${currentInstallProtocolType} | grep -q 7; then
