@@ -1359,7 +1359,7 @@ EOF
       "streamSettings": {
         "network": "raw",
         "rawSettings": {
-          "acceptProxyProtocol": false
+          "acceptProxyProtocol": ${acceptProxyProtocolValue}
         },
         "security": "reality",
         "realitySettings": {
@@ -1376,7 +1376,6 @@ EOF
             ]
         },
         "sockopt": {
-			"acceptProxyProtocol": ${acceptProxyProtocolValue},
 			"tcpFastOpen": true,
 			"tcpMptcp": false,
 			"tcpNoDelay": false
