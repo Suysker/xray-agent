@@ -187,6 +187,7 @@ readInstallType() {
 			fi
 			if [[ -f "${nginxConfigPath}alone.stream" ]]; then
 				reuse443="y"
+			fi
 		fi
 	fi
 }
