@@ -1886,7 +1886,7 @@ EOF
 			fi
             
 			# 格式化 RealityServerNames
-            formattedRealityServerNames=$(echo "${RealityServerNames}" | sed 's/,/ /g')
+            formattedRealityServerNames=$(echo "${RealityServerNames}" | sed 's/"//g' | sed 's/,/ /g')
             realityDomainConfig=""
             for name in $formattedRealityServerNames; do
                 realityDomainConfig+="${name} reality;\n    "
