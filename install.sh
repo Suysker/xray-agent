@@ -1892,7 +1892,7 @@ EOF
                 realityDomainConfig+="${name} reality;\n    "
             done
 
-			realityDomainConfig=$(echo -e "${realityDomainConfig}" | sed '/^$/d')
+			realityDomainConfig=$(echo -e "${realityDomainConfig}" | sed 's/"//g' | sed '/^$/d')
 
             cat <<EOF >${nginxConfigPath}alone.stream
 map \$ssl_preread_server_name \$upstream_name {
