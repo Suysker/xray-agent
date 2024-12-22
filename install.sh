@@ -95,6 +95,9 @@ initVar() {
 	RealityServerNames=
 	RealityDestDomain=
 	RealityPort=
+
+	#共用443端口
+	reuse443=
 }
 
 checkSystem() {
@@ -167,11 +170,11 @@ checkCPUVendor() {
 readInstallType() {
 
 	coreInstallType=
+	reuse443=
 
 	# 1.检测安装目录
 	if [[ -d "/etc/xray-agent" ]]; then
 		if [[ -d "/etc/xray-agent/xray" && -f "${ctlPath}" ]]; then
-			# 这里检测xray-core
 			if [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}02_VLESS_TCP_inbounds.json" ]] && [[ -f "${configPath}07_VLESS_Reality_TCP_inbounds.json" ]]; then
 				# xray-core
 				coreInstallType=3
@@ -182,6 +185,8 @@ readInstallType() {
 				# xray-core
 				coreInstallType=2
 			fi
+			if [[ -f "${nginxConfigPath}alone.stream" ]]; then
+				reuse443="y"
 		fi
 	fi
 }
@@ -567,52 +572,74 @@ handleNginx() {
 
 # 自定义端口
 customPortFunction() {
-	if [[ "$1" == "Vision" ]]; then
-		port="${Port}"
-	elif [[ "$1" == "Reality" ]]; then
-		port="${RealityPort}"
-	fi
+    if [[ "$1" == "Vision" ]]; then
+        port="${Port}"
+    elif [[ "$1" == "Reality" ]]; then
+        port="${RealityPort}"
+    fi
 
-	if [[ -n "${port}" ]]; then
-		echo
-		read -r -p "读取到上次安装时的端口，是否使用上次安装时的端口 ？[y/n]:" historyCustomPortStatus
-		if [[ "${historyCustomPortStatus}" == "y" ]]; then
-			echoContent yellow "\n ---> 端口: ${port}"
-		fi
-	fi
+    if [[ -n "${port}" ]]; then
+        echo
+        read -r -p "读取到上次安装时的端口，是否使用上次安装时的端口 ？[y/n]:" historyCustomPortStatus
+        if [[ "${historyCustomPortStatus}" == "y" ]]; then
+            if [[ "${reuse443}" == "y" && "${port}" == "443" ]]; then
+                echoContent red " ---> 全局设置为不允许使用端口 443"
+                historyCustomPortStatus="n"
+            else
+                echoContent yellow "\n ---> 端口: ${port}"
+            fi
+        fi
+    fi
 
-	if [[ "${historyCustomPortStatus}" == "n" || -z "${port}" ]]; then
-		echo
-		echoContent yellow "请输入自定义端口[例: 2083]，[回车]使用443"
-		read -r -p "端口:" port
-		if [[ -n "${port}" ]]; then
-			if ((port >= 1 && port <= 65535)); then
-				checkPort "${port}"
-			else
-				echoContent red " ---> 端口输入错误"
-				exit
-			fi
-		else
-			port=443
-			checkPort "${port}"
-			echoContent yellow "\n ---> 端口: 443"
-		fi
-	fi
+    if [[ "${historyCustomPortStatus}" == "n" || -z "${port}" ]]; then
+        echo
+        echoContent yellow "请输入自定义端口[例: 2083]，[回车]使用443"
+        read -r -p "端口:" port
+        if [[ -n "${port}" ]]; then
+            if ((port >= 1 && port <= 65535)); then
+                if [[ "${reuse443}" == "y" && "${port}" == "443" ]]; then
+                    echoContent red " ---> 全局设置为不允许使用端口 443"
+                    exit
+                fi
+                checkPort "${port}"
+            else
+                echoContent red " ---> 端口输入错误"
+                exit
+            fi
+        else
+            if [[ "${reuse443}" == "y" ]]; then
+                echoContent red " ---> 全局设置为不允许使用默认端口 443"
+                exit
+            fi
+            port=443
+            checkPort "${port}"
+            echoContent yellow "\n ---> 端口: 443"
+        fi
+    fi
 
-	allowPort "${port}"
-	
-	if [[ "$1" == "Vision" ]]; then
-		Port="${port}"
-	elif [[ "$1" == "Reality" ]]; then
-		RealityPort="${port}"
-	fi
+    allowPort "${port}"
 
-	#删除其他自定义端口
-	if [[ "${historyCustomPortStatus}" == "n" ]] && [[ "$1" == "Vision" ]]; then
-		rm -rf "$(find ${configPath}* | grep "dokodemodoor")"
-	fi
+    if [[ "$1" == "Vision" ]]; then
+        Port="${port}"
 
+        if [[ -f "${configPath}${frontingType}.json" ]]; then
+            jq ".inbounds[0].port = ${port}" "${configPath}${frontingType}.json" > "${configPath}${frontingType}.tmp" && mv "${configPath}${frontingType}.tmp" "${configPath}${frontingType}.json"
+        fi
+
+    elif [[ "$1" == "Reality" ]]; then
+        RealityPort="${port}"
+
+        if [[ -f "${configPath}${RealityfrontingType}.json" ]]; then
+            jq ".inbounds[0].port = ${port}" "${configPath}${RealityfrontingType}.json" > "${configPath}${RealityfrontingType}.tmp" && mv "${configPath}${RealityfrontingType}.tmp" "${configPath}${RealityfrontingType}.json"
+        fi
+    fi
+
+    # 删除其他自定义端口
+    if [[ "${historyCustomPortStatus}" == "n" ]] && [[ "$1" == "Vision" ]]; then
+        rm -rf "$(find ${configPath}* | grep "dokodemodoor")"
+    fi
 }
+
 # 检测端口是否占用
 checkPort() {
 	port="$1"
@@ -676,7 +703,6 @@ initTLSRealityConfig() {
 
 	echoContent yellow "\n ---> 客户端可用域名: ${RealityServerNames}\n"
 
-	customPortFunction "Reality"
 }
 
 # 初始化Nginx申请证书配置
@@ -702,8 +728,6 @@ initTLSNginxConfig() {
 	if [[ -z ${domain} ]]; then
 		echoContent red "  域名不可为空--->"
 		initTLSNginxConfig 3
-	else
-		customPortFunction "Vision"
 	fi
 }
 
@@ -1277,9 +1301,11 @@ initXrayRealityConfig() {
       "streamSettings": {
             "network": "xhttp",
             "xhttpSettings": {
-                "path": "/${path}"
+                "path": "/${path}",
+                "mode": "auto"
             },
             "sockopt": {
+				"acceptProxyProtocol": false,
 				"tcpFastOpen": true,
 				"tcpMptcp": false,
 				"tcpNoDelay": false
@@ -1292,6 +1318,7 @@ initXrayRealityConfig() {
 			"tls",
 			"quic"
         ],
+		"metadataOnly": false,
 		"routeOnly": false
 	  }
     }
@@ -1299,6 +1326,18 @@ initXrayRealityConfig() {
 }
 EOF
 
+	if [[ "${reuse443}" == "y" ]]; then
+		acceptProxyProtocolValue=true
+		# 修改 `${configPath}${frontingType}.json` 的 "acceptProxyProtocol" 值为 true
+		if [[ -f "${configPath}${frontingType}.json" ]]; then
+			sed -i 's/"acceptProxyProtocol": false/"acceptProxyProtocol": true/' "${configPath}${frontingType}.json"
+			echoContent green "已将 ${configPath}${frontingType}.json 的 'acceptProxyProtocol' 修改为 true"
+		else
+			echoContent red "未找到 ${configPath}${frontingType}.json，跳过修改"
+		fi
+	else
+		acceptProxyProtocolValue=false
+	fi
 	cat <<EOF >${configPath}07_VLESS_Reality_TCP_inbounds.json
 {
   "inbounds": [
@@ -1336,6 +1375,7 @@ EOF
             ]
         },
         "sockopt": {
+			"acceptProxyProtocol": ${acceptProxyProtocolValue},
 			"tcpFastOpen": true,
 			"tcpMptcp": false,
 			"tcpNoDelay": false
@@ -1348,6 +1388,7 @@ EOF
 			"tls",
 			"quic"
         ],
+		"metadataOnly": false,
 		"routeOnly": false
 	  }
     }
@@ -1565,6 +1606,7 @@ fi
 			"tls",
 			"quic"
         ],
+		"metadataOnly": false,
 		"routeOnly": false
 	  }
 	}
@@ -1607,6 +1649,7 @@ EOF
 			"tls",
 			"quic"
         ],
+		"metadataOnly": false,
 		"routeOnly": false
 	  }
     }
@@ -1633,9 +1676,11 @@ EOF
       "streamSettings": {
             "network": "xhttp",
             "xhttpSettings": {
-                "path": "/${path}"
+                "path": "/${path}",
+                "mode": "auto"
             },
             "sockopt": {
+				"acceptProxyProtocol": false,
 				"tcpFastOpen": true,
 				"tcpMptcp": false,
 				"tcpNoDelay": false
@@ -1648,6 +1693,7 @@ EOF
 			"tls",
 			"quic"
         ],
+		"metadataOnly": false,
 		"routeOnly": false
 	  }
     }
@@ -1655,6 +1701,18 @@ EOF
 }
 EOF
 
+	if [[ "${reuse443}" == "y" ]]; then
+		acceptProxyProtocolValue=true
+		# 修改 `${configPath}${RealityfrontingType}.json` 的 "acceptProxyProtocol" 值为 true
+		if [[ -f "${configPath}${RealityfrontingType}.json" ]]; then
+			sed -i 's/"acceptProxyProtocol": false/"acceptProxyProtocol": true/' "${configPath}${RealityfrontingType}.json"
+			echoContent green "已将 ${configPath}${RealityfrontingType}.json 的 'acceptProxyProtocol' 修改为 true"
+		else
+			echoContent red "未找到 ${configPath}${RealityfrontingType}.json，跳过修改"
+		fi
+	else
+		acceptProxyProtocolValue=false
+	fi
 	# VLESS_TCP
 	cat <<EOF >${configPath}02_VLESS_TCP_inbounds.json
 {
@@ -1670,7 +1728,7 @@ EOF
 		],
 		"decryption": "none",
 		"fallbacks": [
-		  ${fallbacksList}
+			${fallbacksList}
 		]
 	  },
 	  "streamSettings": {
@@ -1707,6 +1765,7 @@ EOF
 			"tls",
 			"quic"
         ],
+		"metadataOnly": false,
 		"routeOnly": false
 	  }
     }
@@ -1734,84 +1793,135 @@ installCronTLS() {
 
 # 修改nginx重定向配置
 updateRedirectNginxConf() {
-	echoContent skyBlue "\n进度  $1/${totalProgress} : 配置镜像站点，默认使用kaggle官网"
+    echoContent skyBlue "\n进度  $2/${totalProgress} : 配置镜像站点，默认使用kaggle官网"
     
-	# 获取 Nginx 的版本号
+    # 获取 Nginx 的版本号
     nginx_version=$(nginx -v 2>&1 | grep -oP '\d+\.\d+\.\d+')
     echoContent skyBlue "检测到的Nginx版本: $nginx_version"
 
-	rm -f ${nginxConfigPath}default.conf
-	echoContent skyBlue "删除nginx默认站点"
+    rm -f ${nginxConfigPath}default.conf
+    echoContent skyBlue "删除nginx默认站点"
 
-	if [ "$(printf '%s\n' "1.25.1" "$nginx_version" | sort -V | head -n1)" = "1.25.1" ] && [ "$nginx_version" != "1.25.1" ]; then
-		# 如果版本大于等于 1.25.1
-		http2_flag="http2 on;"
-		listen_flags="listen 127.0.0.1:31300 so_keepalive=on;"
-	else
-		# 如果版本小于 1.25.1
-		http2_flag=""
-		listen_flags="listen 127.0.0.1:31300 http2 so_keepalive=on;"
-	fi
-	
-	cat <<EOF >${nginxConfigPath}alone.conf
+    if [[ "$1" == "Vision" ]]; then
+
+        if [ "$(printf '%s\n' "1.25.1" "$nginx_version" | sort -V | head -n1)" = "1.25.1" ] && [ "$nginx_version" != "1.25.1" ]; then
+            # 如果版本大于等于 1.25.1
+            http2_flag="http2 on;"
+            listen_flags="listen 127.0.0.1:31300 so_keepalive=on;"
+        else
+            # 如果版本小于 1.25.1
+            http2_flag=""
+            listen_flags="listen 127.0.0.1:31300 http2 so_keepalive=on;"
+        fi
+        
+        cat <<EOF >${nginxConfigPath}alone.conf
 # acme使用standalone模式申请/更新证书时会监听80端口，如果80端口被占用会导致失败。
 #server {
-    	#listen 80;
-    	#return 301 https://\$host\$request_uri;
-    #}
+#    listen 80;
+#    return 301 https://\$host\$request_uri;
+#}
 
 server {
-	${listen_flags}
-	${http2_flag}
-	server_name ${domain};
+    ${listen_flags}
+    ${http2_flag}
+    server_name ${domain};
 
-	client_header_timeout 1071906480m;
-	keepalive_timeout 1071906480m;
+    client_header_timeout 1071906480m;
+    keepalive_timeout 1071906480m;
 
-	location /${path} {
-		client_max_body_size 0;
-		grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
-		client_body_timeout 1071906480m;
-		grpc_read_timeout 1071906480m;
-		client_body_buffer_size 1m;
-		grpc_pass grpc://127.0.0.1:31305;
-	}
+    location /${path} {
+        client_max_body_size 0;
+        grpc_set_header X-Real-IP \$proxy_add_x_forwarded_for;
+        client_body_timeout 1071906480m;
+        grpc_read_timeout 1071906480m;
+        client_body_buffer_size 1m;
+        grpc_pass grpc://127.0.0.1:31305;
+    }
 
-	location / {
-		add_header Strict-Transport-Security "max-age=15552000; preload" always;
-		sub_filter \$proxy_host \$host;
-		sub_filter_once off;
+    location / {
+        add_header Strict-Transport-Security "max-age=15552000; preload" always;
+        sub_filter \$proxy_host \$host;
+        sub_filter_once off;
 
-		proxy_pass https://www.kaggle.com;
-		proxy_set_header Host \$proxy_host;
+        proxy_pass https://www.kaggle.com;
+        proxy_set_header Host \$proxy_host;
 
-		proxy_http_version 1.1;
-		proxy_cache_bypass \$http_upgrade;
+        proxy_http_version 1.1;
+        proxy_cache_bypass \$http_upgrade;
 
-		proxy_ssl_server_name on;
-		proxy_ssl_name \$proxy_host;
-		proxy_ssl_protocols TLSv1.2 TLSv1.3;
+        proxy_ssl_server_name on;
+        proxy_ssl_name \$proxy_host;
+        proxy_ssl_protocols TLSv1.2 TLSv1.3;
 
-		proxy_set_header Upgrade \$http_upgrade;
-		#proxy_set_header Connection \$connection_upgrade;
-		proxy_set_header X-Real-IP \$proxy_protocol_addr;
-		#proxy_set_header Forwarded \$proxy_add_forwarded;
-		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-		proxy_set_header X-Forwarded-Proto \$scheme;
-		proxy_set_header X-Forwarded-Host \$host;
-		proxy_set_header X-Forwarded-Port \$server_port;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header X-Real-IP \$proxy_protocol_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
 
-		proxy_connect_timeout 60s;
-		proxy_send_timeout 60s;
-		proxy_read_timeout 60s;
-	}
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
 }
 EOF
+    fi
 
-handleNginx stop
-handleNginx start
+    if ([[ "${coreInstallType}" == "1" ]] && [[ "$1" == "Reality" ]]) || ([[ "${coreInstallType}" == "2" ]] && [[ "$1" == "Vision" ]]) || [[ "${coreInstallType}" == "3" ]]; then
 
+        echoContent red "\n=============================================================="
+        echoContent red "检测到能够共用443端口的条件，是否共用？[y/n]:"
+        echoContent red "=============================================================="
+        read -r -p "请选择:" reuse443
+
+        if [[ "${reuse443}" == "y" ]]; then
+
+			# 检查是否有服务使用443端口
+			if [[ "${Port}" == "443" ]]; then
+				customPortFunction "Vision"
+			fi
+			if [[ "${RealityPort}" == "443" ]]; then
+				customPortFunction "Reality"
+			fi
+            
+			# 格式化 RealityServerNames
+            formattedRealityServerNames=$(echo "${RealityServerNames}" | sed 's/,/ /g')
+            realityDomainConfig=""
+            for name in $formattedRealityServerNames; do
+                realityDomainConfig+="${name} reality;\n    "
+            done
+
+            cat <<EOF >${nginxConfigPath}alone.conf
+map \$ssl_preread_server_name \$upstream_name {
+    hostnames;
+    ${domain} vision;
+    ${realityDomainConfig}
 }
+
+upstream reality {
+    server 127.0.0.1:${RealityPort};
+}
+
+upstream vision {
+    server 127.0.0.1:${Port};
+}
+
+server {
+    listen 443;
+    listen [::]:443;
+
+    ssl_preread on;
+    proxy_protocol on;
+    proxy_pass \$upstream_name;
+}
+EOF
+        fi
+    fi
+    handleNginx stop
+    handleNginx start
+}
+
 
 # 更新geoip和geosite
 auto_update_geodata() {
@@ -1921,8 +2031,6 @@ defaultBase64Code() {
             ;;
     esac
 }
-
-
 
 # 账号
 showAccounts() {
@@ -3227,9 +3335,12 @@ xrayCoreInstall() {
 	# 安装Xray
 	installXray 5
 	installXrayService 6
-	initXrayConfig 7
-	installCronTLS 8
-	updateRedirectNginxConf 9
+
+	updateRedirectNginxConf "Vision" 7
+
+	initXrayConfig 8
+
+	installCronTLS 9
 	
 	handleXray stop
 	sleep 2
@@ -3255,6 +3366,9 @@ xrayCoreInstall_Reality() {
 
 	initTLSRealityConfig 4
 	randomPathFunction 5
+
+	updateRedirectNginxConf "Reality" 5.5
+
 	initXrayRealityConfig 6
 	
 	handleXray stop
@@ -3464,7 +3578,7 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
-	echoContent green "当前版本:v3.0.0"
+	echoContent green "当前版本:v3.0.1"
 	echoContent green "Github:https://github.com/mack-a/xray-agent"
 	echoContent green "描述:八合一共存脚本\c"
 	showInstallStatus
@@ -3587,14 +3701,14 @@ initVar
 checkSystem
 #检查CPU架构
 checkCPUVendor
+#检查宝塔面板
+checkBTPanel
 #检查XRAY是否安装完成
 readInstallType
 #读取安装协议类型
 readInstallProtocolType
 #读取伪装站点域名、UUID及路径
 readConfigHostPathUUID
-#检查宝塔面板
-checkBTPanel
 
 # -------------------------------------------------------------
 if [[ "$1" == "RenewTLS" ]]; then
