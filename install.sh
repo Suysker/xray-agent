@@ -1735,7 +1735,7 @@ EOF
 	  "streamSettings": {
 		"network": "raw",
 		"rawSettings": {
-          "acceptProxyProtocol": false
+          "acceptProxyProtocol": ${acceptProxyProtocolValue}
 		},
 		"security": "tls",
 		"tlsSettings": {
