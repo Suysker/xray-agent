@@ -405,14 +405,15 @@ installTools() {
         dpkg --configure -a
     fi
 
-    if [[ -n $(pgrep -f "apt") ]]; then
+    # 终止所有正在运行的apt进程
+    if pgrep -f "apt" >/dev/null 2>&1; then
         pgrep -f apt | xargs kill -9
     fi
 
     echoContent green " ---> 检查、安装更新【新机器会很慢，如长时间无反应，请手动停止后重新执行】"
 
     ${upgrade} >/etc/xray-agent/install.log 2>&1
-    if grep <"/etc/xray-agent/install.log" -q "changed"; then
+    if grep -q "changed" "/etc/xray-agent/install.log"; then
         ${updateReleaseInfoChange} >/dev/null 2>&1
     fi
 
@@ -421,17 +422,26 @@ installTools() {
         ${installType} epel-release >/dev/null 2>&1
     fi
 
-    declare -a tools=("wget" "curl" "unzip" "tar" "cron" "jq" "binutils" "ping6" "sudo" "lsb-release" "lsof" "dig")
+    # 更新工具检查命令
+    declare -a tools=("wget" "curl" "unzip" "tar" "cron" "jq" "ld" "lsb_release" "sudo" "lsof" "dig")
 
     for tool in "${tools[@]}"; do
         if ! command -v "${tool}" >/dev/null 2>&1; then
             echoContent green " ---> 安装${tool}"
+            
+            # 根据工具名称选择正确的包名进行安装
             if [[ "${tool}" == "cron" ]]; then
                 if [[ "${release}" == "ubuntu" ]] || [[ "${release}" == "debian" ]]; then
                     ${installType} cron >/dev/null 2>&1
                 else
                     ${installType} crontabs >/dev/null 2>&1
                 fi
+            elif [[ "${tool}" == "ld" ]]; then
+                # 'ld' 是 'binutils' 包中的命令
+                ${installType} binutils >/dev/null 2>&1
+            elif [[ "${tool}" == "lsb_release" ]]; then
+                # 'lsb_release' 是 'lsb-release' 包中的命令
+                ${installType} lsb-release >/dev/null 2>&1
             elif [[ "${tool}" == "ping6" ]]; then
                 ${installType} inetutils-ping >/dev/null 2>&1
             elif [[ "${tool}" == "dig" ]]; then
@@ -441,7 +451,7 @@ installTools() {
                     ${installType} bind-utils >/dev/null 2>&1
                 fi
             else
-                ${installType} ${tool} >/dev/null 2>&1
+                ${installType} "${tool}" >/dev/null 2>&1
             fi
         fi
     done
@@ -494,7 +504,7 @@ installTools() {
             echoContent red "  acme安装失败--->"
             tail -n 100 /etc/xray-agent/tls/acme.log
             echoContent yellow "错误排查:"
-            echoContent red "  1.获取Github文件失败，请等待Github恢复后尝试，恢复进度可查看 [https://www.githubstatus.com/]"
+            echoContent red "  1.获取GitHub文件失败，请等待GitHub恢复后尝试，恢复进度可查看 [https://www.githubstatus.com/]"
             echoContent red "  2.acme.sh脚本出现bug，可查看[https://github.com/acmesh-official/acme.sh] issues"
             echoContent red "  3.如纯IPv6机器，请设置NAT64,可执行下方命令"
             echoContent skyBlue "  echo -e \"nameserver 2001:67c:2b0::4\\\nnameserver 2001:67c:2b0::6\" >> /etc/resolv.conf"
@@ -502,7 +512,6 @@ installTools() {
         fi
     fi
 }
-
 
 # 操作Nginx
 handleNginx() {
@@ -558,17 +567,17 @@ customPortFunction() {
             if ((port >= 1 && port <= 65535)); then
                 if [[ "${reuse443}" == "y" && "${port}" == "443" ]]; then
                     echoContent red " ---> 全局设置为不允许使用端口 443"
-                    exit
+                    exit 0
                 fi
                 checkPort "${port}"
             else
                 echoContent red " ---> 端口输入错误"
-                exit
+                exit 0
             fi
         else
             if [[ "${reuse443}" == "y" ]]; then
                 echoContent red " ---> 全局设置为不允许使用默认端口 443"
-                exit
+                exit 0
             fi
             port=443
             checkPort "${port}"
@@ -582,14 +591,20 @@ customPortFunction() {
         Port="${port}"
 
         if [[ -f "${configPath}${frontingType}.json" ]]; then
-            jq ".inbounds[0].port = ${port}" "${configPath}${frontingType}.json" > "${configPath}${frontingType}.tmp" && mv "${configPath}${frontingType}.tmp" "${configPath}${frontingType}.json"
+            # 捕获 jq 输出到变量
+            updated_json=$(jq ".inbounds[0].port = ${port}" "${configPath}${frontingType}.json")
+            # 将更新后的 JSON 写回文件
+            echo "${updated_json}" | jq . > "${configPath}${frontingType}.json"
         fi
 
     elif [[ "$1" == "Reality" ]]; then
         RealityPort="${port}"
 
         if [[ -f "${configPath}${RealityfrontingType}.json" ]]; then
-            jq ".inbounds[0].port = ${port}" "${configPath}${RealityfrontingType}.json" > "${configPath}${RealityfrontingType}.tmp" && mv "${configPath}${RealityfrontingType}.tmp" "${configPath}${RealityfrontingType}.json"
+            # 捕获 jq 输出到变量
+            updated_json=$(jq ".inbounds[0].port = ${port}" "${configPath}${RealityfrontingType}.json")
+            # 将更新后的 JSON 写回文件
+            echo "${updated_json}" | jq . > "${configPath}${RealityfrontingType}.json"
         fi
     fi
 
@@ -613,55 +628,60 @@ checkPort() {
 
 # 初始化Reality证书配置
 initTLSRealityConfig() {
-	echoContent skyBlue "\n进度  $1/${totalProgress} : 初始化Reality证书配置"
-	if [[ -n "${RealityDestDomain}" ]]; then
-		read -r -p "读取到上次安装记录，是否使用上次安装时的域名 ？[y/n]:" historyDestStatus
-		if [[ "${historyDestStatus}" == "y" ]]; then
-			echoContent green "\n ---> 使用成功"
-		else
-			echoContent skyBlue "\n --->生成配置回落的域名 例如:addons.mozilla.org:443\n"
-			read -r -p '请输入:' RealityDestDomain
-		fi
-	else
-		echoContent skyBlue "\n --->生成配置回落的域名 例如:addons.mozilla.org:443\n"
-		read -r -p '请输入:' RealityDestDomain
-	fi
-	
+    echoContent skyBlue "\n进度  $1/${totalProgress} : 初始化Reality证书配置"
 
-	if [[ -z "${RealityDestDomain}" ]]; then
-		echoContent red "  域名不可为空--->"
-		initTLSRealityConfig 3
+    while true; do
+        if [[ -n "${RealityDestDomain}" ]]; then
+            read -r -p "读取到上次安装记录，是否使用上次安装时的域名 ？[y/n]:" historyDestStatus
+            if [[ "${historyDestStatus}" == "y"]]; then
+                echoContent green "\n ---> 使用成功"
+                break
+            else
+                echoContent skyBlue "\n ---> 生成配置回落的域名 例如: addons.mozilla.org:443\n"
+                read -r -p '请输入:' RealityDestDomain
+            fi
+        else
+            echoContent skyBlue "\n ---> 生成配置回落的域名 例如: addons.mozilla.org:443\n"
+            read -r -p '请输入:' RealityDestDomain
+        fi
 
-	elif ! echo "${RealityDestDomain}" | grep -q ":"; then
-		echoContent red "\n ---> 域名不合规范，请重新输入"
-		initTLSRealityConfig 3
-	fi
+        # 检查域名是否为空或格式不正确
+        if [[ -z "${RealityDestDomain}" ]]; then
+            echoContent red "  域名不可为空--->"
+        elif [[ "${RealityDestDomain}" != *:* ]]; then
+            echoContent red "\n ---> 域名不合规范，请重新输入 (示例: addons.mozilla.org:443)"
+        else
+            break
+        fi
+    done
 
-	echoContent yellow "\n ${RealityDestDomain}"
-
+    echoContent yellow "\n ${RealityDestDomain}"
     echoContent skyBlue "\n >配置客户端可用的serverNames\n"
     echoContent red "\n=============================================================="
 
-	if [[ "${historyDestStatus}" == "y" ]]; then
-		echoContent green "\n ---> 使用成功"
-	else
-		echoContent yellow " # 注意事项\n"
-		tlsPingResult=$(${ctlPath} tls ping "$(echo "${RealityDestDomain}" | awk -F: '{print $1}')")
-		echoContent yellow "\n ---> 可以输入的域名: ${tlsPingResult}\n"
-		echoContent red "\n=============================================================="
-		echoContent yellow "录入示例:addons.mozilla.org,services.addons.mozilla.org\n"
-		echoContent yellow " # 支持逗号输入多个域名,但不支持通配符\n"
-		read -r -p "请输入:" RealityServerNames
-	fi
-
-	if [[ -z "${RealityServerNames}" ]]; then
-        RealityServerNames="\"$(echo "${RealityDestDomain}" | awk -F: '{print $1}')\""
+    if [[ "${historyDestStatus}" == "y"]]; then
+        echoContent green "\n ---> 使用成功"
+        # 提取域名部分并添加双引号
+        RealityServerNames="\"${RealityDestDomain%%:*}\""
     else
-        RealityServerNames=\"${RealityServerNames//,/\",\"}\"
+        echoContent yellow " # 注意事项\n"
+        tlsPingResult=$(${ctlPath} tls ping "${RealityDestDomain%%:*}")
+        echoContent yellow "\n ---> 可以输入的域名: ${tlsPingResult}\n"
+        echoContent red "\n=============================================================="
+        echoContent yellow "录入示例: addons.mozilla.org,services.addons.mozilla.org\n"
+        echoContent yellow " # 支持逗号输入多个域名,但不支持通配符\n"
+        read -r -p "请输入:" RealityServerNames
+
+        if [[ -z "${RealityServerNames}" ]]; then
+            # 如果未输入，默认使用域名部分，并添加双引号
+            RealityServerNames="\"${domain_only}\""
+        else
+            # 将逗号分隔的域名转换为 JSON 数组格式，并添加双引号
+            RealityServerNames="\"${RealityServerNames//,/\",\"}\""
+        fi
     fi
 
-	echoContent yellow "\n ---> 客户端可用域名: ${RealityServerNames}\n"
-
+    echoContent yellow "\n ---> 客户端可用域名: ${RealityServerNames}\n"
 }
 
 # 初始化Nginx申请证书配置
@@ -718,113 +738,118 @@ switchSSLType() {
 }
 
 #acme申请证书
+# 初始化SSL证书配置
 acmeInstallSSL() {
+    # 获取当前IPv6地址
+    currentIPv6IP=$(curl -s -6 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | cut -d "=" -f 2)
 
-	currentIPv6IP=$(curl -s -6 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | cut -d "=" -f 2)
+    # 根据是否有IPv6地址设置参数
+    if [[ -z "${currentIPv6IP}" ]]; then
+        installSSLIPv6=""
+    else
+        installSSLIPv6="--listen-v6"
+    fi
 
-	if [[ -z "${currentIPv6IP}" ]]; then
-		installSSLIPv6=""
-	else
-		installSSLIPv6="--listen-v6"
-	fi
+    # 显示SSL安装选项
+    echoContent red "\n=============================================================="
+    echoContent yellow "1. 密钥（通配证书）"
+    echoContent yellow "2. DNS（通配证书）"
+    echoContent yellow "3. 普通证书【默认】"
+    read -r -p "申请SSL证书的方式 [默认: 3]：" installSSLType
 
-	echoContent red "\n=============================================================="
-	echoContent yellow "1.密钥（通配证书）"
-	echoContent yellow "2.DNS（通配证书）"
-	echoContent yellow "3.普通证书【默认】"
-	read -r -p "申请SSL证书的方式：" installSSLType
+    # 如果用户直接回车，默认选择3
+    installSSLType=${installSSLType:-3}
 
-	if [[ "${installSSLType}" == "1" ]]; then
-		echoContent red "\n=============================================================="
-		echoContent yellow "1.Cloudflare[默认]"
-		echoContent yellow "2.DNSPod"
-		echoContent yellow "3.Aliyun "
-		echoContent yellow "4.其他 "
-		echoContent red " ---> 其他DNS运营商使用方式详见 https://github.com/acmesh-official/acme.sh/wiki/dnsapi"
-		echoContent red " ---> 请先根据文档自行添加密钥后,并输入n"
-		echoContent red "=============================================================="
-		read -r -p "请选择:" selectDNS
-		if [[ "${selectDNS}" == "1" ]]; then
-			echoContent red " ---> the token currently needs access read access to Zone.Zone, and write access to Zone.DNS,"
-			echoContent red "=============================================================="
-			read -r -p "请输入Cloudflare API Token:" CF_Token
-			#sed '/CF_Token/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-			#echo "SAVED_CF_Token='${CF_Token}'" >>/root/.acme.sh/account.conf
-			dnsEnvVars="CF_Token='${CF_Token}'"
-		
-			dnsType=dns_cf
-		elif [[ "${selectDNS}" == "2" ]]; then
-			echoContent red " ---> The DNSPod.cn Domain API option requires that you first login to your account to get a DNSPod API Key and ID."
-			echoContent red "=============================================================="
-			read -r -p "请输入DNSPod API Key:" DP_Key
-			#sed '/DP_Key/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-			#echo "SAVED_DP_Key='${DP_Key}'" >>/root/.acme.sh/account.conf
-			read -r -p "请输入DNSPod API ID:" DP_Id
-			#sed '/DP_Id/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-			#echo "SAVED_DP_Id='${DP_Id}'" >>/root/.acme.sh/account.conf
-			dnsEnvVars="DP_Key='${DP_Key}' DP_Id='${DP_Id}'"
+    if [[ "${installSSLType}" == "1" ]]; then
+        # 选择DNS提供商
+        echoContent red "\n=============================================================="
+        echoContent yellow "1. Cloudflare [默认]"
+        echoContent yellow "2. DNSPod"
+        echoContent yellow "3. Aliyun"
+        echoContent yellow "4. 其他"
+        echoContent red " ---> 其他DNS运营商使用方式详见 https://github.com/acmesh-official/acme.sh/wiki/dnsapi"
+        echoContent red " ---> 请先根据文档自行添加密钥后,并输入n"
+        echoContent red "=============================================================="
+        read -r -p "请选择DNS服务商 [默认: 1]：" selectDNS
 
-			dnsType=dns_dp
-		elif [[ "${selectDNS}" == "3" ]]; then
-			echoContent red " ---> First you need to login to your Aliyun account to get your RAM API key. https://ram.console.aliyun.com/users"
-			echoContent red "=============================================================="
-			read -r -p "请输入Aliyun API key:" Ali_Key
-			#sed '/Ali_Key/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-			#echo "SAVED_Ali_Key='${Ali_Key}'" >>/root/.acme.sh/account.conf
-			read -r -p "请输入Aliyun Secret:" Ali_Secret
-			#sed '/Ali_Secret/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
-			#echo "SAVED_Ali_Secret='${Ali_Secret}'" >>/root/.acme.sh/account.conf
-			dnsEnvVars="Ali_Key='${Ali_Key}' Ali_Secret='${Ali_Secret}'"
+        # 如果用户直接回车，默认选择1
+        selectDNS=${selectDNS:-1}
 
-			dnsType=dns_ali
-		elif [[ "${selectDNS}" == "4" ]]; then
-			echoContent red "请确保已经通过export添加相应TOKEN、KEY、ID等"
-			echoContent yellow "输入类似于dns_cf; dns_dp; dns_ali "
-			echoContent red "=============================================================="
-			read -r -p "请输入DNS服务商:" dnsType
-		else
-			echoContent red "选择错误"
-			exit 0
-		fi
+        # 根据选择的DNS服务商获取相应的API密钥
+        if [[ "${selectDNS}" == "1" ]]; then
+            echoContent red " ---> 当前Token需要访问 Zone.Zone 的读取权限和 Zone.DNS 的写入权限"
+            echoContent red "=============================================================="
+            read -r -p "请输入Cloudflare API Token:" CF_Token
+            dnsEnvVars="CF_Token='${CF_Token}'"
+            dnsType="dns_cf"
+        elif [[ "${selectDNS}" == "2" ]]; then
+            echoContent red " ---> DNSPod.cn 需要先登录账号获取DNSPod API Key和ID"
+            echoContent red "=============================================================="
+            read -r -p "请输入DNSPod API Key:" DP_Key
+            read -r -p "请输入DNSPod API ID:" DP_Id
+            dnsEnvVars="DP_Key='${DP_Key}' DP_Id='${DP_Id}'"
+            dnsType="dns_dp"
+        elif [[ "${selectDNS}" == "3" ]]; then
+            echoContent red " ---> 请先登录您的Aliyun账户获取RAM API Key。参考: https://ram.console.aliyun.com/users"
+            echoContent red "=============================================================="
+            read -r -p "请输入Aliyun API Key:" Ali_Key
+            read -r -p "请输入Aliyun Secret:" Ali_Secret
+            dnsEnvVars="Ali_Key='${Ali_Key}' Ali_Secret='${Ali_Secret}'"
+            dnsType="dns_ali"
+        elif [[ "${selectDNS}" == "4" ]]; then
+            echoContent red "请确保已经通过export添加相应TOKEN、KEY、ID等"
+            echoContent yellow "输入类似于dns_cf; dns_dp; dns_ali "
+            echoContent red "=============================================================="
+            read -r -p "请输入DNS服务商:" dnsType
+        else
+            echoContent red "选择错误，请重新运行脚本并选择正确的选项。"
+            exit 1
+        fi
 
-		if [[ "${selectSSLType}" == "2" ]]; then
-			echoContent red " ---> zerossl需要注册账号"
-			read -r -p "请输入ZeroSSL后台控制面板拿到的API Key:" ZeroSSL_API
-			ZeroSSL_Result=$(curl -s -X POST "https://api.zerossl.com/acme/eab-credentials?access_key=${ZeroSSL_API}")
-			Result="${ZeroSSL_Result}"
-			eab_kid="$(echo "$Result" | jq -r .eab_kid)"
-			eab_hmac_key="$(echo "$Result" | jq -r .eab_hmac_key)"
-			sudo "$HOME/.acme.sh/acme.sh" --register-account  --server zerossl --eab-kid "${eab_kid}" --eab-hmac-key "${eab_hmac_key}"
-		fi
+        # 处理ZeroSSL选项
+        if [[ "${sslType}" == "2" ]]; then
+            echoContent red " ---> ZeroSSL需要注册账号"
+            read -r -p "请输入ZeroSSL后台控制面板拿到的API Key:" ZeroSSL_API
+            ZeroSSL_Result=$(curl -s -X POST "https://api.zerossl.com/acme/eab-credentials?access_key=${ZeroSSL_API}")
+            eab_kid=$(echo "$ZeroSSL_Result" | jq -r .eab_kid)
+            eab_hmac_key=$(echo "$ZeroSSL_Result" | jq -r .eab_hmac_key)
 
-		echoContent green " ---> 生成证书中"
-	
-		eval "${dnsEnvVars}" sudo -E "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns "${dnsType}" -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+            # 注册ZeroSSL账号
+            sudo "$HOME/.acme.sh/acme.sh" --register-account --server zerossl --eab-kid "${eab_kid}" --eab-hmac-key "${eab_hmac_key}"
+        fi
 
-	elif [[ "${installSSLType}" == "2" ]]; then
-		sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+        echoContent green " ---> 生成证书中"
 
-        local txtValue=
+        # 申请证书
+        eval "${dnsEnvVars}" sudo -E "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns "${dnsType}" -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+
+    elif [[ "${installSSLType}" == "2" ]]; then
+        # DNS手动模式申请通配证书
+        sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+
+        # 获取TXT值
         txtValue=$(tail -n 10 /etc/xray-agent/tls/acme.log | grep "TXT value" | awk -F "'" '{print $2}')
+
         if [[ -n "${txtValue}" ]]; then
             echoContent green " ---> 请手动添加DNS TXT记录"
             echoContent yellow " ---> 添加方法请参考此教程，https://github.com/mack-a/v2ray-agent/blob/master/documents/dns_txt.md"
             echoContent yellow " ---> 如同一个域名多台机器安装通配符证书，请添加多个TXT记录，不需要修改以前添加的TXT记录"
             echoContent green " --->  name：_acme-challenge"
             echoContent green " --->  value：${txtValue}"
-            echoContent yellow " ---> 添加完成后等请等待1-2分钟"
+            echoContent yellow " ---> 添加完成后请等待1-2分钟"
             echo
             read -r -p "是否添加完成[y/n]:" addDNSTXTRecordStatus
+
             if [[ "${addDNSTXTRecordStatus}" == "y" ]]; then
-                local txtAnswer=
+                # 验证TXT记录
                 txtAnswer=$(dig @1.1.1.1 +nocmd "_acme-challenge.${TLSDomain}" txt +noall +answer | awk -F "[\"]" '{print $2}')
-                if echo "${txtAnswer}" | grep -q "^${txtValue}"; then
+                if [[ "${txtAnswer}" == "${txtValue}" ]]; then
                     echoContent green " ---> TXT记录验证通过"
                     echoContent green " ---> 生成证书中"
                     sudo "$HOME/.acme.sh/acme.sh" --renew -d "${TLSDomain}" -d "*.${TLSDomain}" --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
                 else
                     echoContent red " ---> 验证失败，请等待1-2分钟后重新尝试"
-                    acmeInstallSSL
+                    exit 1
                 fi
             else
                 echoContent red " ---> 放弃"
@@ -832,86 +857,102 @@ acmeInstallSSL() {
             fi
         fi
 
-	elif [[ "${installSSLType}" == "3" ]]; then
-		allowPort 80
-		allowPort 443
-		TLSDomain=${domain}
-		echoContent green " ---> 生成证书中"
+    elif [[ "${installSSLType}" == "3" ]]; then
+        # 普通证书申请
+        allowPort 80
+        allowPort 443
+        TLSDomain=${domain}
+        echoContent green " ---> 生成证书中"
         sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" --standalone -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
-	fi
-
+    else
+        echoContent red "选择错误，请重新运行脚本并选择正确的选项。"
+        exit 1
+    fi
 }
 
 # 安装TLS
 installTLS() {
-	echoContent skyBlue "\n进度  $1/${totalProgress} : 申请TLS证书\n"
+    echoContent skyBlue "\n进度  $1/${totalProgress} : 申请TLS证书\n"
 
-	#判断证书域名与伪装域名相同,如果未找到证书，则设置为根域名
-	if [[ -f "/etc/xray-agent/tls/${domain}.crt" && -f "/etc/xray-agent/tls/${domain}.key" && -n $(cat "/etc/xray-agent/tls/${domain}.crt") ]] || [[ -d "$HOME/.acme.sh/${domain}_ecc" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.key" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" ]]; then
-		TLSDomain=${domain}
-	else
-		TLSDomain=$(echo "${domain}" | awk -F "[.]" '{print $(NF-1)"."$NF}')
-		if [[ "${TLSDomain}" == "eu.org" ]]; then
-			TLSDomain=$(echo "${domain}" | awk -F "[.]" '{print $(NF-2)"."$(NF-1)"."$NF}')
-		fi
-	fi
+    # 判断证书域名与伪装域名相同, 如果未找到证书，则设置为根域名
+    if [[ -f "/etc/xray-agent/tls/${domain}.crt" && -f "/etc/xray-agent/tls/${domain}.key" && -s "/etc/xray-agent/tls/${domain}.crt" ]] || [[ -d "$HOME/.acme.sh/${domain}_ecc" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.key" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" ]]; then
+        TLSDomain="${domain}"
+    else
+        # 提取根域名
+        TLSDomain=$(echo "${domain}" | awk -F "." '{print $(NF-1)"."$NF}')
+        if [[ "${TLSDomain}" == "eu.org" ]]; then
+            TLSDomain=$(echo "${domain}" | awk -F "." '{print $(NF-2)"."$(NF-1)"."$NF}')
+        fi
+    fi
 
-	# 安装tls
-	if [[ -f "/etc/xray-agent/tls/${TLSDomain}.crt" && -f "/etc/xray-agent/tls/${TLSDomain}.key" && -n $(cat "/etc/xray-agent/tls/${TLSDomain}.crt") ]] || [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
-		echoContent green " ---> 检测到证书"
-		
-		renewalTLS "${TLSDomain}"
+    # 安装TLS
+    if [[ -f "/etc/xray-agent/tls/${TLSDomain}.crt" && -f "/etc/xray-agent/tls/${TLSDomain}.key" && -s "/etc/xray-agent/tls/${TLSDomain}.crt" ]] || [[ -d "$HOME/.acme.sh/${TLSDomain}_ecc" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.key" && -f "$HOME/.acme.sh/${TLSDomain}_ecc/${TLSDomain}.cer" ]]; then
+        echoContent green " ---> 检测到证书"
 
-		if [[ -z $(find /etc/xray-agent/tls/ -name "${TLSDomain}.crt") ]] || [[ -z $(find /etc/xray-agent/tls/ -name "${TLSDomain}.key") ]] || [[ -z $(cat "/etc/xray-agent/tls/${TLSDomain}.crt") ]]; then
-			sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
-		else
-			echoContent yellow " ---> 如未过期或者自定义证书请选择[n]\n"
-			read -r -p "是否重新安装？[y/n]:" reInstallStatus
-			if [[ "${reInstallStatus}" == "y" ]]; then
-				find /etc/xray-agent/tls/ -type f -name "*${TLSDomain}*" -exec rm -f {} \;
-				installTLS "$1" 0
-			fi
-		fi
-	elif [[ -d "$HOME/.acme.sh" ]]; then
+        # 尝试续期TLS证书
+        renewalTLS "${TLSDomain}"
 
-		handleNginx stop
-		
-		echoContent green " ---> 安装TLS证书"
+        # 检查续期后的证书是否存在且非空
+        if [[ ! -f "/etc/xray-agent/tls/${TLSDomain}.crt" || ! -f "/etc/xray-agent/tls/${TLSDomain}.key" || ! -s "/etc/xray-agent/tls/${TLSDomain}.crt" ]]; then
+            sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
+        else
+            echoContent yellow " ---> 如未过期或者自定义证书请选择[n]\n"
+            read -r -p "是否重新安装？[y/n]:" reInstallStatus
+            if [[ "${reInstallStatus}" == "y" ]]; then
+                # 移除现有证书文件
+                find /etc/xray-agent/tls/ -type f -name "*${TLSDomain}*" -exec rm -f {} \;
+                # 递归调用以重新安装证书
+                installTLS "$1" 0
+            fi
+        fi
+    elif [[ -d "$HOME/.acme.sh" ]]; then
+        # 停止Nginx服务
+        handleNginx stop
 
-		switchSSLType
-		customSSLEmail
-		acmeInstallSSL
+        echoContent green " ---> 安装TLS证书"
 
-		sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
+        # 切换SSL类型，配置邮箱，安装SSL
+        switchSSLType
+        customSSLEmail
+        acmeInstallSSL
 
-		handleNginx start
+        # 安装证书
+        sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
 
-		if [[ ! -f "/etc/xray-agent/tls/${TLSDomain}.crt" || ! -f "/etc/xray-agent/tls/${TLSDomain}.key" ]] || [[ -z $(cat "/etc/xray-agent/tls/${TLSDomain}.key") || -z $(cat "/etc/xray-agent/tls/${TLSDomain}.crt") ]]; then
-			tail -n 10 /etc/xray-agent/tls/acme.log
-			if [[ "$2" == "1" ]]; then
-				echoContent red " ---> TLS安装失败，请检查acme日志"
-				exit 0
-			fi
+        # 启动Nginx服务
+        handleNginx start
 
-			echo
-			echoContent yellow " ---> 重新尝试安装TLS证书"
+        # 检查证书是否成功安装
+        if [[ ! -f "/etc/xray-agent/tls/${TLSDomain}.crt" || ! -f "/etc/xray-agent/tls/${TLSDomain}.key" ]] || [[ ! -s "/etc/xray-agent/tls/${TLSDomain}.key" || ! -s "/etc/xray-agent/tls/${TLSDomain}.crt" ]]; then
+            # 显示acme日志的最后10行
+            tail -n 10 /etc/xray-agent/tls/acme.log
 
-			if tail -n 10 /etc/xray-agent/tls/acme.log | grep -q "Could not validate email address as valid"; then
-				echoContent red " ---> 邮箱无法通过SSL厂商验证，请重新输入"
-				echo
-				customSSLEmail "validate email"
-				installTLS "$1" 1
-			else
-				installTLS "$1" 1
-			fi
+            if [[ "$2" == "1" ]]; then
+                echoContent red " ---> TLS安装失败，请检查acme日志"
+                exit 0
+            fi
 
-		fi
+            echo
+            echoContent yellow " ---> 重新尝试安装TLS证书"
 
-		echoContent green " ---> TLS生成成功"
-	else
-		echoContent yellow " ---> 未安装acme.sh"
-		exit 0
-	fi
+            # 检查acme日志中是否有邮箱验证错误
+            if grep -q "Could not validate email address as valid" /etc/xray-agent/tls/acme.log; then
+                echoContent red " ---> 邮箱无法通过SSL厂商验证，请重新输入"
+                echo
+                customSSLEmail "validate email"
+                # 递归调用以重新安装证书
+                installTLS "$1" 1
+            else
+                # 递归调用以重新安装证书
+                installTLS "$1" 1
+            fi
+        fi
+
+        echoContent green " ---> TLS生成成功"
+    else
+        echoContent yellow " ---> 未安装acme.sh"
+        exit 0
+    fi
 }
 
 # 自定义email
@@ -1185,65 +1226,62 @@ generate_clients() {
   echo "$clients"
 }
 
-
 # 初始化 Reality 配置
 initXrayRealityConfig() {
     echoContent skyBlue "\n进度 $1/${totalProgress} : 初始化 Xray-core Reality配置"
-    
-	echoContent skyBlue "\n========================== 生成key ==========================\n"
+
+    echoContent skyBlue "\n========================== 生成key ==========================\n"
     if [[ -n "${RealityPublicKey}" ]]; then
         read -r -p "读取到上次安装记录，是否使用上次安装时的PublicKey/PrivateKey ？[y/n]:" historyKeyStatus
-        if [[ "${historyKeyStatus}" == "y" ]]; then
+        if [[ "${historyKeyStatus}" != "y" ]]; then
+            RealityX25519Key=$(${ctlPath} x25519)
+            RealityPrivateKey=$(echo "${RealityX25519Key}" | head -1 | awk '{print $3}')
+            RealityPublicKey=$(echo "${RealityX25519Key}" | tail -n 1 | awk '{print $3}')
+        else
             echoContent green "\n ---> 使用成功"
-		else
-			RealityX25519Key=$(${ctlPath} x25519)
-
-    		RealityPrivateKey=$(echo "${RealityX25519Key}" | head -1 | awk '{print $3}')
-    		RealityPublicKey=$(echo "${RealityX25519Key}" | tail -n 1 | awk '{print $3}')
         fi
-	else
-		echoContent yellow "请输入自定义PrivateKey[需合法],[回车]随机"
-		read -r -p 'PrivateKey:' RealityPrivateKey
-		echoContent yellow "请输入自定义PublicKey[需合法],[回车]随机"
-		read -r -p 'PublicKey:' RealityPublicKey
+    else
+        echoContent yellow "请输入自定义PrivateKey[需合法],[回车]随机"
+        read -r -p 'PrivateKey:' RealityPrivateKey
+        echoContent yellow "请输入自定义PublicKey[需合法],[回车]随机"
+        read -r -p 'PublicKey:' RealityPublicKey
 
-		if [[ -z "${RealityPrivateKey}" ]] || [[ -z "${RealityPublicKey}" ]]; then
-
-			RealityX25519Key=$(${ctlPath} x25519)
-
-    		RealityPrivateKey=$(echo "${RealityX25519Key}" | head -1 | awk '{print $3}')
-    		RealityPublicKey=$(echo "${RealityX25519Key}" | tail -n 1 | awk '{print $3}')
-		fi
+        if [[ -z "${RealityPrivateKey}" || -z "${RealityPublicKey}" ]]; then
+            RealityX25519Key=$(${ctlPath} x25519)
+            RealityPrivateKey=$(echo "${RealityX25519Key}" | head -1 | awk '{print $3}')
+            RealityPublicKey=$(echo "${RealityX25519Key}" | tail -n 1 | awk '{print $3}')
+        fi
     fi
 
     echoContent green "\n privateKey:${RealityPrivateKey}"
     echoContent green "\n publicKey:${RealityPublicKey}"
 
-	echoContent skyBlue "\n========================== 生成UUID ==========================\n"
+    echoContent skyBlue "\n========================== 生成UUID ==========================\n"
 
-	if [[ -n "${UUID}" ]]; then
-		read -r -p "读取到上次安装记录，是否使用上次安装时的UUID ？[y/n]:" historyUUIDStatus
-		if [[ "${historyUUIDStatus}" == "y" ]]; then
-			echoContent green "\n ---> 使用成功"
-		else
-			echoContent yellow "请输入自定义UUID[需合法](支持以逗号为分割输入多个)，[回车]随机UUID"
-			read -r -p 'UUID:' UUID
-		fi
-	else
-		echoContent yellow "请输入自定义UUID[需合法](支持以逗号为分割输入多个)，[回车]随机UUID"
-		read -r -p 'UUID:' UUID
-	fi
-	
+    if [[ -n "${UUID}" ]]; then
+        read -r -p "读取到上次安装记录，是否使用上次安装时的UUID ？[y/n]:" historyUUIDStatus
+        if [[ "${historyUUIDStatus}" != "y" ]]; then
+            echoContent yellow "请输入自定义UUID[需合法](支持以逗号为分割输入多个)，[回车]随机UUID"
+            read -r -p 'UUID:' UUID
+        else
+            echoContent green "\n ---> 使用成功"
+        fi
+    else
+        echoContent yellow "请输入自定义UUID[需合法](支持以逗号为分割输入多个)，[回车]随机UUID"
+        read -r -p 'UUID:' UUID
+    fi
 
-	if [[ -z "${UUID}" ]]; then
-		echoContent red "\n ---> uuid读取错误，重新生成"
-		UUID=$(${ctlPath} uuid)
-	fi
+    # 如果 UUID 为空，生成新的 UUID
+    if [[ -z "${UUID}" ]]; then
+        echoContent red "\n ---> uuid读取错误，重新生成"
+        UUID=$(${ctlPath} uuid)
+    fi
 
-	echoContent yellow "\n ${UUID}"
+    echoContent yellow "\n ${UUID}"
 
-	fallbacksList='{"dest":31305,"xver":0}'
-	cat <<EOF >${configPath}08_VLESS_XHTTP_inbounds.json
+    # 生成配置文件内容
+    fallbacksList='{"dest":31305,"xver":0}'
+    cat <<EOF >${configPath}08_VLESS_XHTTP_inbounds.json
 {
   "inbounds": [
     {
@@ -1264,44 +1302,48 @@ initXrayRealityConfig() {
                 "mode": "auto"
             },
             "sockopt": {
-				"acceptProxyProtocol": false,
-				"tcpFastOpen": true,
-				"tcpMptcp": false,
-				"tcpNoDelay": false
+                "acceptProxyProtocol": false,
+                "tcpFastOpen": true,
+                "tcpMptcp": false,
+                "tcpNoDelay": false
             }
       },
-	  "sniffing": {
+      "sniffing": {
         "enabled": true,
         "destOverride": [
-			"http",
-			"tls",
-			"quic"
+            "http",
+            "tls",
+            "quic"
         ],
-		"metadataOnly": false,
-		"routeOnly": false
-	  }
+        "metadataOnly": false,
+        "routeOnly": false
+      }
     }
   ]
 }
 EOF
 
-	if [[ "${reuse443}" == "y" ]]; then
-		acceptProxyProtocolValue=true
-		# 修改 `${configPath}${frontingType}.json` 的 "acceptProxyProtocol" 值为 true
-		if [[ -f "${configPath}${frontingType}.json" ]]; then
-			sed -i 's/"acceptProxyProtocol": false/"acceptProxyProtocol": true/' "${configPath}${frontingType}.json"
-			echoContent green "已将 ${configPath}${frontingType}.json 的 'acceptProxyProtocol' 修改为 true"
-		else
-			echoContent red "未找到 ${configPath}${frontingType}.json，跳过修改"
-		fi
-	else
-		acceptProxyProtocolValue=false
-	fi
-	cat <<EOF >${configPath}07_VLESS_Reality_TCP_inbounds.json
+    # 检查是否启用 reuse443
+    if [[ "${reuse443}" == "y" ]]; then
+        acceptProxyProtocolValue=true
+
+        # 修改 `${configPath}${frontingType}.json` 的 "acceptProxyProtocol" 值为 true
+        if [[ -f "${configPath}${frontingType}.json" ]]; then
+            # 使用 jq 更新 acceptProxyProtocol 为 true
+            updated_json=$(jq '.inbounds[].streamSettings.rawSettings.acceptProxyProtocol = true' "${configPath}${frontingType}.json")
+        
+            echo "${updated_json}" | jq . > "${configPath}${frontingType}.json"
+        fi
+    else
+        acceptProxyProtocolValue=false
+    fi
+
+    # 生成 Reality TCP 配置文件
+    cat <<EOF >${configPath}07_VLESS_Reality_TCP_inbounds.json
 {
   "inbounds": [
     {
-	  "listen": "0.0.0.0",
+      "listen": "0.0.0.0",
       "port": ${RealityPort},
       "protocol": "vless",
       "tag": "VLESSReality",
@@ -1311,7 +1353,7 @@ EOF
         ],
         "decryption": "none",
         "fallbacks":[
-			${fallbacksList}
+          ${fallbacksList}
         ]
       },
       "streamSettings": {
@@ -1329,39 +1371,38 @@ EOF
             ],
             "privateKey": "${RealityPrivateKey}",
             "publicKey": "${RealityPublicKey}",
-            "shortIds": [
-                ""
-            ]
+            "shortIds": [""]
         },
         "sockopt": {
-			"tcpFastOpen": true,
-			"tcpMptcp": false,
-			"tcpNoDelay": false
+          "tcpFastOpen": true,
+          "tcpMptcp": false,
+          "tcpNoDelay": false
         }
       },
-	  "sniffing": {
+      "sniffing": {
         "enabled": true,
         "destOverride": [
-			"http",
-			"tls",
-			"quic"
+          "http",
+          "tls",
+          "quic"
         ],
-		"metadataOnly": false,
-		"routeOnly": false
-	  }
+        "metadataOnly": false,
+        "routeOnly": false
+      }
     }
   ]
 }
 EOF
 
-	keepconfigstatus="n"
-	if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
-		read -r -p "是否保留路由和分流规则 ？[y/n]:" keepconfigstatus
-	fi
+    # 处理是否保留路由和分流规则
+    keepconfigstatus="n"
+    if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
+        read -r -p "是否保留路由和分流规则 ？[y/n]:" keepconfigstatus
+    fi
 
-	if [[ "${keepconfigstatus}" == "n" ]]; then
-		# log
-		cat <<EOF >${configPath}00_log.json
+    if [[ "${keepconfigstatus}" == "n" ]]; then
+        # 写入日志配置
+        cat <<EOF >${configPath}00_log.json
 {
   "log": {
     "error": "/etc/xray-agent/xray/error.log",
@@ -1370,99 +1411,98 @@ EOF
 }
 EOF
 
-		# 本地策略Policy
-		cat <<EOF >${configPath}01_policy.json
+        # 本地策略Policy
+        cat <<EOF >${configPath}01_policy.json
 {
   "policy": {
     "levels": {
       "0": {
         "handshake": $((RANDOM % 4 + 2)),
         "connIdle": $(((RANDOM % 11) * 30 + 300)),
-		"bufferSize": 1024
+        "bufferSize": 1024
       }
     }
   }
 }
 EOF
 
-		cat <<EOF >${configPath}10_ipv4_outbounds.json
+        # 设置 IPV4 和 IPV6 出站配置
+        cat <<EOF >${configPath}10_ipv4_outbounds.json
 {
-    "outbounds":[
-        {
-            "protocol":"freedom",
-            "settings":{
-                "domainStrategy":"UseIPv4"
-            },
-            "tag":"IPv4-out"
-        },
-        {
-            "protocol":"freedom",
-            "settings":{
-                "domainStrategy":"UseIPv6"
-            },
-            "tag":"IPv6-out"
-        },
-        {
-            "protocol":"blackhole",
-            "tag":"blackhole-out"
-        }
-    ]
+  "outbounds":[
+    {
+      "protocol":"freedom",
+      "settings":{
+        "domainStrategy":"UseIPv4"
+      },
+      "tag":"IPv4-out"
+    },
+    {
+      "protocol":"freedom",
+      "settings":{
+        "domainStrategy":"UseIPv6"
+      },
+      "tag":"IPv6-out"
+    },
+    {
+      "protocol":"blackhole",
+      "tag":"blackhole-out"
+    }
+  ]
 }
 EOF
 
-		# routing
-		rm -f ${configPath}09_routing.json
+        # 删除路由规则文件
+        rm -f ${configPath}09_routing.json
 
-		# dns
-		cat <<EOF >${configPath}11_dns.json
+        # 设置 DNS 配置
+        cat <<EOF >${configPath}11_dns.json
 {
-    "dns": {
-        "servers": [
-          "localhost"
-        ],
-		"queryStrategy": "UseIP"
+  "dns": {
+    "servers": [
+      "localhost"
+    ],
+    "queryStrategy": "UseIP"
   }
 }
 EOF
-
-fi
+    fi
 }
 
 # 初始化Xray 配置文件
 initXrayConfig() {
-	echoContent skyBlue "\n进度 $1/${totalProgress} : 初始化Xray配置"
-	echo
+    echoContent skyBlue "\n进度 $1/${totalProgress} : 初始化Xray配置"
+    echo
 	
-	if [[ -n "${UUID}" ]]; then
-		read -r -p "读取到上次安装记录，是否使用上次安装时的UUID ？[y/n]:" historyUUIDStatus
-		if [[ "${historyUUIDStatus}" == "y" ]]; then
-			echoContent green "\n ---> 使用成功"
-		else
-			echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
-			read -r -p 'UUID:' UUID
-		fi
-	else
-		echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
-		read -r -p 'UUID:' UUID
-	fi
-	
+    if [[ -n "${UUID}" ]]; then
+        read -r -p "读取到上次安装记录，是否使用上次安装时的UUID ？[y/n]:" historyUUIDStatus
+        if [[ "${historyUUIDStatus}" == "y" ]]; then
+            echoContent green "\n ---> 使用成功"
+        else
+            echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
+            read -r -p 'UUID:' UUID
+        fi
+    else
+        echoContent yellow "请输入自定义UUID[需合法]，[回车]随机UUID"
+        read -r -p 'UUID:' UUID
+    fi
 
-	if [[ -z "${UUID}" ]]; then
-		echoContent red "\n ---> uuid读取错误，重新生成"
-		UUID=$(${ctlPath} uuid)
-	fi
+    if [[ -z "${UUID}" ]]; then
+        echoContent red "\n ---> uuid读取错误，重新生成"
+        UUID=$(${ctlPath} uuid)
+    fi
 
-	echoContent yellow "\n ${UUID}"
+    echoContent yellow "\n ${UUID}"
 
-	keepconfigstatus="n"
-	if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
-		read -r -p "是否保留路由和分流规则 ？[y/n]:" keepconfigstatus
-	fi
+    # 处理是否保留路由和分流规则
+    keepconfigstatus="n"
+    if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
+        read -r -p "是否保留路由和分流规则 ？[y/n]:" keepconfigstatus
+    fi
 
-	if [[ "${keepconfigstatus}" == "n" ]]; then
-		
-		# log
-		cat <<EOF >${configPath}00_log.json
+    if [[ "${keepconfigstatus}" == "n" ]]; then
+        # 写入日志配置
+        cat <<EOF >${configPath}00_log.json
 {
   "log": {
     "error": "/etc/xray-agent/xray/error.log",
@@ -1471,153 +1511,153 @@ initXrayConfig() {
 }
 EOF
 
-		# 本地策略Policy
-		cat <<EOF >${configPath}01_policy.json
+        # 本地策略Policy
+        cat <<EOF >${configPath}01_policy.json
 {
   "policy": {
     "levels": {
       "0": {
         "handshake": $((RANDOM % 4 + 2)),
         "connIdle": $(((RANDOM % 11) * 30 + 300)),
-		"bufferSize": 1024
+        "bufferSize": 1024
       }
     }
   }
 }
 EOF
 
-		cat <<EOF >${configPath}10_ipv4_outbounds.json
+        # 设置 IPV4 和 IPV6 出站配置
+        cat <<EOF >${configPath}10_ipv4_outbounds.json
 {
-    "outbounds":[
-        {
-            "protocol":"freedom",
-            "settings":{
-                "domainStrategy":"UseIPv4"
-            },
-            "tag":"IPv4-out"
-        },
-        {
-            "protocol":"freedom",
-            "settings":{
-                "domainStrategy":"UseIPv6"
-            },
-            "tag":"IPv6-out"
-        },
-        {
-            "protocol":"blackhole",
-            "tag":"blackhole-out"
-        }
-    ]
+  "outbounds":[
+    {
+      "protocol":"freedom",
+      "settings":{
+        "domainStrategy":"UseIPv4"
+      },
+      "tag":"IPv4-out"
+    },
+    {
+      "protocol":"freedom",
+      "settings":{
+        "domainStrategy":"UseIPv6"
+      },
+      "tag":"IPv6-out"
+    },
+    {
+      "protocol":"blackhole",
+      "tag":"blackhole-out"
+    }
+  ]
 }
 EOF
 
-		# routing
-		rm -f ${configPath}09_routing.json
+        # 删除路由规则文件
+        rm -f ${configPath}09_routing.json
 
-		# dns
-		cat <<EOF >${configPath}11_dns.json
+        # 设置 DNS 配置
+        cat <<EOF >${configPath}11_dns.json
 {
-    "dns": {
-        "servers": [
-          "localhost"
-        ],
-		"queryStrategy": "UseIP"
+  "dns": {
+    "servers": [
+      "localhost"
+    ],
+    "queryStrategy": "UseIP"
   }
 }
 EOF
+    fi
 
-fi
-
-	# VLESS_WS_TLS
-	fallbacksList='{"path":"/'${path}'ws","dest":31297,"xver":1}'
-	cat <<EOF >${configPath}03_VLESS_WS_inbounds.json
+    # VLESS_WS_TLS
+    fallbacksList='{"path":"/'${path}'ws","dest":31297,"xver":1}'
+    cat <<EOF >"${configPath}03_VLESS_WS_inbounds.json"
 {
 "inbounds":[
     {
-	  "listen": "127.0.0.1",
-	  "port": 31297,
-	  "protocol": "vless",
-	  "tag":"VLESSWS",
-	  "settings": {
-		"clients": [
-		  $(generate_clients "VLESS_WS" "${UUID}")
-		],
-		"decryption": "none"
-	  },
-	  "streamSettings": {
-		"network": "ws",
-		"security": "none",
-		"wsSettings": {
-		  "acceptProxyProtocol": true,
-		  "path": "/${path}ws"
-		},
+      "listen": "127.0.0.1",
+      "port": 31297,
+      "protocol": "vless",
+      "tag":"VLESSWS",
+      "settings": {
+        "clients": [
+          $(generate_clients "VLESS_WS" "${UUID}")
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "none",
+        "wsSettings": {
+          "acceptProxyProtocol": true,
+          "path": "/${path}ws"
+        },
         "sockopt": {
-		  "tcpFastOpen": true,
-		  "tcpMptcp": false,
-		  "tcpNoDelay": false
+          "tcpFastOpen": true,
+          "tcpMptcp": false,
+          "tcpNoDelay": false
         }
-	  },
-	  "sniffing": {
+      },
+      "sniffing": {
         "enabled": true,
         "destOverride": [
-			"http",
-			"tls",
-			"quic"
+          "http",
+          "tls",
+          "quic"
         ],
-		"metadataOnly": false,
-		"routeOnly": false
-	  }
-	}
-]
-}
-EOF
-
-	# VMess_WS
-	fallbacksList=${fallbacksList}',{"path":"/'${path}'vws","dest":31299,"xver":1}'
-	cat <<EOF >${configPath}05_VMess_WS_inbounds.json
-{
-"inbounds":[
-    {
-	  "listen": "127.0.0.1",
-	  "port": 31299,
-	  "protocol": "vmess",
-	  "tag":"VMessWS",
-	  "settings": {
-		"clients": [
-		  $(generate_clients "VMess_WS" "${UUID}")
-		]
-	  },
-	  "streamSettings": {
-		"network": "ws",
-		"security": "none",
-		"wsSettings": {
-		  "acceptProxyProtocol": true,
-		  "path": "/${path}vws"
-		},
-        "sockopt": {
-		  "tcpFastOpen": true,
-		  "tcpMptcp": false,
-		  "tcpNoDelay": false
-        }
-	  },
-	  "sniffing": {
-        "enabled": true,
-        "destOverride": [
-			"http",
-			"tls",
-			"quic"
-        ],
-		"metadataOnly": false,
-		"routeOnly": false
-	  }
+        "metadataOnly": false,
+        "routeOnly": false
+      }
     }
 ]
 }
 EOF
 
-	# VLESS_XHTTP
-	fallbacksList=${fallbacksList}',{"dest":31300,"xver":0}'
-	cat <<EOF >${configPath}08_VLESS_XHTTP_inbounds.json
+    # VMess_WS
+    fallbacksList=${fallbacksList}',{"path":"/'${path}'vws","dest":31299,"xver":1}'
+    cat <<EOF >"${configPath}05_VMess_WS_inbounds.json"
+{
+"inbounds":[
+    {
+      "listen": "127.0.0.1",
+      "port": 31299,
+      "protocol": "vmess",
+      "tag":"VMessWS",
+      "settings": {
+        "clients": [
+          $(generate_clients "VMess_WS" "${UUID}")
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "none",
+        "wsSettings": {
+          "acceptProxyProtocol": true,
+          "path": "/${path}vws"
+        },
+        "sockopt": {
+          "tcpFastOpen": true,
+          "tcpMptcp": false,
+          "tcpNoDelay": false
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "metadataOnly": false,
+        "routeOnly": false
+      }
+    }
+]
+}
+EOF
+
+    # VLESS_XHTTP
+    fallbacksList=${fallbacksList}',{"dest":31300,"xver":0}'
+    cat <<EOF >"${configPath}08_VLESS_XHTTP_inbounds.json"
 {
   "inbounds": [
     {
@@ -1638,64 +1678,67 @@ EOF
                 "mode": "auto"
             },
             "sockopt": {
-				"acceptProxyProtocol": false,
-				"tcpFastOpen": true,
-				"tcpMptcp": false,
-				"tcpNoDelay": false
+                "acceptProxyProtocol": false,
+                "tcpFastOpen": true,
+                "tcpMptcp": false,
+                "tcpNoDelay": false
             }
       },
-	  "sniffing": {
+      "sniffing": {
         "enabled": true,
         "destOverride": [
-			"http",
-			"tls",
-			"quic"
+          "http",
+          "tls",
+          "quic"
         ],
-		"metadataOnly": false,
-		"routeOnly": false
-	  }
+        "metadataOnly": false,
+        "routeOnly": false
+      }
     }
   ]
 }
 EOF
 
-	if [[ "${reuse443}" == "y" ]]; then
-		acceptProxyProtocolValue=true
-		# 修改 `${configPath}${RealityfrontingType}.json` 的 "acceptProxyProtocol" 值为 true
-		if [[ -f "${configPath}${RealityfrontingType}.json" ]]; then
-			sed -i 's/"acceptProxyProtocol": false/"acceptProxyProtocol": true/' "${configPath}${RealityfrontingType}.json"
-			echoContent green "已将 ${configPath}${RealityfrontingType}.json 的 'acceptProxyProtocol' 修改为 true"
-		else
-			echoContent red "未找到 ${configPath}${RealityfrontingType}.json，跳过修改"
-		fi
-	else
-		acceptProxyProtocolValue=false
-	fi
-	# VLESS_TCP
-	cat <<EOF >${configPath}02_VLESS_TCP_inbounds.json
+    # 检查是否启用 reuse443
+    if [[ "${reuse443}" == "y" ]]; then
+        acceptProxyProtocolValue=true
+
+        # 修改 `${configPath}${RealityfrontingType}.json` 的 "acceptProxyProtocol" 值为 true
+        if [[ -f "${configPath}${RealityfrontingType}.json" ]]; then
+            # 使用 jq 更新 acceptProxyProtocol 为 true
+            updated_json=$(jq '.inbounds[].streamSettings.rawSettings.acceptProxyProtocol = true' "${configPath}${RealityfrontingType}.json")
+        
+            echo "${updated_json}" | jq . > "${configPath}${RealityfrontingType}.json"
+        fi
+    else
+        acceptProxyProtocolValue=false
+    fi
+
+    # VLESS_TCP
+    cat <<EOF >"${configPath}02_VLESS_TCP_inbounds.json"
 {
 "inbounds":[
     {
-	  "listen": "0.0.0.0",
-	  "port": ${Port},
-	  "protocol": "vless",
-	  "tag":"VLESSTCP",
-	  "settings": {
-		"clients": [
-		  $(generate_clients "VLESS_TCP" "${UUID}")
-		],
-		"decryption": "none",
-		"fallbacks": [
-			${fallbacksList}
-		]
-	  },
-	  "streamSettings": {
-		"network": "raw",
-		"rawSettings": {
+      "listen": "0.0.0.0",
+      "port": ${Port},
+      "protocol": "vless",
+      "tag":"VLESSTCP",
+      "settings": {
+        "clients": [
+          $(generate_clients "VLESS_TCP" "${UUID}")
+        ],
+        "decryption": "none",
+        "fallbacks": [
+            ${fallbacksList}
+        ]
+      },
+      "streamSettings": {
+        "network": "raw",
+        "rawSettings": {
           "acceptProxyProtocol": ${acceptProxyProtocolValue}
-		},
-		"security": "tls",
-		"tlsSettings": {
+        },
+        "security": "tls",
+        "tlsSettings": {
           "alpn": [
             "http/1.1",
             "h2"
@@ -1709,23 +1752,23 @@ EOF
               "keyFile": "/etc/xray-agent/tls/${TLSDomain}.key"
             }
           ]
-		},
+        },
         "sockopt": {
-		  "tcpFastOpen": true,
-		  "tcpMptcp": false,
-		  "tcpNoDelay": false
+          "tcpFastOpen": true,
+          "tcpMptcp": false,
+          "tcpNoDelay": false
         }
-	  },
-	  "sniffing": {
+      },
+      "sniffing": {
         "enabled": true,
         "destOverride": [
-			"http",
-			"tls",
-			"quic"
+          "http",
+          "tls",
+          "quic"
         ],
-		"metadataOnly": false,
-		"routeOnly": false
-	  }
+        "metadataOnly": false,
+        "routeOnly": false
+      }
     }
 ]
 }
@@ -2600,83 +2643,106 @@ updateXRayAgent() {
 
 # 查看、检查日志
 checkLog() {
-	if [[ -z "${coreInstallType}" ]]; then
-		echoContent red " ---> 没有检测到安装目录，请执行脚本安装内容"
-	fi
-	local logStatus=false
-	if grep -q "access" ${configPath}00_log.json; then
-		logStatus=true
-	fi
+    if [[ -z "${coreInstallType}" ]]; then
+        echoContent red " ---> 没有检测到安装目录，请执行脚本安装内容"
+    fi
 
-	echoContent skyBlue "\n功能 $1/${totalProgress} : 查看日志"
-	echoContent red "\n=============================================================="
-	echoContent yellow "# 建议仅调试时打开access日志\n"
+    local logStatus=false
+    if grep -q "access" "${configPath}00_log.json"; then
+        logStatus=true
+    fi
 
-	if [[ "${logStatus}" == "false" ]]; then
-		echoContent yellow "1.打开access日志"
-	else
-		echoContent yellow "1.关闭access日志"
-	fi
+    echoContent skyBlue "\n功能 $1/${totalProgress} : 查看日志"
+    echoContent red "\n=============================================================="
+    echoContent yellow "# 建议仅调试时打开access日志\n"
 
-	echoContent yellow "2.监听access日志"
-	echoContent yellow "3.监听error日志"
-	echoContent yellow "4.查看证书定时任务日志"
-	echoContent yellow "5.查看证书安装日志"
-	echoContent yellow "6.清空日志"
-	echoContent red "=============================================================="
+    if [[ "${logStatus}" == "false" ]]; then
+        echoContent yellow "1.打开access日志"
+    else
+        echoContent yellow "1.关闭access日志"
+    fi
 
-	read -r -p "请选择:" selectAccessLogType
-	local configPathLog=${configPath//conf\//}
+    echoContent yellow "2.监听access日志"
+    echoContent yellow "3.监听error日志"
+    echoContent yellow "4.查看证书定时任务日志"
+    echoContent yellow "5.查看证书安装日志"
+    echoContent yellow "6.清空日志"
+    echoContent red "=============================================================="
 
-	case ${selectAccessLogType} in
-	1)
-		if [[ "${logStatus}" == "false" ]]; then
-			cat <<EOF >${configPath}00_log.json
+    read -r -p "请选择:" selectAccessLogType
+    local configPathLog="${configPath//conf\//}"
+
+    case ${selectAccessLogType} in
+    1)
+        if [[ "${logStatus}" == "false" ]]; then
+            # 打开access日志
+            cat <<EOF >"${configPath}00_log.json"
 {
-  "log": {
-  	"access":"${configPathLog}access.log",
-    "error": "${configPathLog}error.log",
-    "loglevel": "debug"
-  }
+    "log": {
+        "access": "${configPathLog}access.log",
+        "error": "${configPathLog}error.log",
+        "loglevel": "debug"
+    }
 }
 EOF
-			if [[ "${coreInstallType}" == "2" ]] || [[ "${coreInstallType}" == "3" ]]; then
-				sed -i 's/"show": false/"show": true/' "${configPath}${RealityfrontingType}.json"
-			fi
-		elif [[ "${logStatus}" == "true" ]]; then
-			cat <<EOF >${configPath}00_log.json
+            if [[ "${coreInstallType}" == "2" || "${coreInstallType}" == "3" ]]; then
+                # 使用 jq 修改 realitySettings.show 为 true
+                if [[ -f "${configPath}${RealityfrontingType}.json" ]]; then
+                    updated_json=$(jq '.inbounds[].streamSettings.realitySettings.show = true' "${configPath}${RealityfrontingType}.json")
+                    echo "${updated_json}" | jq . > "${configPath}${RealityfrontingType}.json"
+                fi
+            fi
+        elif [[ "${logStatus}" == "true" ]]; then
+            # 关闭access日志
+            cat <<EOF >"${configPath}00_log.json"
 {
-  "log": {
-    "error": "${configPathLog}error.log",
-    "loglevel": "warning"
-  }
+    "log": {
+        "error": "${configPathLog}error.log",
+        "loglevel": "warning"
+    }
 }
 EOF
-			if [[ "${coreInstallType}" == "2" ]] || [[ "${coreInstallType}" == "3" ]]; then
-				sed -i 's/"show": true/"show": false/' "${configPath}${RealityfrontingType}.json"
-			fi
-		fi
+            if [[ "${coreInstallType}" == "2" || "${coreInstallType}" == "3" ]]; then
+                # 使用 jq 修改 realitySettings.show 为 false
+                if [[ -f "${configPath}${RealityfrontingType}.json" ]]; then
+                    updated_json=$(jq '.inbounds[].streamSettings.realitySettings.show = false' "${configPath}${RealityfrontingType}.json")
+                    echo "${updated_json}" | jq . > "${configPath}${RealityfrontingType}.json"
+                fi
+            fi
+        fi
 
-		reloadCore
-		checkLog 1
-		;;
-	2)
-		tail -f "${configPathLog}"access.log
-		;;
-	3)
-		tail -f "${configPathLog}"error.log
-		;;
-	4)
-		tail -n 100 /etc/xray-agent/crontab_tls.log
-		;;
-	5)
-		tail -n 100 /etc/xray-agent/tls/acme.log
-		;;
-	6)
-		echo >"${configPathLog}"access.log
-		echo >"${configPathLog}"error.log
-		;;
-	esac
+        # 重新加载核心服务
+        reloadCore
+
+        # 递归调用以刷新日志状态
+        checkLog 1
+        ;;
+    2)
+        # 监听access日志
+        tail -f "${configPathLog}access.log"
+        ;;
+    3)
+        # 监听error日志
+        tail -f "${configPathLog}error.log"
+        ;;
+    4)
+        # 查看证书定时任务日志
+        tail -n 100 /etc/xray-agent/crontab_tls.log
+        ;;
+    5)
+        # 查看证书安装日志
+        tail -n 100 /etc/xray-agent/tls/acme.log
+        ;;
+    6)
+        # 清空日志
+        echo >"${configPathLog}access.log"
+        echo >"${configPathLog}error.log"
+        echoContent green " ---> 日志已清空"
+        ;;
+    *)
+        echoContent red "选择无效，请重新运行脚本并选择正确的选项。"
+        ;;
+    esac
 }
 
 warpRouting() {
@@ -3090,134 +3156,155 @@ unInstallOutbounds() {
 
 }
 
+# 管理流量嗅探设置
 manageSniffing() {
-	if [[ -z "${coreInstallType}" ]]; then
-		echoContent red " ---> 未安装，请使用脚本安装"
-		menu
-		exit 0
-	fi
+    if [[ -z "${coreInstallType}" ]]; then
+        echoContent red " ---> 未安装，请使用脚本安装"
+        menu
+        exit 0
+    fi
 
-	if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]] ; then
-		fT=${frontingType}
-	elif [[ "${coreInstallType}" == "2" ]]; then
-		fT=${RealityfrontingType}
-	fi
-	
-	echoContent skyBlue "\n功能 1/${totalProgress} : 流量嗅探管理"
-	echoContent red "\n=============================================================="
+    if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]]; then
+        fT="${frontingType}"
+    elif [[ "${coreInstallType}" == "2" ]]; then
+        fT="${RealityfrontingType}"
+    fi
+    
+    echoContent skyBlue "\n功能 1/${totalProgress} : 流量嗅探管理"
+    echoContent red "\n=============================================================="
 
-	if [[ $(jq '.inbounds[0].sniffing.enabled' ${configPath}${fT}.json) == "true" ]]; then
-		echoContent red "\n流量嗅探功能默认开启,关闭将会导致routing规则失效"
-		echoContent yellow "1.关闭流量嗅探"
-		
-		if [[ $(jq '.inbounds[0].sniffing.routeOnly' ${configPath}${fT}.json) == "true" ]]; then
-			echoContent yellow "3.关闭流量嗅探仅供路由"
-		else
-			echoContent red "\n流量嗅探仅供路由默认关闭，开启将会导致routing规则失效"
-			echoContent yellow "4.开启流量嗅探仅供路由"
-		fi
-	else
-		echoContent yellow "2.开启流量嗅探"
-	fi
-	read -r -p "请按照上面示例输入:" sniffingtype
+    if [[ $(jq '.inbounds[0].sniffing.enabled' "${configPath}${fT}.json") == "true" ]]; then
+        echoContent red "\n流量嗅探功能默认开启,关闭将会导致routing规则失效"
+        echoContent yellow "1.关闭流量嗅探"
+        
+        if [[ $(jq '.inbounds[0].sniffing.routeOnly' "${configPath}${fT}.json") == "true" ]]; then
+            echoContent yellow "3.关闭流量嗅探仅供路由"
+        else
+            echoContent red "\n流量嗅探仅供路由默认关闭，开启将会导致routing规则失效"
+            echoContent yellow "4.开启流量嗅探仅供路由"
+        fi
+    else
+        echoContent yellow "2.开启流量嗅探"
+    fi
+    read -r -p "请按照上面示例输入:" sniffingtype
 
-	if [[ "${sniffingtype}" == "1" ]]; then
-		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
-			sed -i 's/"enabled": true/"enabled": false/' "${configfile}"
-		done
-	elif [[ "${sniffingtype}" == "2" ]]; then
-		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
-			sed -i 's/"enabled": false/"enabled": true/' "${configfile}"
-		done
-	elif [[ "${sniffingtype}" == "3" ]]; then
-		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
-			sed -i 's/"routeOnly": true/"routeOnly": false/' "${configfile}"
-		done
-	elif [[ "${sniffingtype}" == "4" ]]; then
-		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
-			sed -i 's/"routeOnly": false/"routeOnly": true/' "${configfile}"
-		done
-	else
-		echoContent red " ---> 选择错误"
-		exit 0
-	fi
+    if [[ "${sniffingtype}" == "1" ]]; then
+        # 关闭流量嗅探
+        find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
+            updated_json=$(jq '.inbounds[].sniffing.enabled = false' "${configfile}")
+            echo "${updated_json}" | jq . > "${configfile}"
+        done
+    elif [[ "${sniffingtype}" == "2" ]]; then
+        # 开启流量嗅探
+        find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
+            updated_json=$(jq '.inbounds[].sniffing.enabled = true' "${configfile}")
+            echo "${updated_json}" | jq . > "${configfile}"
+        done
+    elif [[ "${sniffingtype}" == "3" ]]; then
+        # 关闭流量嗅探仅供路由
+        find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
+            updated_json=$(jq '.inbounds[].sniffing.routeOnly = false' "${configfile}")
+            echo "${updated_json}" | jq . > "${configfile}"
+        done
+    elif [[ "${sniffingtype}" == "4" ]]; then
+        # 开启流量嗅探仅供路由
+        find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
+            updated_json=$(jq '.inbounds[].sniffing.routeOnly = true' "${configfile}")
+            echo "${updated_json}" | jq . > "${configfile}"
+        done
+    else
+        echoContent red " ---> 选择错误"
+        exit 0
+    fi
 
-	reloadCore
+    reloadCore
 }
 
+# 管理高级sockopt设置
 manageSockopt() {
-	if [[ -z "${coreInstallType}" ]]; then
-		echoContent red " ---> 未安装，请使用脚本安装"
-		menu
-		exit 0
-	fi
+    # 检查是否已安装
+    if [[ -z "${coreInstallType}" ]]; then
+        echoContent red " ---> 未安装，请使用脚本安装"
+        menu
+        exit 0
+    fi
 
-	if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]] ; then
-		fT=${frontingType}
-	elif [[ "${coreInstallType}" == "2" ]]; then
-		fT=${RealityfrontingType}
-	fi
-	
-	echoContent skyBlue "\n功能 1/${totalProgress} : 进阶功能管理"
-	echoContent red "\n=============================================================="
+    # 根据安装类型设置前端类型
+    if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]]; then
+        fT="${frontingType}"
+    elif [[ "${coreInstallType}" == "2" ]]; then
+        fT="${RealityfrontingType}"
+    fi
 
-	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpMptcp' ${configPath}${fT}.json) == "true" ]]; then
-		echoContent yellow "2.关闭tcpMptcp"
-	else
-		echoContent yellow "1.开启tcpMptcp"
-	fi
+    echoContent skyBlue "\n功能 1/${totalProgress} : 进阶功能管理"
+    echoContent red "\n=============================================================="
 
-	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpNoDelay' ${configPath}${fT}.json) == "true" ]]; then
-		echoContent yellow "4.关闭tcpNoDelay"
-	else
-		echoContent yellow "3.开启tcpNoDelay"
-	fi
+    # 获取当前sockopt设置
+    current_tcpMptcp=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp' "${configPath}${fT}.json")
+    current_tcpNoDelay=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay' "${configPath}${fT}.json")
+    current_tcpFastOpen=$(jq '.inbounds[].streamSettings.sockopt.tcpFastOpen' "${configPath}${fT}.json")
 
-	if [[ $(jq '.inbounds[0].streamSettings.sockopt.tcpFastOpen' ${configPath}${fT}.json) == "true" ]]; then
-		echoContent yellow "6.关闭tcpFastOpen"
-	else
-		echoContent yellow "5.开启tcpFastOpen"
-	fi
+    # 显示选项，编号调整为1-3
+    echoContent yellow "1. $( [[ "${current_tcpMptcp}" == "true" ]] && echo "关闭" || echo "开启" ) tcpMptcp"
+    echoContent yellow "2. $( [[ "${current_tcpNoDelay}" == "true" ]] && echo "关闭" || echo "开启" ) tcpNoDelay"
+    echoContent yellow "3. $( [[ "${current_tcpFastOpen}" == "true" ]] && echo "关闭" || echo "开启" ) tcpFastOpen"
+
+    echoContent red "\n=============================================================="
 
 	read -r -p "请按照上面示例输入:" sockopttype
 
-	if [[ "${sockopttype}" == "1" ]]; then
-		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
-			sed -i 's/"tcpMptcp": false/"tcpMptcp": true/' "${configfile}"
-		done
-	elif [[ "${sockopttype}" == "2" ]]; then
-		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
-			sed -i 's/"tcpMptcp": true/"tcpMptcp": false/' "${configfile}"
-		done
-	elif [[ "${sockopttype}" == "3" ]]; then
-		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
-			sed -i 's/"tcpNoDelay": false/"tcpNoDelay": true/' "${configfile}"
-		done
-	elif [[ "${sockopttype}" == "4" ]]; then
-		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
-			sed -i 's/"tcpNoDelay": true/"tcpNoDelay": false/' "${configfile}"
-		done
-	elif [[ "${sockopttype}" == "5" ]]; then
-		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
-			sed -i 's/"tcpFastOpen": false/"tcpFastOpen": true/' "${configfile}"
-		done
-		
-		sed -i '/net.ipv4.tcp_fastopen/d' /etc/sysctl.conf
-		sed -i '$a net.ipv4.tcp_fastopen=3' /etc/sysctl.conf
-		sysctl -p
-	elif [[ "${sockopttype}" == "6" ]]; then
-		find ${configPath} -name "*_inbounds.json" | while read -r configfile; do
-			sed -i 's/"tcpFastOpen": true/"tcpFastOpen": false/' "${configfile}"
-		done
-		
-		sed -i '/net.ipv4.tcp_fastopen/d' /etc/sysctl.conf
-		sysctl -p
-	else
-		echoContent red " ---> 选择错误"
-		exit 0
-	fi
+    case ${sockopttype} in
+    1)
+        # 切换 tcpMptcp
+        find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
+            current_value=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp' "${configfile}")
+            if [[ "${current_value}" == "true" ]]; then
+                updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp = false' "${configfile}")
+            else
+                updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp = true' "${configfile}")
+            fi
+            echo "${updated_json}" | jq . > "${configfile}"
+        done
+        ;;
+    2)
+        # 切换 tcpNoDelay
+        find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
+            current_value=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay' "${configfile}")
+            if [[ "${current_value}" == "true" ]]; then
+                updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay = false' "${configfile}")
+            else
+                updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay = true' "${configfile}")
+            fi
+            echo "${updated_json}" | jq . > "${configfile}"
+        done
+        ;;
+    3)
+        # 切换 tcpFastOpen
+        find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
+            current_value=$(jq '.inbounds[].streamSettings.sockopt.tcpFastOpen' "${configfile}")
+            if [[ "${current_value}" == "true" ]]; then
+                updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpFastOpen = false' "${configfile}")
+                # 移除 sysctl.conf 中的 tcp_fastopen 设置
+                sed -i '/net.ipv4.tcp_fastopen/d' /etc/sysctl.conf
+            else
+                updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpFastOpen = true' "${configfile}")
+                # 添加 tcp_fastopen=3 到 sysctl.conf
+                sed -i '$a net.ipv4.tcp_fastopen=3' /etc/sysctl.conf
+            fi
+            echo "${updated_json}" | jq . > "${configfile}"
+        done
 
-	reloadCore
+        # 应用 sysctl 配置
+        sysctl -p
+        ;;
+    *)
+        echoContent red " ---> 选择错误"
+        exit 0
+        ;;
+    esac
+
+    # 重新加载核心服务
+    reloadCore
 }
 
 # 删除证书
@@ -3280,7 +3367,6 @@ reloadCore() {
 	handleXray start
 }
 
-
 # xray-core 安装
 xrayCoreInstall() {
 
@@ -3290,22 +3376,19 @@ xrayCoreInstall() {
 	initTLSNginxConfig 2
 
 	handleXray stop
+
 	installTLS 3 0
-	randomPathFunction 4
+	
 	# 安装Xray
-	installXray 5
-	installXrayService 6
+	installXray 4
+	installXrayService 5
 
+	randomPathFunction 6
 	updateRedirectNginxConf "Vision" 7
-
 	initXrayConfig 8
-
 	installCronTLS 9
 	
-	handleXray stop
-	sleep 2
-	handleXray start
-
+	reloadCore
 	auto_update_geodata
 	# 生成账号
 	checkGFWStatue 10
@@ -3315,7 +3398,7 @@ xrayCoreInstall() {
 # xray-core 安装
 xrayCoreInstall_Reality() {
 
-	totalProgress=7
+	totalProgress=8
 	installTools 1
 
 	handleXray stop
@@ -3326,15 +3409,10 @@ xrayCoreInstall_Reality() {
 
 	initTLSRealityConfig 4
 	randomPathFunction 5
-
 	updateRedirectNginxConf "Reality" 5.5
-
 	initXrayRealityConfig 6
 	
-	handleXray stop
-	sleep 2
-	handleXray start
-
+	reloadCore
 	auto_update_geodata
 	# 生成账号
 	checkGFWStatue 7
@@ -3538,9 +3616,9 @@ menu() {
 	cd "$HOME" || exit
 	echoContent red "\n=============================================================="
 	echoContent green "作者:mack-a"
-	echoContent green "当前版本:v3.0.1"
+	echoContent green "当前版本:v3.1.0"
 	echoContent green "Github:https://github.com/mack-a/xray-agent"
-	echoContent green "描述:八合一共存脚本\c"
+	echoContent green "描述:N合一共存脚本\c"
 	showInstallStatus
 	echoContent red "\n=============================================================="
 	if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]] ; then
