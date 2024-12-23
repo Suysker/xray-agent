@@ -3380,6 +3380,7 @@ xrayCoreInstall() {
     installXrayService 5
 
     randomPathFunction 6
+    customPortFunction "Vision"
     updateRedirectNginxConf "Vision" 7
     initXrayConfig 8
     installCronTLS 9
@@ -3405,6 +3406,7 @@ xrayCoreInstall_Reality() {
 
     initTLSRealityConfig 4
     randomPathFunction 5
+    customPortFunction "Reality"
     updateRedirectNginxConf "Reality" 5.5
     initXrayRealityConfig 6
     
