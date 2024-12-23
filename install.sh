@@ -737,7 +737,7 @@ switchSSLType() {
     fi
 }
 
-#acme申请证书
+# acme申请证书
 # 初始化SSL证书配置
 acmeInstallSSL() {
     # 获取当前IPv6地址
@@ -821,11 +821,11 @@ acmeInstallSSL() {
         echoContent green " ---> 生成证书中"
 
         # 申请证书
-        eval "${dnsEnvVars}" sudo -E "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns "${dnsType}" -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+        eval "${dnsEnvVars}" sudo -E "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns "${dnsType}" -k ec-256 --server "${sslType}" ${installSSLIPv6} --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
 
     elif [[ "${installSSLType}" == "2" ]]; then
         # DNS手动模式申请通配证书
-        sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+        sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" -d "*.${TLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" ${installSSLIPv6} --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
 
         # 获取TXT值
         txtValue=$(tail -n 10 /etc/xray-agent/tls/acme.log | grep "TXT value" | awk -F "'" '{print $2}')
@@ -846,7 +846,7 @@ acmeInstallSSL() {
                 if [[ "${txtAnswer}" == "${txtValue}" ]]; then
                     echoContent green " ---> TXT记录验证通过"
                     echoContent green " ---> 生成证书中"
-                    sudo "$HOME/.acme.sh/acme.sh" --renew -d "${TLSDomain}" -d "*.${TLSDomain}" --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+                    sudo "$HOME/.acme.sh/acme.sh" --renew -d "${TLSDomain}" -d "*.${TLSDomain}" --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}" ${installSSLIPv6} --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
                 else
                     echoContent red " ---> 验证失败，请等待1-2分钟后重新尝试"
                     exit 1
@@ -863,7 +863,7 @@ acmeInstallSSL() {
         allowPort 443
         TLSDomain=${domain}
         echoContent green " ---> 生成证书中"
-        sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" --standalone -k ec-256 --server "${sslType}" "${installSSLIPv6}" --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
+        sudo "$HOME/.acme.sh/acme.sh" --issue -d "${TLSDomain}" --standalone -k ec-256 --server "${sslType}" ${installSSLIPv6} --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
     else
         echoContent red "选择错误，请重新运行脚本并选择正确的选项。"
         exit 1
