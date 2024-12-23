@@ -633,7 +633,7 @@ initTLSRealityConfig() {
     while true; do
         if [[ -n "${RealityDestDomain}" ]]; then
             read -r -p "读取到上次安装记录，是否使用上次安装时的域名 ？[y/n]:" historyDestStatus
-            if [[ "${historyDestStatus}" == "y"]]; then
+            if [[ "${historyDestStatus}" == "y" ]]; then
                 echoContent green "\n ---> 使用成功"
                 break
             else
@@ -674,7 +674,7 @@ initTLSRealityConfig() {
 
         if [[ -z "${RealityServerNames}" ]]; then
             # 如果未输入，默认使用域名部分，并添加双引号
-            RealityServerNames="\"${domain_only}\""
+            RealityServerNames="\"${RealityDestDomain%%:*}\""
         else
             # 将逗号分隔的域名转换为 JSON 数组格式，并添加双引号
             RealityServerNames="\"${RealityServerNames//,/\",\"}\""
