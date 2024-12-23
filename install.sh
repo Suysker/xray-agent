@@ -659,10 +659,10 @@ initTLSRealityConfig() {
     echoContent skyBlue "\n >配置客户端可用的serverNames\n"
     echoContent red "\n=============================================================="
 
-    if [[ "${historyDestStatus}" == "y"]]; then
-        echoContent green "\n ---> 使用成功"
-        # 提取域名部分并添加双引号
-        RealityServerNames="\"${RealityDestDomain%%:*}\""
+    if [[ "${historyDestStatus}" == "y" ]] && [[ -n "${RealityServerNames}" ]]; then	
+		echoContent green "\n ---> 使用成功"
+        # 将逗号分隔的域名转换为 JSON 数组格式，并添加双引号
+        RealityServerNames="\"${RealityServerNames//,/\",\"}\""
     else
         echoContent yellow " # 注意事项\n"
         tlsPingResult=$(${ctlPath} tls ping "${RealityDestDomain%%:*}")
@@ -3164,58 +3164,61 @@ manageSniffing() {
         exit 0
     fi
 
-    if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]]; then
-        fT="${frontingType}"
+    # 获取当前sniffing设置
+    if [[ "${coreInstallType}" == "1" ]]; then
+        current_sniffing=$(jq '.inbounds[].sniffing.enabled' "${configPath}${frontingType}.json")
+        current_routeOnly=$(jq '.inbounds[].sniffing.routeOnly' "${configPath}${frontingType}.json")
     elif [[ "${coreInstallType}" == "2" ]]; then
-        fT="${RealityfrontingType}"
+        current_sniffing=$(jq '.inbounds[].sniffing.enabled' "${configPath}${RealityfrontingType}.json")
+        current_routeOnly=$(jq '.inbounds[].sniffing.routeOnly' "${configPath}${RealityfrontingType}.json")
+    elif [[ "${coreInstallType}" == "3" ]]; then
+        current_sniffing=$(jq -s '.[0].inbounds[].sniffing.enabled and .[1].inbounds[].sniffing.enabled' "${configPath}${frontingType}.json" "${configPath}${RealityfrontingType}.json")
+        current_routeOnly=$(jq -s '.[0].inbounds[].sniffing.routeOnly and .[1].inbounds[].sniffing.routeOnly' "${configPath}${frontingType}.json" "${configPath}${RealityfrontingType}.json")
     fi
     
     echoContent skyBlue "\n功能 1/${totalProgress} : 流量嗅探管理"
     echoContent red "\n=============================================================="
-
-    if [[ $(jq '.inbounds[0].sniffing.enabled' "${configPath}${fT}.json") == "true" ]]; then
-        echoContent red "\n流量嗅探功能默认开启,关闭将会导致routing规则失效"
-        echoContent yellow "1.关闭流量嗅探"
-        
-        if [[ $(jq '.inbounds[0].sniffing.routeOnly' "${configPath}${fT}.json") == "true" ]]; then
-            echoContent yellow "3.关闭流量嗅探仅供路由"
-        else
-            echoContent red "\n流量嗅探仅供路由默认关闭，开启将会导致routing规则失效"
-            echoContent yellow "4.开启流量嗅探仅供路由"
-        fi
-    else
-        echoContent yellow "2.开启流量嗅探"
+    echoContent red "\n流量嗅探功能默认开启,关闭将会导致routing规则失效"
+    # 显示选项，编号调整为1-2
+    echoContent yellow "1. $( [[ "${current_sniffing}" == "true" ]] && echo "关闭" || echo "开启" ) 流量嗅探"
+    
+    if [[ "${current_sniffing}" == "true" ]]; then
+        echoContent red "\n流量嗅探仅供路由默认关闭，开启将会导致routing规则失效"
+        echoContent yellow "2. $( [[ "${current_routeOnly}" == "true" ]] && echo "关闭" || echo "开启" ) 流量嗅探仅供路由"
     fi
+
     read -r -p "请按照上面示例输入:" sniffingtype
 
-    if [[ "${sniffingtype}" == "1" ]]; then
-        # 关闭流量嗅探
+    case ${sniffingtype} in
+    1)
+        # 切换流量嗅探
         find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
-            updated_json=$(jq '.inbounds[].sniffing.enabled = false' "${configfile}")
+            if [[ "${current_sniffing}" == "true" ]]; then
+                updated_json=$(jq '.inbounds[].sniffing.enabled = false' "${configfile}")
+                echo "${updated_json}" | jq . > "${configfile}"
+            else
+                updated_json=$(jq '.inbounds[].sniffing.enabled = true' "${configfile}")
+            fi
             echo "${updated_json}" | jq . > "${configfile}"
         done
-    elif [[ "${sniffingtype}" == "2" ]]; then
-        # 开启流量嗅探
+        ;;
+    2)
+        # 切换流量嗅探仅供路由
         find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
-            updated_json=$(jq '.inbounds[].sniffing.enabled = true' "${configfile}")
+            if [[ "${current_routeOnly}" == "true" ]]; then
+                updated_json=$(jq '.inbounds[].sniffing.routeOnly = false' "${configfile}")
+                echo "${updated_json}" | jq . > "${configfile}"
+            else
+                updated_json=$(jq '.inbounds[].sniffing.routeOnly = true' "${configfile}")
+            fi
             echo "${updated_json}" | jq . > "${configfile}"
         done
-    elif [[ "${sniffingtype}" == "3" ]]; then
-        # 关闭流量嗅探仅供路由
-        find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
-            updated_json=$(jq '.inbounds[].sniffing.routeOnly = false' "${configfile}")
-            echo "${updated_json}" | jq . > "${configfile}"
-        done
-    elif [[ "${sniffingtype}" == "4" ]]; then
-        # 开启流量嗅探仅供路由
-        find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
-            updated_json=$(jq '.inbounds[].sniffing.routeOnly = true' "${configfile}")
-            echo "${updated_json}" | jq . > "${configfile}"
-        done
-    else
+        ;;
+    *)
         echoContent red " ---> 选择错误"
         exit 0
-    fi
+        ;;
+    esac
 
     reloadCore
 }
@@ -3229,20 +3232,23 @@ manageSockopt() {
         exit 0
     fi
 
-    # 根据安装类型设置前端类型
-    if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]]; then
-        fT="${frontingType}"
-    elif [[ "${coreInstallType}" == "2" ]]; then
-        fT="${RealityfrontingType}"
-    fi
-
     echoContent skyBlue "\n功能 1/${totalProgress} : 进阶功能管理"
     echoContent red "\n=============================================================="
 
     # 获取当前sockopt设置
-    current_tcpMptcp=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp' "${configPath}${fT}.json")
-    current_tcpNoDelay=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay' "${configPath}${fT}.json")
-    current_tcpFastOpen=$(jq '.inbounds[].streamSettings.sockopt.tcpFastOpen' "${configPath}${fT}.json")
+    if [[ "${coreInstallType}" == "1" ]]; then
+        current_tcpMptcp=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp' "${configPath}${frontingType}.json")
+        current_tcpNoDelay=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay' "${configPath}${frontingType}.json")
+        current_tcpFastOpen=$(jq '.inbounds[].streamSettings.sockopt.tcpFastOpen' "${configPath}${frontingType}.json")
+    elif [[ "${coreInstallType}" == "2" ]]; then
+        current_tcpMptcp=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp' "${configPath}${RealityfrontingType}.json")
+        current_tcpNoDelay=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay' "${configPath}${RealityfrontingType}.json")
+        current_tcpFastOpen=$(jq '.inbounds[].streamSettings.sockopt.tcpFastOpen' "${configPath}${RealityfrontingType}.json")
+    elif [[ "${coreInstallType}" == "3" ]]; then
+        current_tcpMptcp=$(jq -s '.[0].inbounds[].streamSettings.sockopt.tcpMptcp and .[1].inbounds[].streamSettings.sockopt.tcpMptcp' "${configPath}${frontingType}.json" "${configPath}${RealityfrontingType}.json")
+        current_tcpNoDelay=$(jq -s '.[0].inbounds[].streamSettings.sockopt.tcpNoDelay and .[1].inbounds[].streamSettings.sockopt.tcpNoDelay' "${configPath}${frontingType}.json" "${configPath}${RealityfrontingType}.json")
+        current_tcpFastOpen=$(jq -s '.[0].inbounds[].streamSettings.sockopt.tcpFastOpen and .[1].inbounds[].streamSettings.sockopt.tcpFastOpen' "${configPath}${frontingType}.json" "${configPath}${RealityfrontingType}.json")
+    fi
 
     # 显示选项，编号调整为1-3
     echoContent yellow "1. $( [[ "${current_tcpMptcp}" == "true" ]] && echo "关闭" || echo "开启" ) tcpMptcp"
@@ -3257,8 +3263,7 @@ manageSockopt() {
     1)
         # 切换 tcpMptcp
         find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
-            current_value=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp' "${configfile}")
-            if [[ "${current_value}" == "true" ]]; then
+            if [[ "${current_tcpMptcp}" == "true" ]]; then
                 updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp = false' "${configfile}")
             else
                 updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp = true' "${configfile}")
@@ -3269,8 +3274,7 @@ manageSockopt() {
     2)
         # 切换 tcpNoDelay
         find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
-            current_value=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay' "${configfile}")
-            if [[ "${current_value}" == "true" ]]; then
+            if [[ "${current_tcpNoDelay}" == "true" ]]; then
                 updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay = false' "${configfile}")
             else
                 updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay = true' "${configfile}")
@@ -3281,8 +3285,7 @@ manageSockopt() {
     3)
         # 切换 tcpFastOpen
         find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
-            current_value=$(jq '.inbounds[].streamSettings.sockopt.tcpFastOpen' "${configfile}")
-            if [[ "${current_value}" == "true" ]]; then
+            if [[ "${current_tcpFastOpen}" == "true" ]]; then
                 updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpFastOpen = false' "${configfile}")
                 # 移除 sysctl.conf 中的 tcp_fastopen 设置
                 sed -i '/net.ipv4.tcp_fastopen/d' /etc/sysctl.conf
