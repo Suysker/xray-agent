@@ -635,7 +635,6 @@ initTLSRealityConfig() {
             read -r -p "读取到上次安装记录，是否使用上次安装时的域名 ？[y/n]:" historyDestStatus
             if [[ "${historyDestStatus}" == "y" ]]; then
                 echoContent green "\n ---> 使用成功"
-                break
             else
                 echoContent skyBlue "\n ---> 生成配置回落的域名 例如: addons.mozilla.org:443\n"
                 read -r -p '请输入:' RealityDestDomain
