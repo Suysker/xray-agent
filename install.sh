@@ -551,7 +551,7 @@ customPortFunction() {
         read -r -p "读取到上次安装时的端口，是否使用上次安装时的端口 ？[y/n]:" historyCustomPortStatus
         if [[ "${historyCustomPortStatus}" == "y" ]]; then
             if [[ "${reuse443}" == "y" && "${port}" == "443" ]]; then
-                echoContent red " ---> ${$1}全局设置为不允许使用端口 443"
+                echoContent red " ---> ${1}全局设置为不允许使用端口 443"
                 historyCustomPortStatus="n"
             else
                 echoContent yellow "\n ---> 端口: ${port}"
@@ -566,7 +566,7 @@ customPortFunction() {
         if [[ -n "${port}" ]]; then
             if ((port >= 1 && port <= 65535)); then
                 if [[ "${reuse443}" == "y" && "${port}" == "443" ]]; then
-                    echoContent red " ---> ${$1}全局设置为不允许使用端口 443"
+                    echoContent red " ---> ${1}全局设置为不允许使用端口 443"
                     exit 0
                 fi
                 checkPort "${port}"
@@ -576,7 +576,7 @@ customPortFunction() {
             fi
         else
             if [[ "${reuse443}" == "y" ]]; then
-                echoContent red " ---> ${$1}全局设置为不允许使用默认端口 443"
+                echoContent red " ---> ${1}全局设置为不允许使用默认端口 443"
                 exit 0
             fi
             port=443
