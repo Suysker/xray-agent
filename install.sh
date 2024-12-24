@@ -548,20 +548,20 @@ customPortFunction() {
 
     if [[ -n "${port}" ]]; then
         echo
-        read -r -p "读取到上次安装时的端口，是否使用上次安装时的端口 ？[y/n]:" historyCustomPortStatus
+        read -r -p "${1}读取到上次安装时的端口，是否使用上次安装时的端口 ？[y/n]:" historyCustomPortStatus
         if [[ "${historyCustomPortStatus}" == "y" ]]; then
             if [[ "${reuse443}" == "y" && "${port}" == "443" ]]; then
                 echoContent red " ---> ${1}全局设置为不允许使用端口 443"
                 historyCustomPortStatus="n"
             else
-                echoContent yellow "\n ---> 端口: ${port}"
+                echoContent yellow "\n ---> ${1}端口: ${port}"
             fi
         fi
     fi
 
     if [[ "${historyCustomPortStatus}" == "n" || -z "${port}" ]]; then
         echo
-        echoContent yellow "请输入自定义端口[例: 2083]，[回车]使用443"
+        echoContent yellow "${1}请输入自定义端口[例: 2083]，[回车]使用443"
         read -r -p "端口:" port
         if [[ -n "${port}" ]]; then
             if ((port >= 1 && port <= 65535)); then
@@ -571,7 +571,7 @@ customPortFunction() {
                 fi
                 checkPort "${port}"
             else
-                echoContent red " ---> 端口输入错误"
+                echoContent red " ---> ${1}端口输入错误"
                 exit 0
             fi
         else
@@ -581,7 +581,7 @@ customPortFunction() {
             fi
             port=443
             checkPort "${port}"
-            echoContent yellow "\n ---> 端口: 443"
+            echoContent yellow "\n ---> ${1}端口: 443"
         fi
     fi
 
@@ -3499,6 +3499,7 @@ unInstall() {
 
     rm -rf /etc/xray-agent
     rm -rf ${nginxConfigPath}alone.conf
+    rm -rf ${nginxConfigPath}alone.stream
 
     rm -rf /usr/bin/vasma
     rm -rf /usr/sbin/vasma
