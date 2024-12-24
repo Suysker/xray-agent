@@ -551,7 +551,7 @@ customPortFunction() {
         read -r -p "读取到上次安装时的端口，是否使用上次安装时的端口 ？[y/n]:" historyCustomPortStatus
         if [[ "${historyCustomPortStatus}" == "y" ]]; then
             if [[ "${reuse443}" == "y" && "${port}" == "443" ]]; then
-                echoContent red " ---> 全局设置为不允许使用端口 443"
+                echoContent red " ---> ${$1}全局设置为不允许使用端口 443"
                 historyCustomPortStatus="n"
             else
                 echoContent yellow "\n ---> 端口: ${port}"
@@ -566,7 +566,7 @@ customPortFunction() {
         if [[ -n "${port}" ]]; then
             if ((port >= 1 && port <= 65535)); then
                 if [[ "${reuse443}" == "y" && "${port}" == "443" ]]; then
-                    echoContent red " ---> 全局设置为不允许使用端口 443"
+                    echoContent red " ---> ${$1}全局设置为不允许使用端口 443"
                     exit 0
                 fi
                 checkPort "${port}"
@@ -576,7 +576,7 @@ customPortFunction() {
             fi
         else
             if [[ "${reuse443}" == "y" ]]; then
-                echoContent red " ---> 全局设置为不允许使用默认端口 443"
+                echoContent red " ---> ${$1}全局设置为不允许使用默认端口 443"
                 exit 0
             fi
             port=443
@@ -1977,55 +1977,85 @@ defaultBase64Code() {
 
     case "${type}" in
         "vlesstcp")
+            if [[ "${reuse443}" == "y" ]]; then
+                port="443"
+            else
+                port="${Port}"
+            fi
             echoContent yellow " ---> 通用格式 (VLESS+TCP+TLS)"
-            echoContent green "vless://${id}@${domain}:${Port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
+            echoContent green "vless://${id}@${domain}:${port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
 
             echoContent yellow " ---> 格式化明文 (VLESS+TCP+TLS)"
-            echoContent green "协议类型: VLESS，地址: ${domain}，端口: ${Port}，用户ID: ${id}，安全: tls，传输方式: tcp，flow: xtls-rprx-vision，账户名: ${id}\n"
+            echoContent green "协议类型: VLESS，地址: ${domain}，端口: ${port}，用户ID: ${id}，安全: tls，传输方式: tcp，flow: xtls-rprx-vision，账户名: ${id}\n"
             ;;
 
         "vlessws")
+            if [[ "${reuse443}" == "y" ]]; then
+                port="443"
+            else
+                port="${Port}"
+            fi
             echoContent yellow " ---> 通用格式 (VLESS+WS+TLS)"
-            echoContent green "vless://${id}@${domain}:${Port}?encryption=none&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=ws&host=${domain}&path=%2F${path}ws#${id}\n"
+            echoContent green "vless://${id}@${domain}:${port}?encryption=none&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=ws&host=${domain}&path=%2F${path}ws#${id}\n"
 
             echoContent yellow " ---> 格式化明文 (VLESS+WS+TLS)"
-            echoContent green "协议类型: VLESS，地址: ${domain}，伪装域名/SNI: ${domain}，端口: ${Port}，用户ID: ${id}，安全: tls，传输方式: ws，路径: /${path}ws，账户名: ${id}\n"
+            echoContent green "协议类型: VLESS，地址: ${domain}，伪装域名/SNI: ${domain}，端口: ${port}，用户ID: ${id}，安全: tls，传输方式: ws，路径: /${path}ws，账户名: ${id}\n"
             ;;
 
         "vmessws")
+            if [[ "${reuse443}" == "y" ]]; then
+                port="443"
+            else
+                port="${Port}"
+            fi
             # 生成 Base64 编码
-            qrCodeBase64Default=$(echo -n "{\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\",\"alpn\":\"h2,http/1.1\",\"fp\":\"chrome\"}" | base64 -w 0)
+            qrCodeBase64Default=$(echo -n "{\"port\":${port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\",\"alpn\":\"h2,http/1.1\",\"fp\":\"chrome\"}" | base64 -w 0)
             qrCodeBase64Default="${qrCodeBase64Default// /}"
 
             echoContent yellow " ---> 通用json (VMess+WS+TLS)"
-            echoContent green "    {\"port\":${Port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\",\"alpn\":\"h2,http/1.1\",\"fp\":\"chrome\"}\n"
+            echoContent green "    {\"port\":${port},\"tls\":\"tls\",\"id\":\"${id}\",\"aid\":0,\"v\":2,\"host\":\"${domain}\",\"type\":\"none\",\"path\":\"/${path}vws\",\"net\":\"ws\",\"allowInsecure\":0,\"method\":\"none\",\"peer\":\"${domain}\",\"sni\":\"${domain}\",\"alpn\":\"h2,http/1.1\",\"fp\":\"chrome\"}\n"
 
             echoContent green "    vmess://${qrCodeBase64Default}\n"
             ;;
 
         "vlesstcpreality")
+            if [[ "${reuse443}" == "y" ]]; then
+                port="443"
+            else
+                port="${RealityPort}"
+            fi
             echoContent yellow " ---> 通用格式 (VLESS+TCP+Reality)"
-            echoContent green "vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$(echo "${RealityServerNames}" | cut -d ',' -f 1)&fp=chrome&pbk=${RealityPublicKey}&spx=%2F&type=tcp&headerType=none#${id}\n"
+            echoContent green "vless://${id}@$(getPublicIP):${port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$(echo "${RealityServerNames}" | cut -d ',' -f 1)&fp=chrome&pbk=${RealityPublicKey}&spx=%2F&type=tcp&headerType=none#${id}\n"
 
             echoContent yellow " ---> 格式化明文 (VLESS+TCP+Reality)"
-            echoContent green "协议类型: VLESS Reality，地址: $(getPublicIP)，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: ${RealityPort}，用户ID: ${id}，传输方式: tcp，账户名: ${id}\n"
+            echoContent green "协议类型: VLESS Reality，地址: $(getPublicIP)，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: ${port}，用户ID: ${id}，传输方式: tcp，账户名: ${id}\n"
             ;;
 
         "vlessxhttp")
             if [[ "${coreInstallType}" == "1" ]] || [[ "${coreInstallType}" == "3" ]]; then
+                if [[ "${reuse443}" == "y" ]]; then
+                    port="443"
+                else
+                    port="${Port}"
+                fi
                 echoContent yellow " ---> 通用格式 (VLESS+XHTTP+TLS)"
-                echoContent green "vless://${id}@${domain}:${Port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
+                echoContent green "vless://${id}@${domain}:${port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2%2Chttp%2F1.1&fp=chrome&type=tcp&headerType=none#${id}\n"
 
                 echoContent yellow " ---> 格式化明文 (VLESS+XHTTP+TLS)"
-                echoContent green "协议类型: VLESS，地址: ${domain}，端口: ${Port}，用户ID: ${id}，安全: tls，传输方式: XHTTP，账户名: ${id}\n"
+                echoContent green "协议类型: VLESS，地址: ${domain}，端口: ${port}，用户ID: ${id}，安全: tls，传输方式: XHTTP，账户名: ${id}\n"
             fi
 
             if [[ "${coreInstallType}" == "2" ]] || [[ "${coreInstallType}" == "3" ]]; then
+                if [[ "${reuse443}" == "y" ]]; then
+                    port="443"
+                else
+                    port="${RealityPort}"
+                fi
                 echoContent yellow " ---> 通用格式 (VLESS+XHTTP+Reality)"
-                echoContent green "vless://${id}@$(getPublicIP):${RealityPort}?encryption=none&security=reality&type=h2&sni=$(echo "${RealityServerNames}" | cut -d ',' -f 1)&fp=chrome&pbk=${RealityPublicKey}&path=${RealityPath}#${id}\n"
+                echoContent green "vless://${id}@$(getPublicIP):${port}?encryption=none&security=reality&type=h2&sni=$(echo "${RealityServerNames}" | cut -d ',' -f 1)&fp=chrome&pbk=${RealityPublicKey}&path=${RealityPath}#${id}\n"
 
                 echoContent yellow " ---> 格式化明文 (VLESS+XHTTP+Reality)"
-                echoContent green "协议类型: VLESS XHTTP，地址: $(getPublicIP)，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: ${RealityPort}，用户ID: ${id}，传输方式: XHTTP，client-fingerprint: chrome，账户名: ${id}\n"
+                echoContent green "协议类型: VLESS XHTTP，地址: $(getPublicIP)，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: ${port}，用户ID: ${id}，传输方式: XHTTP，client-fingerprint: chrome，账户名: ${id}\n"
             fi
             ;;
     esac
