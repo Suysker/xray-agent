@@ -2784,6 +2784,9 @@ warpRouting() {
     elif [[ "$(ip a)" =~ ": wgcf:" ]]; then
         echoContent red " ---> 已安装，网卡名称为wgcf"
         warpinterface="wgcf"
+    elif [[ "$(ip a)" =~ ": warp:" ]]; then
+        echoContent red " ---> 已安装，网卡名称为warp"
+        warpinterface="warp"
     else
         echoContent red " ---> 未安装或未开启，请使用脚本安装或开启"
         menu
@@ -3737,7 +3740,7 @@ menu() {
         AdguardManageMenu 1
         ;;
     17)
-        wget -N https://raw.githubusercontent.com/fscarmen/warp/main/warp-go.sh && bash warp-go.sh
+        wget -N https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh && bash menu.sh
         ;;
     18)
         wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
