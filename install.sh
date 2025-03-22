@@ -806,7 +806,7 @@ acmeInstallSSL() {
         fi
 
         # 处理ZeroSSL选项
-        if [[ "${sslType}" == "2" ]]; then
+        if [[ "${sslType}" == "zerossl" ]]; then
             echoContent red " ---> ZeroSSL需要注册账号"
             read -r -p "请输入ZeroSSL后台控制面板拿到的API Key:" ZeroSSL_API
             ZeroSSL_Result=$(curl -s -X POST "https://api.zerossl.com/acme/eab-credentials?access_key=${ZeroSSL_API}")
@@ -2196,6 +2196,7 @@ xrayVersionManageMenu() {
 # 更新Xray
 updateXray() {
     readInstallType
+    prereleaseStatus=${prereleaseStatus:-false}
     if [[ -z "${coreInstallType}" ]]; then
         if [[ -n "$1" ]]; then
             version=$1
@@ -3646,7 +3647,7 @@ menu() {
     cd "$HOME" || exit
     echoContent red "\n=============================================================="
     echoContent green "作者:mack-a"
-    echoContent green "当前版本:v3.1.0"
+    echoContent green "当前版本:v3.1.1"
     echoContent green "Github:https://github.com/mack-a/xray-agent"
     echoContent green "描述:N合一共存脚本\c"
     showInstallStatus
