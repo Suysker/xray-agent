@@ -3511,27 +3511,7 @@ unInstall() {
     echoContent green " ---> 卸载xray-agent脚本完成"
 }
 
-manage_systemd_resolved() {
-    if [[ "$1" == "close" ]]; then
-        if systemctl is-active --quiet systemd-resolved; then
-            systemctl stop systemd-resolved
-        fi
-
-        if systemctl is-enabled --quiet systemd-resolved; then
-            systemctl disable systemd-resolved
-        fi
-    elif [[ "$1" == "open" ]]; then
-        if ! systemctl is-active --quiet systemd-resolved; then
-            systemctl start systemd-resolved
-        fi
-
-        if ! systemctl is-enabled --quiet systemd-resolved; then
-            systemctl enable systemd-resolved
-        fi
-    fi
-}
-
-# Adguardhome管理
+# AdGuardHome 管理菜单
 AdguardManageMenu() {
     echoContent skyBlue "\nAdguardhome管理"
     echoContent red "\n=============================================================="
@@ -3543,6 +3523,7 @@ AdguardManageMenu() {
     echoContent yellow "6.重启Adguardhome"
     echoContent red "=============================================================="
     
+    # 根据 CPU 架构选择对应的 AdGuardHome 可执行文件
     if [[ "${xrayCoreCPUVendor}" == "Xray-linux-64" ]]; then
         adgCoreCPUVendor="AdGuardHome_linux_amd64"
     elif [[ "${xrayCoreCPUVendor}" == "Xray-linux-arm64-v8a" ]]; then
@@ -3552,61 +3533,62 @@ AdguardManageMenu() {
     read -r -p "请选择:" selectADGType
     if [[ "${selectADGType}" == "1" ]]; then
         if [[ -f "/opt/AdGuardHome/AdGuardHome" ]]; then
-            echoContent red " ---> 检测到安装目录，请执行脚本卸载内容"
+            echoContent red " ---> 检测到安装目录，请执行脚本卸载操作"
             menu
             exit 0
         fi
-        #官方的安装脚本
+        # 官方安装脚本
         curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
-
     fi
 
     if [[ ! -f "/opt/AdGuardHome/AdGuardHome" ]]; then
-        echoContent red " ---> 没有检测到安装目录，请执行脚本安装内容"
+        echoContent red " ---> 没有检测到安装目录，请先安装Adguardhome"
         menu
         exit 0
     else
-        #解除53端口占用
-        manage_systemd_resolved "close"
-
+        # 启动 AdGuardHome 服务
         systemctl start AdGuardHome
         systemctl enable AdGuardHome
     fi
 
     if [[ "${selectADGType}" == "2" ]]; then
-
-        #下载最新版至tmp
+        # 下载最新版至 /tmp
         wget -O '/tmp/AdGuardHome_linux_amd64.tar.gz' "https://static.adguard.com/adguardhome/release/${adgCoreCPUVendor}.tar.gz"
-        #解压最新版至tmp
+        # 解压到 /tmp
         tar -C /tmp/ -f /tmp/AdGuardHome_linux_amd64.tar.gz -x -v -z
-        #暂停运行
+        # 暂停服务
         systemctl stop AdGuardHome
-        #将最新版复制到安装目录
+        # 覆盖安装文件
         cp /tmp/AdGuardHome/AdGuardHome /opt/AdGuardHome/AdGuardHome
-        #开始运行
-        manage_systemd_resolved "close"
-        
+        # 启动服务
         systemctl start AdGuardHome
         systemctl enable AdGuardHome
-
     elif [[ "${selectADGType}" == "3" ]]; then
         /opt/AdGuardHome/AdGuardHome -s uninstall
         rm -rf /opt/AdGuardHome
-
-        manage_systemd_resolved "open"
+        # 恢复 DNS 配置
+        if [ -d /etc/resolvconf/resolv.conf.d ]; then
+            sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head
+            sudo resolvconf -u
+        else
+            sudo chattr -i /etc/resolv.conf
+            [ -f /etc/resolv.conf.bak ] && sudo mv /etc/resolv.conf.bak /etc/resolv.conf
+        fi
     elif [[ "${selectADGType}" == "4" ]]; then
         systemctl stop AdGuardHome
         systemctl disable AdGuardHome
-
-        manage_systemd_resolved "open"
+        # 恢复 DNS 配置
+        if [ -d /etc/resolvconf/resolv.conf.d ]; then
+            sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head
+            sudo resolvconf -u
+        else
+            sudo chattr -i /etc/resolv.conf
+            [ -f /etc/resolv.conf.bak ] && sudo mv /etc/resolv.conf.bak /etc/resolv.conf
+        fi
     elif [[ "${selectADGType}" == "5" ]]; then
-        manage_systemd_resolved "close"
-
         systemctl start AdGuardHome
         systemctl enable AdGuardHome
     elif [[ "${selectADGType}" == "6" ]]; then
-        manage_systemd_resolved "close"
-
         systemctl restart AdGuardHome
         systemctl enable AdGuardHome
     fi
@@ -3615,29 +3597,35 @@ AdguardManageMenu() {
     
     if [[ -f "/opt/AdGuardHome/AdGuardHome" ]]; then
         if systemctl is-active --quiet AdGuardHome; then
-
-            echoContent green " ---> Adguardhome运行中"    
-
-            current_dns=$(grep -oP '(?<=nameserver ).*' /etc/resolv.conf)
-            if [[ "$current_dns" != "127.0.0.1" ]]; then
-                sudo cp /etc/resolv.conf /etc/resolv.conf.bak
-                echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf
+            echoContent green " ---> AdGuardhome运行中"
+            # 设置 DNS 为本机（AdGuardHome），确保 DNS 始终走 127.0.0.1
+            if [ -d /etc/resolvconf/resolv.conf.d ]; then
+                if ! grep -q "^nameserver 127.0.0.1" /etc/resolvconf/resolv.conf.d/head; then
+                    sudo sed -i '1inameserver 127.0.0.1' /etc/resolvconf/resolv.conf.d/head
+                fi
+                sudo resolvconf -u
+            else
+                if [ -L /etc/resolv.conf ]; then
+                    sudo rm -f /etc/resolv.conf
+                fi
+                [ ! -f /etc/resolv.conf.bak ] && sudo cp /etc/resolv.conf /etc/resolv.conf.bak
+                echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf >/dev/null
+                sudo chattr +i /etc/resolv.conf
             fi
-            echoContent green " ---> Aguardhome设置为DNS服务器成功"
-
+            echoContent green " ---> AdGuardhome已成功设置为DNS服务器"
             if [[ ! -f "/opt/AdGuardHome/AdGuardHome.yaml" ]]; then
-                echoContent red " ---> 未检测到Aguardhome配置文件，请尽快完成初始化配置，否则DNS无法解析"
+                echoContent red " ---> 未检测到AdGuardhome配置文件，请尽快完成初始化配置，否则DNS将无法解析"
             fi
-
         else
-        
-            echoContent red " ---> Adguardhome未运行"    
-
-            current_dns=$(grep -oP '(?<=nameserver ).*' /etc/resolv.conf)
-            if [[ "$current_dns" == "127.0.0.1" ]]; then
-                sudo mv /etc/resolv.conf.bak /etc/resolv.conf
+            echoContent red " ---> AdGuardhome未运行"
+            if [ -d /etc/resolvconf/resolv.conf.d ]; then
+                sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head
+                sudo resolvconf -u
+            else
+                sudo chattr -i /etc/resolv.conf
+                [ -f /etc/resolv.conf.bak ] && sudo mv /etc/resolv.conf.bak /etc/resolv.conf
             fi
-            echoContent green " ---> 复原DNS服务器成功"
+            echoContent green " ---> 已恢复原始DNS配置"
         fi
     fi
 }
