@@ -3546,6 +3546,12 @@ AdguardManageMenu() {
         menu
         exit 0
     else
+        # 执行解决方案：禁用 systemd-resolved 的 53 端口监听
+        if ! grep -q "DNSStubListener=no" /etc/systemd/resolved.conf; then
+            sudo sed -i '/\[Resolve\]/a DNSStubListener=no' /etc/systemd/resolved.conf
+            sudo systemctl restart systemd-resolved
+        fi
+
         # 启动 AdGuardHome 服务
         systemctl start AdGuardHome
         systemctl enable AdGuardHome
@@ -3566,24 +3572,32 @@ AdguardManageMenu() {
     elif [[ "${selectADGType}" == "3" ]]; then
         /opt/AdGuardHome/AdGuardHome -s uninstall
         rm -rf /opt/AdGuardHome
-        # 恢复 DNS 配置
+        # 恢复 DNS 配置：
         if [ -d /etc/resolvconf/resolv.conf.d ]; then
             sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head
             sudo resolvconf -u
         else
             sudo chattr -i /etc/resolv.conf
-            [ -f /etc/resolv.conf.bak ] && sudo mv /etc/resolv.conf.bak /etc/resolv.conf
+            if [ -f /etc/resolv.conf.bak ]; then
+                sudo mv /etc/resolv.conf.bak /etc/resolv.conf
+            else
+                echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf >/dev/null
+            fi
         fi
     elif [[ "${selectADGType}" == "4" ]]; then
         systemctl stop AdGuardHome
         systemctl disable AdGuardHome
-        # 恢复 DNS 配置
+        # 恢复 DNS 配置：
         if [ -d /etc/resolvconf/resolv.conf.d ]; then
             sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head
             sudo resolvconf -u
         else
             sudo chattr -i /etc/resolv.conf
-            [ -f /etc/resolv.conf.bak ] && sudo mv /etc/resolv.conf.bak /etc/resolv.conf
+            if [ -f /etc/resolv.conf.bak ]; then
+                sudo mv /etc/resolv.conf.bak /etc/resolv.conf
+            else
+                echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf >/dev/null
+            fi
         fi
     elif [[ "${selectADGType}" == "5" ]]; then
         systemctl start AdGuardHome
@@ -3608,7 +3622,9 @@ AdguardManageMenu() {
                 if [ -L /etc/resolv.conf ]; then
                     sudo rm -f /etc/resolv.conf
                 fi
-                [ ! -f /etc/resolv.conf.bak ] && sudo cp /etc/resolv.conf /etc/resolv.conf.bak
+                if [ ! -f /etc/resolv.conf.bak ]; then
+                    sudo cp /etc/resolv.conf /etc/resolv.conf.bak
+                fi
                 echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf >/dev/null
                 sudo chattr +i /etc/resolv.conf
             fi
@@ -3618,12 +3634,17 @@ AdguardManageMenu() {
             fi
         else
             echoContent red " ---> AdGuardhome未运行"
+            # 恢复 DNS 配置：
             if [ -d /etc/resolvconf/resolv.conf.d ]; then
                 sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head
                 sudo resolvconf -u
             else
                 sudo chattr -i /etc/resolv.conf
-                [ -f /etc/resolv.conf.bak ] && sudo mv /etc/resolv.conf.bak /etc/resolv.conf
+                if [ -f /etc/resolv.conf.bak ]; then
+                    sudo mv /etc/resolv.conf.bak /etc/resolv.conf
+                else
+                    echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf >/dev/null
+                fi
             fi
             echoContent green " ---> 已恢复原始DNS配置"
         fi
