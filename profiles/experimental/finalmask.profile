@@ -1,0 +1,4 @@
+name=finalmask
+entry=
+feature_flag=XRAY_AGENT_ENABLE_FINALMASK
+template_or_patch=templates/xray/extras

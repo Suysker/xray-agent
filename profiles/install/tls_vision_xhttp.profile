@@ -1,0 +1,3 @@
+name=tls_vision_xhttp
+protocols=vless_tcp_tls,vless_ws_tls,vmess_ws_tls,vless_xhttp
+entry=xrayCoreInstall

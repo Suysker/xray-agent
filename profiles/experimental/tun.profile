@@ -1,0 +1,4 @@
+name=tun
+entry=xray_agent_render_local_tun_profile
+feature_flag=
+template_or_patch=20_tun.json.tpl

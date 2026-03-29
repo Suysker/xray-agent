@@ -1,0 +1,1 @@
+vless://${XRAY_SHARE_UUID}@${XRAY_SHARE_ADDRESS}:${XRAY_SHARE_PORT}?encryption=none&security=${XRAY_SHARE_SECURITY}&sni=${XRAY_SHARE_SNI}&fp=chrome&type=xhttp&path=%2F${XRAY_SHARE_PATH}#${XRAY_SHARE_NAME}

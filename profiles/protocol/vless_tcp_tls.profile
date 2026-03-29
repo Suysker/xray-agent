@@ -1,0 +1,16 @@
+name=vless_tcp_tls
+inbound_template=02_vless_tcp_tls.json.tpl
+share_template=vless_tcp.tpl
+protocol=vless
+transport=tcp
+security=tls
+flow=xtls-rprx-vision
+address_source=domain
+port_source=Port
+sni_source=domain
+path_source=
+mode=
+alpn=h2,http/1.1
+fp=chrome
+client_kind=VLESS_TCP
+config_file=02_VLESS_TCP_inbounds.json

@@ -1,0 +1,16 @@
+name=vless_reality_tcp
+inbound_template=07_vless_reality_tcp.json.tpl
+share_template=vless_reality.tpl
+protocol=vless
+transport=tcp
+security=reality
+flow=xtls-rprx-vision
+address_source=public_ip
+port_source=RealityPort
+sni_source=reality_server_name
+path_source=
+mode=
+alpn=h2,http/1.1
+fp=chrome
+client_kind=VLESS_TCP
+config_file=07_VLESS_Reality_TCP_inbounds.json

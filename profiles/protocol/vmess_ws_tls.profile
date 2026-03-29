@@ -1,0 +1,16 @@
+name=vmess_ws_tls
+inbound_template=05_vmess_ws_tls.json.tpl
+share_template=vmess_ws.tpl
+protocol=vmess
+transport=ws
+security=tls
+flow=
+address_source=domain
+port_source=Port
+sni_source=domain
+path_source=path_vws
+mode=
+alpn=h2,http/1.1
+fp=chrome
+client_kind=VMESS_WS
+config_file=05_VMess_WS_inbounds.json

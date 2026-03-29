@@ -1,0 +1,3 @@
+name=reality_vision_xhttp
+protocols=vless_reality_tcp,vless_xhttp
+entry=xrayCoreInstall_Reality

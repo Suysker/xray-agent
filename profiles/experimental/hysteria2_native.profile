@@ -1,0 +1,4 @@
+name=hysteria2_native
+entry=xray_agent_install_hysteria2_native
+feature_flag=
+template_or_patch=12_hysteria2.json.tpl
