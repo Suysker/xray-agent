@@ -9,6 +9,6 @@
 - `9~15` -> `lib/features`
 - `16` -> `lib/apps/adguardhome.sh`
 - `17~23` -> `lib/external`
-- `24` -> `profiles/install` + `lib/protocols/compose.sh`
+- `24` -> 已验证的 install profile（`tls_vision_xhttp`、`reality_vision_xhttp`）+ `lib/protocols/compose.sh`
 - `25` -> `lib/experimental/tun.sh` + `lib/experimental/browser_dialer.sh`
 - `26` -> `profiles/experimental` + `lib/experimental/*`

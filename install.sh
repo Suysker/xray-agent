@@ -163,9 +163,7 @@ xrayAgentProfileBuilderMenu() {
     echoContent red "\n=============================================================="
     echoContent yellow "1.server_tls_vision + ws/vmess/xhttp"
     echoContent yellow "2.server_reality_vision + xhttp"
-    echoContent yellow "3.server_tls_xhttp"
-    echoContent yellow "4.server_reality_xhttp"
-    echoContent yellow "5.server_hysteria2"
+    echoContent yellow "3.server_hysteria2"
     echoContent red "=============================================================="
     read -r -p "请选择:" selectProfileBuilderType
     case "${selectProfileBuilderType}" in
@@ -176,12 +174,6 @@ xrayAgentProfileBuilderMenu() {
             xray_agent_run_install_profile reality_vision_xhttp
             ;;
         3)
-            xray_agent_run_install_profile tls_vision_xhttp
-            ;;
-        4)
-            xray_agent_run_install_profile reality_vision_xhttp
-            ;;
-        5)
             xray_agent_install_hysteria2_native
             ;;
     esac

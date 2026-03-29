@@ -20,5 +20,7 @@
 说明：
 
 - 默认全部关闭或使用保守默认值
+- `XRAY_AGENT_BROWSER_HEADERS` 会实际写入 `08_VLESS_XHTTP_inbounds.json` 的 `xhttpSettings.headers`
+- `XRAY_AGENT_TRUSTED_X_FORWARDED_FOR` 会实际 patch 到当前 install profile 渲染出的各个 inbound `streamSettings.sockopt`
 - 当前脚本只保证 JSON 渲染与 patch 注入流程
 - 启用实验功能后，建议用目标机上的 Xray 二进制再次验证运行时兼容性

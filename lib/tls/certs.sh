@@ -163,18 +163,15 @@ manageCert() {
 xray_agent_apply_tls_feature_patches() {
     local tls_vision_path="$1"
     local tls_xhttp_path="$2"
-    if declare -F xray_agent_apply_ech_patch >/dev/null 2>&1; then
+    if [[ -f "${tls_vision_path}" ]] && declare -F xray_agent_apply_ech_patch >/dev/null 2>&1; then
         xray_agent_apply_ech_patch "${tls_vision_path}"
     fi
-    if declare -F xray_agent_apply_browser_headers_patch >/dev/null 2>&1; then
+    if [[ -f "${tls_xhttp_path}" ]] && declare -F xray_agent_apply_browser_headers_patch >/dev/null 2>&1; then
         xray_agent_apply_browser_headers_patch "${tls_xhttp_path}"
     fi
-    if declare -F xray_agent_apply_trusted_xff_patch >/dev/null 2>&1; then
-        xray_agent_apply_trusted_xff_patch "${tls_xhttp_path}"
-    fi
     if declare -F xray_agent_apply_vless_encryption_patch >/dev/null 2>&1; then
-        xray_agent_apply_vless_encryption_patch "${tls_vision_path}"
-        xray_agent_apply_vless_encryption_patch "${tls_xhttp_path}"
+        [[ -f "${tls_vision_path}" ]] && xray_agent_apply_vless_encryption_patch "${tls_vision_path}"
+        [[ -f "${tls_xhttp_path}" ]] && xray_agent_apply_vless_encryption_patch "${tls_xhttp_path}"
     fi
 }
 
@@ -182,17 +179,14 @@ xray_agent_apply_reality_feature_patches() {
     local reality_vision_path="$1"
     local reality_xhttp_path="$2"
     if declare -F xray_agent_apply_finalmask_patch >/dev/null 2>&1; then
-        xray_agent_apply_finalmask_patch "${reality_vision_path}"
-        xray_agent_apply_finalmask_patch "${reality_xhttp_path}"
+        [[ -f "${reality_vision_path}" ]] && xray_agent_apply_finalmask_patch "${reality_vision_path}"
+        [[ -f "${reality_xhttp_path}" ]] && xray_agent_apply_finalmask_patch "${reality_xhttp_path}"
     fi
-    if declare -F xray_agent_apply_browser_headers_patch >/dev/null 2>&1; then
+    if [[ -f "${reality_xhttp_path}" ]] && declare -F xray_agent_apply_browser_headers_patch >/dev/null 2>&1; then
         xray_agent_apply_browser_headers_patch "${reality_xhttp_path}"
     fi
-    if declare -F xray_agent_apply_trusted_xff_patch >/dev/null 2>&1; then
-        xray_agent_apply_trusted_xff_patch "${reality_xhttp_path}"
-    fi
     if declare -F xray_agent_apply_vless_encryption_patch >/dev/null 2>&1; then
-        xray_agent_apply_vless_encryption_patch "${reality_vision_path}"
-        xray_agent_apply_vless_encryption_patch "${reality_xhttp_path}"
+        [[ -f "${reality_vision_path}" ]] && xray_agent_apply_vless_encryption_patch "${reality_vision_path}"
+        [[ -f "${reality_xhttp_path}" ]] && xray_agent_apply_vless_encryption_patch "${reality_xhttp_path}"
     fi
 }

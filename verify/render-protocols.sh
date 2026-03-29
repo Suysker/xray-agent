@@ -93,17 +93,52 @@ xray_agent_render_vless_reality_tcp_inbound "$(xray_agent_generate_clients_json 
 xray_agent_render_vless_xhttp_inbound "$(xray_agent_generate_clients_json "VLESS_XHTTP" "${UUID}")" "31305" "${sniffing_json}"
 xray_agent_render_hysteria2_profile
 xray_agent_render_local_tun_profile
-xray_agent_render_tls_bundle
-rm -f "${configPath}"*.json
-xray_agent_render_reality_bundle
 
 find "${configPath}" -name "*.json" -print0 | while IFS= read -r -d '' file; do
     jq empty "${file}"
 done
 
-for profile_name in tls_vision_xhttp reality_vision_xhttp; do
-    xray_agent_load_install_profile "${profile_name}"
-    [[ -n "${XRAY_AGENT_INSTALL_PROFILE_ENTRY}" ]]
+rm -f "${configPath}"*.json
+
+XRAY_AGENT_BROWSER_HEADERS="edge"
+XRAY_AGENT_TRUSTED_X_FORWARDED_FOR="10.0.0.0/8"
+
+xray_agent_load_install_profile "tls_vision_xhttp"
+[[ "${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS}" == "vless_tcp_tls,vless_ws_tls,vmess_ws_tls,vless_xhttp" ]]
+xray_agent_render_tls_bundle
+for file in \
+    "${configPath}02_VLESS_TCP_inbounds.json" \
+    "${configPath}03_VLESS_WS_inbounds.json" \
+    "${configPath}05_VMess_WS_inbounds.json" \
+    "${configPath}08_VLESS_XHTTP_inbounds.json"; do
+    [[ -f "${file}" ]]
+    jq -e '.inbounds[0].streamSettings.sockopt.trustedXForwardedFor[0] == "10.0.0.0/8"' "${file}" >/dev/null
+done
+[[ ! -f "${configPath}07_VLESS_Reality_TCP_inbounds.json" ]]
+[[ "$(jq -r '.inbounds[0].streamSettings.xhttpSettings.headers["User-Agent"][0]' "${configPath}08_VLESS_XHTTP_inbounds.json")" == *"Edg/131.0.0.0"* ]]
+
+find "${configPath}" -name "*.json" -print0 | while IFS= read -r -d '' file; do
+    jq empty "${file}"
+done
+
+rm -f "${configPath}"*.json
+
+xray_agent_load_install_profile "reality_vision_xhttp"
+[[ "${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS}" == "vless_reality_tcp,vless_xhttp" ]]
+xray_agent_render_reality_bundle
+for file in \
+    "${configPath}07_VLESS_Reality_TCP_inbounds.json" \
+    "${configPath}08_VLESS_XHTTP_inbounds.json"; do
+    [[ -f "${file}" ]]
+    jq -e '.inbounds[0].streamSettings.sockopt.trustedXForwardedFor[0] == "10.0.0.0/8"' "${file}" >/dev/null
+done
+[[ ! -f "${configPath}02_VLESS_TCP_inbounds.json" ]]
+[[ ! -f "${configPath}03_VLESS_WS_inbounds.json" ]]
+[[ ! -f "${configPath}05_VMess_WS_inbounds.json" ]]
+[[ "$(jq -r '.inbounds[0].streamSettings.xhttpSettings.headers["User-Agent"][0]' "${configPath}08_VLESS_XHTTP_inbounds.json")" == *"Edg/131.0.0.0"* ]]
+
+find "${configPath}" -name "*.json" -print0 | while IFS= read -r -d '' file; do
+    jq empty "${file}"
 done
 
 echo "PASS render-protocols"

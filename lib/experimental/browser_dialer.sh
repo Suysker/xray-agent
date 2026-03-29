@@ -4,13 +4,12 @@ fi
 
 xray_agent_apply_browser_headers_patch() {
     local target_path="$1"
-    local browser_name="${XRAY_AGENT_BROWSER_HEADERS:-chrome}"
+    local headers_json
+    [[ -f "${target_path}" ]] || return 0
+    headers_json="$(xray_agent_default_xhttp_headers_json)"
 
-    jq --arg browserName "${browser_name}" '
-      .inbounds[0].streamSettings.xhttpSettings.headers = {
-        "User-Agent": [$browserName],
-        "Sec-CH-UA": [$browserName]
-      }' "${target_path}" >"${target_path}.tmp" &&
+    jq --argjson headers "${headers_json}" '
+      .inbounds[0].streamSettings.xhttpSettings.headers = $headers' "${target_path}" >"${target_path}.tmp" &&
         mv "${target_path}.tmp" "${target_path}"
 }
 

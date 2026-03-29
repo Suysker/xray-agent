@@ -177,13 +177,19 @@ xray_agent_protocol_address_value() {
 xray_agent_protocol_port_value() {
     local variant
     variant="$(xray_agent_protocol_variant "${1:-}")"
+
+    if [[ "${reuse443}" == "y" ]]; then
+        case "${XRAY_AGENT_PROTOCOL_TRANSPORT}" in
+            ws|xhttp)
+                echo "443"
+                return 0
+                ;;
+        esac
+    fi
+
     case "${XRAY_AGENT_PROTOCOL_PORT_SOURCE}" in
         Port)
-            if [[ "${reuse443}" == "y" ]] && [[ "${XRAY_AGENT_PROTOCOL_TRANSPORT}" == "ws" ]]; then
-                echo "443"
-            else
-                echo "${Port}"
-            fi
+            echo "${Port}"
             ;;
         RealityPort)
             echo "${RealityPort}"
@@ -192,11 +198,7 @@ xray_agent_protocol_port_value() {
             if [[ "${variant}" == "reality" ]]; then
                 echo "${RealityPort}"
             else
-                if [[ "${reuse443}" == "y" ]] && [[ "${XRAY_AGENT_PROTOCOL_TRANSPORT}" == "ws" ]]; then
-                    echo "443"
-                else
-                    echo "${Port}"
-                fi
+                echo "${Port}"
             fi
             ;;
     esac

@@ -18,6 +18,7 @@
 - `updateRedirectNginxConf/backupNginxConfig/updateNginxBlog` -> `lib/nginx/render.sh`
 - `generate_clients/xray_agent_prepare_uuid/xray_agent_prepare_reality_keys` -> `lib/protocols/shared.sh`
 - `initXrayConfig/initXrayRealityConfig/xrayCoreInstall/xrayCoreInstall_Reality` -> `lib/protocols/compose.sh`
+- `TLS/Reality 套餐中的协议组合选择` -> `profiles/install/*.profile` `protocols=` -> `lib/protocols/compose.sh`
 - `manageUser/showAccounts/defaultBase64Code` -> `lib/accounts/*`
 - `warpRouting/blacklist/ipv6Routing/unInstallRouting/unInstallOutbounds` -> `lib/routing/*`
 - `manageSniffing/manageSockopt/checkLog/addCorePort/unInstall/updateXRayAgent/aliasInstall` -> `lib/features/*`

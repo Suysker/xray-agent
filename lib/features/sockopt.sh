@@ -24,6 +24,7 @@ xray_agent_sockopt_with_proxy_protocol() {
 xray_agent_apply_trusted_x_forwarded_for() {
     local target_path="$1"
     local trusted_source="${2:-127.0.0.1}"
+    [[ -f "${target_path}" ]] || return 0
     jq --arg trustedSource "${trusted_source}" '.inbounds[0].streamSettings.sockopt.trustedXForwardedFor = [$trustedSource]' "${target_path}" >"${target_path}.tmp" &&
         mv "${target_path}.tmp" "${target_path}"
 }

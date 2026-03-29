@@ -8,6 +8,29 @@ xray_agent_reset_install_profile() {
     XRAY_AGENT_INSTALL_PROFILE_ENTRY=
 }
 
+xray_agent_set_install_profile_defaults() {
+    local entry_name="$1"
+    case "${entry_name}" in
+        xrayCoreInstall)
+            XRAY_AGENT_INSTALL_PROFILE_NAME="${XRAY_AGENT_INSTALL_PROFILE_NAME:-tls_vision_xhttp}"
+            XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS="${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS:-vless_tcp_tls,vless_ws_tls,vmess_ws_tls,vless_xhttp}"
+            XRAY_AGENT_INSTALL_PROFILE_ENTRY="xrayCoreInstall"
+            ;;
+        xrayCoreInstall_Reality)
+            XRAY_AGENT_INSTALL_PROFILE_NAME="${XRAY_AGENT_INSTALL_PROFILE_NAME:-reality_vision_xhttp}"
+            XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS="${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS:-vless_reality_tcp,vless_xhttp}"
+            XRAY_AGENT_INSTALL_PROFILE_ENTRY="xrayCoreInstall_Reality"
+            ;;
+    esac
+}
+
+xray_agent_ensure_install_profile_for_entry() {
+    local entry_name="$1"
+    if [[ -z "${XRAY_AGENT_INSTALL_PROFILE_ENTRY:-}" ]] || [[ "${XRAY_AGENT_INSTALL_PROFILE_ENTRY:-}" == "${entry_name}" && -z "${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS:-}" ]]; then
+        xray_agent_set_install_profile_defaults "${entry_name}"
+    fi
+}
+
 xray_agent_load_install_profile() {
     local profile_path="${XRAY_AGENT_PROFILE_DIR}/install/$1.profile"
     local key value
@@ -26,11 +49,75 @@ xray_agent_load_install_profile() {
             entry) XRAY_AGENT_INSTALL_PROFILE_ENTRY="${value}" ;;
         esac
     done <"${profile_path}"
+    [[ -n "${XRAY_AGENT_INSTALL_PROFILE_ENTRY}" ]]
 }
 
 xray_agent_run_install_profile() {
     xray_agent_load_install_profile "$1" || return 1
     "${XRAY_AGENT_INSTALL_PROFILE_ENTRY}"
+}
+
+xray_agent_install_profile_has_protocol() {
+    local protocol_name="$1"
+    case ",${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS}," in
+        *",${protocol_name},"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+xray_agent_clients_json_for_protocol_profile() {
+    local profile_name="$1"
+    xray_agent_load_protocol_profile "${profile_name}" || return 1
+    xray_agent_generate_clients_json "${XRAY_AGENT_PROTOCOL_CLIENT_KIND}" "${UUID}"
+}
+
+xray_agent_render_install_profile_protocol() {
+    local protocol_name="$1"
+    local accept_proxy_protocol="$2"
+    local sniffing_json="$3"
+    local clients_json rendered_path=
+
+    case "${protocol_name}" in
+        vless_tcp_tls)
+            clients_json="$(xray_agent_clients_json_for_protocol_profile "${protocol_name}")" || return 1
+            xray_agent_render_vless_tcp_tls_inbound "${clients_json}" "${accept_proxy_protocol}" "${sniffing_json}"
+            rendered_path="${configPath}02_VLESS_TCP_inbounds.json"
+            ;;
+        vless_ws_tls)
+            clients_json="$(xray_agent_clients_json_for_protocol_profile "${protocol_name}")" || return 1
+            xray_agent_render_vless_ws_legacy_config "${clients_json}" "${sniffing_json}"
+            rendered_path="${configPath}03_VLESS_WS_inbounds.json"
+            ;;
+        vmess_ws_tls)
+            clients_json="$(xray_agent_clients_json_for_protocol_profile "${protocol_name}")" || return 1
+            xray_agent_render_vmess_ws_legacy_config "${clients_json}" "${sniffing_json}"
+            rendered_path="${configPath}05_VMess_WS_inbounds.json"
+            ;;
+        vless_reality_tcp)
+            clients_json="$(xray_agent_clients_json_for_protocol_profile "${protocol_name}")" || return 1
+            xray_agent_render_vless_reality_tcp_inbound "${clients_json}" "${accept_proxy_protocol}" "${sniffing_json}"
+            rendered_path="${configPath}07_VLESS_Reality_TCP_inbounds.json"
+            ;;
+        vless_xhttp)
+            clients_json="$(xray_agent_clients_json_for_protocol_profile "${protocol_name}")" || return 1
+            xray_agent_render_vless_xhttp_inbound "${clients_json}" "31305" "${sniffing_json}"
+            rendered_path="${configPath}08_VLESS_XHTTP_inbounds.json"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    printf '%s\n' "${rendered_path}"
+}
+
+xray_agent_apply_install_profile_trusted_xff_patches() {
+    declare -F xray_agent_apply_trusted_xff_patch >/dev/null 2>&1 || return 0
+    local target_path
+    for target_path in "$@"; do
+        [[ -f "${target_path}" ]] || continue
+        xray_agent_apply_trusted_xff_patch "${target_path}"
+    done
 }
 
 xray_agent_render_common_xray_configs() {
@@ -61,43 +148,60 @@ xray_agent_render_common_xray_configs() {
 }
 
 xray_agent_render_tls_bundle() {
+    xray_agent_ensure_install_profile_for_entry "xrayCoreInstall"
     xray_agent_prepare_uuid
     xray_agent_render_common_xray_configs
     local accept_proxy_protocol="false"
-    local vless_tcp_clients_json vless_xhttp_clients_json vmess_clients_json sniffing_json
+    local sniffing_json protocol_name rendered_path
+    local tls_vision_path= tls_xhttp_path=
+    local rendered_paths=()
     if [[ "${reuse443}" == "y" ]]; then
         accept_proxy_protocol="true"
     fi
-    vless_tcp_clients_json="$(xray_agent_generate_clients_json "VLESS_TCP" "${UUID}")"
-    vless_xhttp_clients_json="$(xray_agent_generate_clients_json "VLESS_XHTTP" "${UUID}")"
-    vmess_clients_json="$(xray_agent_generate_clients_json "VMESS_WS" "${UUID}")"
     sniffing_json="$(xray_agent_default_sniffing_json)"
-    xray_agent_render_vless_tcp_tls_inbound "${vless_tcp_clients_json}" "${accept_proxy_protocol}" "${sniffing_json}"
-    xray_agent_render_vless_ws_legacy_config "${vless_xhttp_clients_json}" "${sniffing_json}"
-    xray_agent_render_vmess_ws_legacy_config "${vmess_clients_json}" "${sniffing_json}"
-    xray_agent_render_vless_xhttp_inbound "${vless_xhttp_clients_json}" "31305" "${sniffing_json}"
+    IFS=',' read -r -a XRAY_AGENT_INSTALL_PROFILE_PROTOCOL_LIST <<<"${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS}"
+    for protocol_name in "${XRAY_AGENT_INSTALL_PROFILE_PROTOCOL_LIST[@]}"; do
+        rendered_path="$(xray_agent_render_install_profile_protocol "${protocol_name}" "${accept_proxy_protocol}" "${sniffing_json}")" || return 1
+        [[ -n "${rendered_path}" ]] || continue
+        rendered_paths+=("${rendered_path}")
+        case "${protocol_name}" in
+            vless_tcp_tls) tls_vision_path="${rendered_path}" ;;
+            vless_xhttp) tls_xhttp_path="${rendered_path}" ;;
+        esac
+    done
     if declare -F xray_agent_apply_tls_feature_patches >/dev/null 2>&1; then
-        xray_agent_apply_tls_feature_patches "${configPath}02_VLESS_TCP_inbounds.json" "${configPath}08_VLESS_XHTTP_inbounds.json"
+        xray_agent_apply_tls_feature_patches "${tls_vision_path}" "${tls_xhttp_path}"
     fi
+    xray_agent_apply_install_profile_trusted_xff_patches "${rendered_paths[@]}"
 }
 
 xray_agent_render_reality_bundle() {
+    xray_agent_ensure_install_profile_for_entry "xrayCoreInstall_Reality"
     xray_agent_prepare_reality_keys
     xray_agent_prepare_uuid
     xray_agent_render_common_xray_configs
     local accept_proxy_protocol="false"
-    local reality_clients_json xhttp_clients_json sniffing_json
+    local sniffing_json protocol_name rendered_path
+    local reality_vision_path= reality_xhttp_path=
+    local rendered_paths=()
     if [[ "${reuse443}" == "y" ]]; then
         accept_proxy_protocol="true"
     fi
-    reality_clients_json="$(xray_agent_generate_clients_json "VLESS_TCP" "${UUID}")"
-    xhttp_clients_json="$(xray_agent_generate_clients_json "VLESS_XHTTP" "${UUID}")"
     sniffing_json="$(xray_agent_default_sniffing_json)"
-    xray_agent_render_vless_reality_tcp_inbound "${reality_clients_json}" "${accept_proxy_protocol}" "${sniffing_json}"
-    xray_agent_render_vless_xhttp_inbound "${xhttp_clients_json}" "31305" "${sniffing_json}"
+    IFS=',' read -r -a XRAY_AGENT_INSTALL_PROFILE_PROTOCOL_LIST <<<"${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS}"
+    for protocol_name in "${XRAY_AGENT_INSTALL_PROFILE_PROTOCOL_LIST[@]}"; do
+        rendered_path="$(xray_agent_render_install_profile_protocol "${protocol_name}" "${accept_proxy_protocol}" "${sniffing_json}")" || return 1
+        [[ -n "${rendered_path}" ]] || continue
+        rendered_paths+=("${rendered_path}")
+        case "${protocol_name}" in
+            vless_reality_tcp) reality_vision_path="${rendered_path}" ;;
+            vless_xhttp) reality_xhttp_path="${rendered_path}" ;;
+        esac
+    done
     if declare -F xray_agent_apply_reality_feature_patches >/dev/null 2>&1; then
-        xray_agent_apply_reality_feature_patches "${configPath}07_VLESS_Reality_TCP_inbounds.json" "${configPath}08_VLESS_XHTTP_inbounds.json"
+        xray_agent_apply_reality_feature_patches "${reality_vision_path}" "${reality_xhttp_path}"
     fi
+    xray_agent_apply_install_profile_trusted_xff_patches "${rendered_paths[@]}"
 }
 
 initXrayRealityConfig() {
