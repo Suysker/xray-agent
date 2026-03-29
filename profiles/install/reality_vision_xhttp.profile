@@ -1,3 +1,4 @@
 name=reality_vision_xhttp
 protocols=vless_reality_tcp,vless_xhttp
 entry=xrayCoreInstall_Reality
+steps=install_tools,stop_xray,install_xray,install_service,init_reality,warning_reality_target,random_path,custom_port_reality,warning_xhttp_port,update_nginx_reality,render_reality_bundle,reload_core,update_geodata,check_gfw,show_accounts

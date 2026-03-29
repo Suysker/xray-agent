@@ -105,6 +105,7 @@ XRAY_AGENT_TRUSTED_X_FORWARDED_FOR="10.0.0.0/8"
 
 xray_agent_load_install_profile "tls_vision_xhttp"
 [[ "${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS}" == "vless_tcp_tls,vless_ws_tls,vmess_ws_tls,vless_xhttp" ]]
+[[ "${XRAY_AGENT_INSTALL_PROFILE_STEPS}" == "install_tools,init_tls_nginx,stop_xray,install_tls,install_xray,install_service,random_path,custom_port_vision,update_nginx_vision,render_tls_bundle,install_cron_tls,reload_core,update_geodata,check_gfw,show_accounts" ]]
 xray_agent_render_tls_bundle
 for file in \
     "${configPath}02_VLESS_TCP_inbounds.json" \
@@ -125,6 +126,7 @@ rm -f "${configPath}"*.json
 
 xray_agent_load_install_profile "reality_vision_xhttp"
 [[ "${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS}" == "vless_reality_tcp,vless_xhttp" ]]
+[[ "${XRAY_AGENT_INSTALL_PROFILE_STEPS}" == "install_tools,stop_xray,install_xray,install_service,init_reality,warning_reality_target,random_path,custom_port_reality,warning_xhttp_port,update_nginx_reality,render_reality_bundle,reload_core,update_geodata,check_gfw,show_accounts" ]]
 xray_agent_render_reality_bundle
 for file in \
     "${configPath}07_VLESS_Reality_TCP_inbounds.json" \
@@ -140,5 +142,77 @@ done
 find "${configPath}" -name "*.json" -print0 | while IFS= read -r -d '' file; do
     jq empty "${file}"
 done
+
+recorded_steps=()
+xray_agent_record_step() {
+    recorded_steps+=("$1")
+}
+installTools() { xray_agent_record_step "installTools:$1"; }
+initTLSNginxConfig() { xray_agent_record_step "initTLSNginxConfig:$1"; }
+handleXray() { xray_agent_record_step "handleXray:$1"; }
+installTLS() { xray_agent_record_step "installTLS:$1:$2"; }
+installXray() { xray_agent_record_step "installXray:$1"; }
+installXrayService() { xray_agent_record_step "installXrayService:$1"; }
+initTLSRealityConfig() { xray_agent_record_step "initTLSRealityConfig:$1"; }
+xray_agent_tls_warning_for_target() { xray_agent_record_step "warningTarget:$1"; }
+randomPathFunction() { xray_agent_record_step "randomPathFunction:$1"; }
+customPortFunction() { xray_agent_record_step "customPortFunction:$1"; }
+xray_agent_tls_warning_for_xhttp_port() { xray_agent_record_step "warningXhttpPort:$1"; }
+updateRedirectNginxConf() { xray_agent_record_step "updateRedirectNginxConf:$1:$2"; }
+xray_agent_render_tls_bundle() { xray_agent_record_step "renderTlsBundle"; }
+xray_agent_render_reality_bundle() { xray_agent_record_step "renderRealityBundle"; }
+installCronTLS() { xray_agent_record_step "installCronTLS:$1"; }
+reloadCore() { xray_agent_record_step "reloadCore"; }
+auto_update_geodata() { xray_agent_record_step "autoUpdateGeodata"; }
+checkGFWStatue() { xray_agent_record_step "checkGFWStatue:$1"; }
+showAccounts() { xray_agent_record_step "showAccounts:$1"; }
+
+assert_recorded_steps() {
+    local expected_steps=("$@")
+    [[ "${#recorded_steps[@]}" -eq "${#expected_steps[@]}" ]]
+    local index
+    for index in "${!expected_steps[@]}"; do
+        [[ "${recorded_steps[index]}" == "${expected_steps[index]}" ]]
+    done
+}
+
+xray_agent_run_install_profile "tls_vision_xhttp"
+[[ "${totalProgress}" == "15" ]]
+assert_recorded_steps \
+    "installTools:1" \
+    "initTLSNginxConfig:2" \
+    "handleXray:stop" \
+    "installTLS:4:0" \
+    "installXray:5" \
+    "installXrayService:6" \
+    "randomPathFunction:7" \
+    "customPortFunction:Vision" \
+    "updateRedirectNginxConf:Vision:9" \
+    "renderTlsBundle" \
+    "installCronTLS:11" \
+    "reloadCore" \
+    "autoUpdateGeodata" \
+    "checkGFWStatue:14" \
+    "showAccounts:15"
+
+recorded_steps=()
+xray_agent_run_install_profile "reality_vision_xhttp"
+[[ "${totalProgress}" == "15" ]]
+assert_recorded_steps \
+    "installTools:1" \
+    "handleXray:stop" \
+    "installXray:3" \
+    "installXrayService:4" \
+    "initTLSRealityConfig:5" \
+    "warningTarget:www.cloudflare.com:443" \
+    "randomPathFunction:7" \
+    "customPortFunction:Reality" \
+    "warningXhttpPort:8443" \
+    "updateRedirectNginxConf:Reality:10" \
+    "renderRealityBundle" \
+    "reloadCore" \
+    "autoUpdateGeodata" \
+    "checkGFWStatue:14" \
+    "showAccounts:15"
 
 echo "PASS render-protocols"

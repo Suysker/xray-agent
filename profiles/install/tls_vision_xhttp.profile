@@ -1,3 +1,4 @@
 name=tls_vision_xhttp
 protocols=vless_tcp_tls,vless_ws_tls,vmess_ws_tls,vless_xhttp
 entry=xrayCoreInstall
+steps=install_tools,init_tls_nginx,stop_xray,install_tls,install_xray,install_service,random_path,custom_port_vision,update_nginx_vision,render_tls_bundle,install_cron_tls,reload_core,update_geodata,check_gfw,show_accounts

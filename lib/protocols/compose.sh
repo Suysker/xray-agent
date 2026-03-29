@@ -6,6 +6,19 @@ xray_agent_reset_install_profile() {
     XRAY_AGENT_INSTALL_PROFILE_NAME=
     XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS=
     XRAY_AGENT_INSTALL_PROFILE_ENTRY=
+    XRAY_AGENT_INSTALL_PROFILE_STEPS=
+}
+
+xray_agent_default_install_profile_steps() {
+    local entry_name="$1"
+    case "${entry_name}" in
+        xrayCoreInstall)
+            echo "install_tools,init_tls_nginx,stop_xray,install_tls,install_xray,install_service,random_path,custom_port_vision,update_nginx_vision,render_tls_bundle,install_cron_tls,reload_core,update_geodata,check_gfw,show_accounts"
+            ;;
+        xrayCoreInstall_Reality)
+            echo "install_tools,stop_xray,install_xray,install_service,init_reality,warning_reality_target,random_path,custom_port_reality,warning_xhttp_port,update_nginx_reality,render_reality_bundle,reload_core,update_geodata,check_gfw,show_accounts"
+            ;;
+    esac
 }
 
 xray_agent_set_install_profile_defaults() {
@@ -15,18 +28,20 @@ xray_agent_set_install_profile_defaults() {
             XRAY_AGENT_INSTALL_PROFILE_NAME="${XRAY_AGENT_INSTALL_PROFILE_NAME:-tls_vision_xhttp}"
             XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS="${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS:-vless_tcp_tls,vless_ws_tls,vmess_ws_tls,vless_xhttp}"
             XRAY_AGENT_INSTALL_PROFILE_ENTRY="xrayCoreInstall"
+            XRAY_AGENT_INSTALL_PROFILE_STEPS="${XRAY_AGENT_INSTALL_PROFILE_STEPS:-$(xray_agent_default_install_profile_steps "xrayCoreInstall")}"
             ;;
         xrayCoreInstall_Reality)
             XRAY_AGENT_INSTALL_PROFILE_NAME="${XRAY_AGENT_INSTALL_PROFILE_NAME:-reality_vision_xhttp}"
             XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS="${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS:-vless_reality_tcp,vless_xhttp}"
             XRAY_AGENT_INSTALL_PROFILE_ENTRY="xrayCoreInstall_Reality"
+            XRAY_AGENT_INSTALL_PROFILE_STEPS="${XRAY_AGENT_INSTALL_PROFILE_STEPS:-$(xray_agent_default_install_profile_steps "xrayCoreInstall_Reality")}"
             ;;
     esac
 }
 
 xray_agent_ensure_install_profile_for_entry() {
     local entry_name="$1"
-    if [[ -z "${XRAY_AGENT_INSTALL_PROFILE_ENTRY:-}" ]] || [[ "${XRAY_AGENT_INSTALL_PROFILE_ENTRY:-}" == "${entry_name}" && -z "${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS:-}" ]]; then
+    if [[ -z "${XRAY_AGENT_INSTALL_PROFILE_ENTRY:-}" ]] || [[ "${XRAY_AGENT_INSTALL_PROFILE_ENTRY:-}" == "${entry_name}" && ( -z "${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS:-}" || -z "${XRAY_AGENT_INSTALL_PROFILE_STEPS:-}" ) ]]; then
         xray_agent_set_install_profile_defaults "${entry_name}"
     fi
 }
@@ -47,14 +62,113 @@ xray_agent_load_install_profile() {
             name) XRAY_AGENT_INSTALL_PROFILE_NAME="${value}" ;;
             protocols) XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS="${value}" ;;
             entry) XRAY_AGENT_INSTALL_PROFILE_ENTRY="${value}" ;;
+            steps) XRAY_AGENT_INSTALL_PROFILE_STEPS="${value}" ;;
         esac
     done <"${profile_path}"
     [[ -n "${XRAY_AGENT_INSTALL_PROFILE_ENTRY}" ]]
 }
 
+xray_agent_dispatch_install_profile_step() {
+    local step_name="$1"
+    local progress_index="$2"
+    case "${step_name}" in
+        install_tools)
+            installTools "${progress_index}"
+            ;;
+        init_tls_nginx)
+            initTLSNginxConfig "${progress_index}"
+            ;;
+        stop_xray)
+            handleXray stop
+            ;;
+        install_tls)
+            installTLS "${progress_index}" 0
+            ;;
+        install_xray)
+            installXray "${progress_index}"
+            ;;
+        install_service)
+            installXrayService "${progress_index}"
+            ;;
+        init_reality)
+            initTLSRealityConfig "${progress_index}"
+            ;;
+        warning_reality_target)
+            xray_agent_tls_warning_for_target "${RealityDestDomain}"
+            ;;
+        random_path)
+            randomPathFunction "${progress_index}"
+            ;;
+        custom_port_vision)
+            customPortFunction "Vision"
+            ;;
+        custom_port_reality)
+            customPortFunction "Reality"
+            ;;
+        warning_xhttp_port)
+            xray_agent_tls_warning_for_xhttp_port "${RealityPort}"
+            ;;
+        update_nginx_vision)
+            updateRedirectNginxConf "Vision" "${progress_index}"
+            ;;
+        update_nginx_reality)
+            updateRedirectNginxConf "Reality" "${progress_index}"
+            ;;
+        render_tls_bundle)
+            xray_agent_render_tls_bundle
+            ;;
+        render_reality_bundle)
+            xray_agent_render_reality_bundle
+            ;;
+        install_cron_tls)
+            installCronTLS "${progress_index}"
+            ;;
+        reload_core)
+            reloadCore
+            ;;
+        update_geodata)
+            auto_update_geodata
+            ;;
+        check_gfw)
+            checkGFWStatue "${progress_index}"
+            ;;
+        show_accounts)
+            showAccounts "${progress_index}"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+xray_agent_run_install_profile_steps() {
+    local progress_index=0
+    local step_name
+    local install_profile_steps="${XRAY_AGENT_INSTALL_PROFILE_STEPS:-}"
+    local install_profile_step_list=()
+
+    [[ -n "${install_profile_steps}" ]] || return 1
+
+    IFS=',' read -r -a install_profile_step_list <<<"${install_profile_steps}"
+    totalProgress="${#install_profile_step_list[@]}"
+
+    for step_name in "${install_profile_step_list[@]}"; do
+        progress_index=$((progress_index + 1))
+        xray_agent_dispatch_install_profile_step "${step_name}" "${progress_index}" || return 1
+    done
+}
+
+xray_agent_execute_install_profile() {
+    if [[ -n "${XRAY_AGENT_INSTALL_PROFILE_STEPS:-}" ]]; then
+        xray_agent_run_install_profile_steps
+        return $?
+    fi
+    "${XRAY_AGENT_INSTALL_PROFILE_ENTRY}"
+}
+
 xray_agent_run_install_profile() {
     xray_agent_load_install_profile "$1" || return 1
-    "${XRAY_AGENT_INSTALL_PROFILE_ENTRY}"
+    xray_agent_execute_install_profile
 }
 
 xray_agent_install_profile_has_protocol() {
@@ -215,39 +329,11 @@ initXrayConfig() {
 }
 
 xrayCoreInstall() {
-    totalProgress=11
-    installTools 1
-    initTLSNginxConfig 2
-    handleXray stop
-    installTLS 3 0
-    installXray 4
-    installXrayService 5
-    randomPathFunction 6
-    customPortFunction "Vision"
-    updateRedirectNginxConf "Vision" 7
-    xray_agent_render_tls_bundle
-    installCronTLS 9
-    reloadCore
-    auto_update_geodata
-    checkGFWStatue 10
-    showAccounts 11
+    xray_agent_ensure_install_profile_for_entry "xrayCoreInstall"
+    xray_agent_run_install_profile_steps
 }
 
 xrayCoreInstall_Reality() {
-    totalProgress=8
-    installTools 1
-    handleXray stop
-    installXray 2
-    installXrayService 3
-    initTLSRealityConfig 4
-    xray_agent_tls_warning_for_target "${RealityDestDomain}"
-    randomPathFunction 5
-    customPortFunction "Reality"
-    xray_agent_tls_warning_for_xhttp_port "${RealityPort}"
-    updateRedirectNginxConf "Reality" 5.5
-    xray_agent_render_reality_bundle
-    reloadCore
-    auto_update_geodata
-    checkGFWStatue 7
-    showAccounts 8
+    xray_agent_ensure_install_profile_for_entry "xrayCoreInstall_Reality"
+    xray_agent_run_install_profile_steps
 }
