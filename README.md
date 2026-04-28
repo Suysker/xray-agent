@@ -1,13 +1,14 @@
 # xray-agent
 
-xray-agent 已从单文件安装脚本收口为一套模块化的 Xray profile builder。当前入口仍然是 `install.sh`，但真实实现已经拆到 `lib/`、`profiles/`、`templates/`、`verify/` 和 `packaging/`。
+xray-agent 已从单文件安装脚本收口为一套模块化的 Xray profile builder。`install.sh` 仍是用户入口，真实实现收敛在 `lib/*.sh` 领域模块、`profiles/`、`templates/` 和 `packaging/`。
 
 ## 当前状态
 
-- 保留 master `install.sh` 的菜单编号、`RenewTLS` 兼容入口、TLS/Reality 套餐、多用户、WARP/IPv6/黑名单、日志、证书、伪装站、外部工具菜单。
-- 运行时只加载分层模块，不再依赖旧平铺 `lib/*.sh`、旧 `profiles/*.env`、旧平铺模板。
-- 协议渲染、安装组合、分享链接导出统一从 `profiles/*.profile` 和 `templates/` 读取。
+- 以本仓库 `master:install.sh` 为兼容基线，保留菜单 1-23、`RenewTLS` 兼容入口、TLS/Reality 套餐、多用户、WARP/IPv6/黑名单、日志、证书、伪装站、外部工具菜单。
+- 运行时只加载领域级 `lib/*.sh` 模块，不再保留旧碎片化 `lib/<domain>/*.sh`、旧 `profiles/*.env`、旧平铺模板。
+- 协议渲染、安装组合、分享链接导出统一从 `profiles/*.profile` 和重要配置模板读取；一行默认值、小 JSON 片段、cron 行和包源行由领域代码生成。
 - install profile 的 `protocols=` 直接决定 TLS/Reality 套餐渲染哪些 inbound；`steps=` 进一步决定安装流水线顺序；`xrayCoreInstall*` 只保留兼容旧入口。
+- 不引入 upstream/v2ray-agent 的 sing-box、订阅、anytls 等非本仓库 master 主线能力。
 
 ## 目录
 
@@ -18,15 +19,13 @@ xray-agent/
 ├── templates/
 ├── profiles/
 ├── docs/
-├── verify/
 └── packaging/
 ```
 
-- `install.sh`：入口、菜单、参数路由、旧命令兼容。
-- `lib/`：按 common/runtime/system/tls/core/nginx/protocols/accounts/routing/features/apps/external/experimental 分层。
-- `templates/`：Xray、Nginx、分享链接模板。
-- `profiles/`：安装组合、协议、路由、实验特性描述。
-- `verify/`：语法、渲染、路由、分享链接校验。
+- `install.sh`：bootstrap、入口、菜单、参数路由、旧命令兼容。
+- `lib/`：领域级运行时模块，边界为 `common.sh`、`runtime.sh`、`system.sh`、`tls.sh`、`core.sh`、`nginx.sh`、`protocols.sh`、`accounts.sh`、`routing.sh`、`features.sh`、`apps.sh`、`external.sh`。
+- `templates/`：只放完整配置文件、重要配置块和稳定外部格式，例如 Xray、Nginx、分享链接和 systemd；不为 `[]`、一行 rule、cron 行、包源行单独建模板。
+- `profiles/`：安装组合、协议、路由描述。
 - `packaging/`：安装布局、升级迁移、卸载辅助。
 
 ## 安装
@@ -35,17 +34,21 @@ xray-agent/
 wget -P /root -N --no-check-certificate "https://raw.githubusercontent.com/Suysker/xray-agent/master/install.sh" && chmod 700 /root/install.sh && /root/install.sh
 ```
 
+- 首次只下载到单个 `install.sh` 时，它会自动下载仓库归档并铺设完整模块化布局。
 - 安装后入口为 `/etc/xray-agent/install.sh`
 - 快捷方式仍为 `vasma`
 
 ## 验证
 
+仓库不保留一键验证脚本；改动后至少执行：
+
 ```bash
-bash verify/smoke.sh
-bash verify/render-protocols.sh
-bash verify/routing-check.sh
-bash verify/share-link-check.sh
+bash -n install.sh
+find lib packaging -name "*.sh" -print0 | xargs -0 -n1 bash -n
+bash -c 'source ./install.sh; declare -F menu >/dev/null; declare -F xray_agent_render_template >/dev/null; declare -F xray_agent_run_install_profile >/dev/null'
 ```
+
+配置模板变更需要用临时目录手工渲染，并对生成的 Xray JSON 执行 `jq empty`。同时检查 `find templates -type f`，确认没有新增原子级 tiny tpl。
 
 ## 文档
 

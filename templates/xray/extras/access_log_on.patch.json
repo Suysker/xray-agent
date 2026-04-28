@@ -1,1 +1,0 @@
-{"log":{"access":"/etc/xray-agent/xray/access.log","error":"/etc/xray-agent/xray/error.log","loglevel":"debug"}}

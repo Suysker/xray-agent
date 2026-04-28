@@ -2,12 +2,14 @@
 
 - `/etc/xray-agent/install.sh`：脚本入口
 - `/etc/xray-agent/lib`：运行时模块副本
-- `/etc/xray-agent/templates`：模板目录
+- `/etc/xray-agent/templates`：重要配置模板目录，只放完整配置文件、重要配置块和稳定外部格式
 - `/etc/xray-agent/profiles`：profile 目录
 - `/etc/xray-agent/docs`：随包文档
-- `/etc/xray-agent/verify`：校验脚本
 - `/etc/xray-agent/packaging`：升级与卸载辅助
 - `/etc/xray-agent/tls`：证书与 acme 日志
 - `/etc/xray-agent/xray`：Xray 核心与 geodata
 - `/etc/xray-agent/xray/conf`：拆分 JSON 配置
-- `/etc/xray-agent/feature-flags.env`：实验特性持久化开关
+
+单独下载 `install.sh` 时，入口会先 bootstrap 上述完整目录，再执行 `/etc/xray-agent/install.sh`。
+
+仓库和运行时都不保留 `verify/` 或 `scripts/check.sh`；配置可读源集中在 `templates/`，但一行默认值、小 JSON 片段、cron 行和包源行不进入模板目录。

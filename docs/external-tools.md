@@ -1,12 +1,12 @@
 # external-tools
 
-- 菜单 `17` -> `lib/external/warp_menu.sh`
-- 菜单 `18` -> `lib/external/kernel_bbr.sh`
-- 菜单 `19` -> `lib/external/hysteria_oneclick.sh`
-- 菜单 `20` -> `lib/external/hyperspeed.sh`
-- 菜单 `21` -> `lib/external/backtrace.sh`
-- 菜单 `22` -> `lib/external/unlock_media.sh`
-- 菜单 `23` -> `lib/external/vps_info.sh`
+- 菜单 `17` -> `lib/external.sh` -> `xray_agent_external_warp_menu`
+- 菜单 `18` -> `lib/external.sh` -> `xray_agent_external_kernel_bbr`
+- 菜单 `19` -> `lib/external.sh` -> `xray_agent_external_hysteria_oneclick`
+- 菜单 `20` -> `lib/external.sh` -> `xray_agent_external_hyperspeed`
+- 菜单 `21` -> `lib/external.sh` -> `xray_agent_external_backtrace`
+- 菜单 `22` -> `lib/external.sh` -> `xray_agent_external_unlock_media`
+- 菜单 `23` -> `lib/external.sh` -> `xray_agent_external_vps_info`
 
 这些菜单只做外部脚本调用，入口已从 `install.sh` 内嵌实现迁移到独立模块。
 

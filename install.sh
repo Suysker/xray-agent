@@ -5,6 +5,11 @@ export LANG=en_US.UTF-8
 SCRIPT_DIR=$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 export XRAY_AGENT_PROJECT_ROOT="${SCRIPT_DIR}"
 
+XRAY_AGENT_PROJECT_REPO="${XRAY_AGENT_PROJECT_REPO:-https://github.com/Suysker/xray-agent}"
+XRAY_AGENT_BOOTSTRAP_BRANCH="${XRAY_AGENT_BOOTSTRAP_BRANCH:-master}"
+XRAY_AGENT_BOOTSTRAP_TARGET_ROOT="${XRAY_AGENT_BOOTSTRAP_TARGET_ROOT:-/etc/xray-agent}"
+XRAY_AGENT_BOOTSTRAP_ARCHIVE_URL="${XRAY_AGENT_BOOTSTRAP_ARCHIVE_URL:-${XRAY_AGENT_PROJECT_REPO}/archive/refs/heads/${XRAY_AGENT_BOOTSTRAP_BRANCH}.tar.gz}"
+
 xray_agent_prepend_path_once() {
     local candidate="$1"
     [[ -d "${candidate}" ]] || return 0
@@ -56,139 +61,109 @@ xray_agent_ensure_jq_on_path() {
     done
 }
 
+xray_agent_runtime_layout_complete() {
+    [[ -f "${SCRIPT_DIR}/lib/common.sh" ]] &&
+        [[ -f "${SCRIPT_DIR}/lib/runtime.sh" ]] &&
+        [[ -f "${SCRIPT_DIR}/lib/system.sh" ]] &&
+        [[ -f "${SCRIPT_DIR}/lib/tls.sh" ]] &&
+        [[ -f "${SCRIPT_DIR}/lib/core.sh" ]] &&
+        [[ -f "${SCRIPT_DIR}/lib/nginx.sh" ]] &&
+        [[ -f "${SCRIPT_DIR}/lib/protocols.sh" ]] &&
+        [[ -f "${SCRIPT_DIR}/lib/accounts.sh" ]] &&
+        [[ -f "${SCRIPT_DIR}/lib/routing.sh" ]] &&
+        [[ -f "${SCRIPT_DIR}/lib/features.sh" ]] &&
+        [[ -f "${SCRIPT_DIR}/lib/apps.sh" ]] &&
+        [[ -f "${SCRIPT_DIR}/lib/external.sh" ]] &&
+        [[ -d "${SCRIPT_DIR}/profiles/install" ]] &&
+        [[ -d "${SCRIPT_DIR}/templates/xray" ]] &&
+        [[ -d "${SCRIPT_DIR}/templates/nginx" ]] &&
+        [[ -d "${SCRIPT_DIR}/templates/systemd" ]] &&
+        [[ -d "${SCRIPT_DIR}/templates/share" ]] &&
+        [[ -d "${SCRIPT_DIR}/packaging" ]]
+}
+
+xray_agent_download_bootstrap_archive() {
+    local archive_path="$1"
+    local archive_source="${XRAY_AGENT_BOOTSTRAP_ARCHIVE:-}"
+
+    if [[ -n "${archive_source}" && -f "${archive_source}" ]]; then
+        cp "${archive_source}" "${archive_path}"
+        return 0
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "${archive_source:-${XRAY_AGENT_BOOTSTRAP_ARCHIVE_URL}}" -o "${archive_path}"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "${archive_path}" "${archive_source:-${XRAY_AGENT_BOOTSTRAP_ARCHIVE_URL}}"
+    else
+        echo "curl or wget is required to bootstrap xray-agent" >&2
+        return 1
+    fi
+}
+
+xray_agent_bootstrap_full_layout() {
+    local temp_dir archive_path layout_script target_root
+    target_root="${XRAY_AGENT_BOOTSTRAP_TARGET_ROOT}"
+    temp_dir="$(mktemp -d)"
+    archive_path="${temp_dir}/xray-agent.tar.gz"
+
+    xray_agent_download_bootstrap_archive "${archive_path}" || return 1
+    tar -xzf "${archive_path}" -C "${temp_dir}"
+
+    layout_script="$(find "${temp_dir}" -mindepth 3 -maxdepth 4 -path "*/packaging/install-layout.sh" -print -quit)"
+    if [[ -z "${layout_script}" ]]; then
+        echo "Downloaded xray-agent archive does not contain packaging/install-layout.sh" >&2
+        return 1
+    fi
+
+    bash "${layout_script}" "${target_root}"
+    chmod 700 "${target_root}/install.sh"
+    if [[ "${XRAY_AGENT_BOOTSTRAP_NO_EXEC:-false}" == "true" ]]; then
+        rm -rf "${temp_dir}"
+        exit 0
+    fi
+    rm -rf "${temp_dir}"
+    exec bash "${target_root}/install.sh" "$@"
+}
+
+if ! xray_agent_runtime_layout_complete; then
+    if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+        echo "xray-agent runtime layout is incomplete; execute install.sh to bootstrap the full layout" >&2
+        return 1
+    fi
+    xray_agent_bootstrap_full_layout "$@"
+fi
+
 xray_agent_ensure_jq_on_path
 
-for module_group in \
-    "${SCRIPT_DIR}/lib/common/"*.sh \
-    "${SCRIPT_DIR}/lib/runtime/"*.sh \
-    "${SCRIPT_DIR}/lib/system/"*.sh \
-    "${SCRIPT_DIR}/lib/tls/"*.sh \
-    "${SCRIPT_DIR}/lib/core/"*.sh \
-    "${SCRIPT_DIR}/lib/nginx/"*.sh \
-    "${SCRIPT_DIR}/lib/features/"*.sh \
-    "${SCRIPT_DIR}/lib/apps/"*.sh \
-    "${SCRIPT_DIR}/lib/external/"*.sh \
-    "${SCRIPT_DIR}/lib/experimental/"*.sh; do
-    source "${module_group}"
+for module_file in \
+    "${SCRIPT_DIR}/lib/common.sh" \
+    "${SCRIPT_DIR}/lib/runtime.sh" \
+    "${SCRIPT_DIR}/lib/system.sh" \
+    "${SCRIPT_DIR}/lib/tls.sh" \
+    "${SCRIPT_DIR}/lib/core.sh" \
+    "${SCRIPT_DIR}/lib/nginx.sh" \
+    "${SCRIPT_DIR}/lib/features.sh" \
+    "${SCRIPT_DIR}/lib/apps.sh" \
+    "${SCRIPT_DIR}/lib/external.sh" \
+    "${SCRIPT_DIR}/lib/routing.sh" \
+    "${SCRIPT_DIR}/lib/protocols.sh" \
+    "${SCRIPT_DIR}/lib/accounts.sh"; do
+    source "${module_file}"
 done
-
-for protocol_module in \
-    "${SCRIPT_DIR}/lib/protocols/shared.sh" \
-    "${SCRIPT_DIR}/lib/protocols/vless_tcp_tls.sh" \
-    "${SCRIPT_DIR}/lib/protocols/vless_ws_tls.sh" \
-    "${SCRIPT_DIR}/lib/protocols/vmess_ws_tls.sh" \
-    "${SCRIPT_DIR}/lib/protocols/vless_reality_tcp.sh" \
-    "${SCRIPT_DIR}/lib/protocols/vless_xhttp.sh" \
-    "${SCRIPT_DIR}/lib/protocols/compose.sh"; do
-    source "${protocol_module}"
-done
-
-for account_module in \
-    "${SCRIPT_DIR}/lib/accounts/users.sh" \
-    "${SCRIPT_DIR}/lib/accounts/show.sh" \
-    "${SCRIPT_DIR}/lib/accounts/export_vless.sh" \
-    "${SCRIPT_DIR}/lib/accounts/export_vmess.sh" \
-    "${SCRIPT_DIR}/lib/accounts/export_matrix.sh"; do
-    source "${account_module}"
-done
-
-for routing_module in \
-    "${SCRIPT_DIR}/lib/routing/base.sh" \
-    "${SCRIPT_DIR}/lib/routing/ipv6.sh" \
-    "${SCRIPT_DIR}/lib/routing/warp.sh" \
-    "${SCRIPT_DIR}/lib/routing/blacklist.sh" \
-    "${SCRIPT_DIR}/lib/routing/outbounds.sh" \
-    "${SCRIPT_DIR}/lib/routing/rules.sh"; do
-    source "${routing_module}"
-done
-
-xrayAgentExperimentalMenu() {
-    echoContent skyBlue "\n实验特性"
-    echoContent red "\n=============================================================="
-    echoContent yellow "1.Finalmask: ${XRAY_AGENT_ENABLE_FINALMASK:-false}"
-    echoContent yellow "2.TLS ECH: ${XRAY_AGENT_ENABLE_ECH:-false}"
-    echoContent yellow "3.VLESS Encryption: ${XRAY_AGENT_ENABLE_VLESS_ENCRYPTION:-false}"
-    echoContent yellow "4.Browser Headers: ${XRAY_AGENT_BROWSER_HEADERS:-chrome}"
-    echoContent yellow "5.trustedXForwardedFor: ${XRAY_AGENT_TRUSTED_X_FORWARDED_FOR:-127.0.0.1}"
-    echoContent red "=============================================================="
-    read -r -p "请选择要切换的项目[回车退出]:" selectExperimentalType
-    case "${selectExperimentalType}" in
-        1)
-            [[ "${XRAY_AGENT_ENABLE_FINALMASK}" == "true" ]] && XRAY_AGENT_ENABLE_FINALMASK=false || XRAY_AGENT_ENABLE_FINALMASK=true
-            ;;
-        2)
-            [[ "${XRAY_AGENT_ENABLE_ECH}" == "true" ]] && XRAY_AGENT_ENABLE_ECH=false || XRAY_AGENT_ENABLE_ECH=true
-            ;;
-        3)
-            [[ "${XRAY_AGENT_ENABLE_VLESS_ENCRYPTION}" == "true" ]] && XRAY_AGENT_ENABLE_VLESS_ENCRYPTION=false || XRAY_AGENT_ENABLE_VLESS_ENCRYPTION=true
-            ;;
-        4)
-            read -r -p "请输入 browser headers[chrome/firefox/edge]:" XRAY_AGENT_BROWSER_HEADERS
-            ;;
-        5)
-            read -r -p "请输入 trustedXForwardedFor 来源IP/网段:" XRAY_AGENT_TRUSTED_X_FORWARDED_FOR
-            ;;
-        *)
-            return 0
-            ;;
-    esac
-    xrayAgentPersistFeatureFlags
-}
-
-xrayAgentLocalModeMenu() {
-    echoContent skyBlue "\n本地模式"
-    echoContent red "\n=============================================================="
-    echoContent yellow "1.生成 local_tun 配置"
-    echoContent yellow "2.Browser Dialer 说明"
-    echoContent red "=============================================================="
-    read -r -p "请选择:" selectLocalModeType
-    case "${selectLocalModeType}" in
-        1)
-            installTools 1
-            installXray 2
-            installXrayService 3
-            xray_agent_render_local_tun_profile
-            reloadCore
-            echoContent green " ---> 已生成 local_tun 配置: ${configPath}20_TUN_inbounds.json"
-            echoContent yellow " ---> TUN 模式不会自动改系统路由表，请手动配置并注意避免回环"
-            ;;
-        2)
-            xray_agent_browser_dialer_message
-            ;;
-    esac
-}
-
-xrayAgentProfileBuilderMenu() {
-    echoContent skyBlue "\n模块化 Profile 菜单"
-    echoContent red "\n=============================================================="
-    echoContent yellow "1.server_tls_vision + ws/vmess/xhttp"
-    echoContent yellow "2.server_reality_vision + xhttp"
-    echoContent yellow "3.server_hysteria2"
-    echoContent red "=============================================================="
-    read -r -p "请选择:" selectProfileBuilderType
-    case "${selectProfileBuilderType}" in
-        1)
-            xray_agent_run_install_profile tls_vision_xhttp
-            ;;
-        2)
-            xray_agent_run_install_profile reality_vision_xhttp
-            ;;
-        3)
-            xray_agent_install_hysteria2_native
-            ;;
-    esac
-}
 
 menu() {
     cd "$HOME" || exit
-    echoContent red "\n=============================================================="
+    xray_agent_blank
+    echoContent red "=============================================================="
     echoContent green "项目:xray-agent"
     echoContent green "维护者:${XRAY_AGENT_PROJECT_OWNER}"
     echoContent green "当前版本:${XRAY_AGENT_VERSION}"
     echoContent green "Github:${XRAY_AGENT_PROJECT_REPO}"
-    echoContent green "描述:Xray profile 构建脚本\c"
+    xray_agent_print_inline green "描述:Xray profile 构建脚本"
     showInstallStatus
-    echoContent red "\n=============================================================="
+    xray_agent_blank
+    echoContent red "=============================================================="
     if [[ "${coreInstallType}" == "1" || "${coreInstallType}" == "3" ]]; then
         echoContent yellow "1.重新安装TLS套餐(VLESS-TCP/VLESS-WS/VMess-WS/XHTTP)"
     else
@@ -224,9 +199,6 @@ menu() {
     echoContent yellow "21.三网回程路由测试"
     echoContent yellow "22.流媒体解锁检测"
     echoContent yellow "23.VPS基本信息"
-    echoContent yellow "24.模块化 Profile 菜单"
-    echoContent yellow "25.本地模式菜单"
-    echoContent yellow "26.实验特性开关"
     echoContent red "=============================================================="
     mkdirTools
     aliasInstall
@@ -300,15 +272,6 @@ menu() {
             ;;
         23)
             xray_agent_external_vps_info
-            ;;
-        24)
-            xrayAgentProfileBuilderMenu
-            ;;
-        25)
-            xrayAgentLocalModeMenu
-            ;;
-        26)
-            xrayAgentExperimentalMenu
             ;;
     esac
 }

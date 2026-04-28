@@ -1,1 +1,12 @@
-{"protocol":"freedom","streamSettings":{"sockopt":{"interface":"WARP"}},"settings":{"domainStrategy":"UseIP"},"tag":"warp-out"}
+{
+  "protocol": "freedom",
+  "streamSettings": {
+    "sockopt": {
+      "interface": "${XRAY_WARP_INTERFACE}"
+    }
+  },
+  "settings": {
+    "domainStrategy": "UseIP"
+  },
+  "tag": "warp-out"
+}

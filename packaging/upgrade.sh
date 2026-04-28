@@ -9,13 +9,13 @@ mkdir -p \
     "${TARGET_ROOT}/templates/xray/inbounds" \
     "${TARGET_ROOT}/templates/xray/outbounds" \
     "${TARGET_ROOT}/templates/xray/extras" \
+    "${TARGET_ROOT}/templates/nginx" \
     "${TARGET_ROOT}/templates/share" \
+    "${TARGET_ROOT}/templates/systemd" \
     "${TARGET_ROOT}/profiles/install" \
     "${TARGET_ROOT}/profiles/protocol" \
     "${TARGET_ROOT}/profiles/routing" \
-    "${TARGET_ROOT}/profiles/experimental" \
     "${TARGET_ROOT}/docs" \
-    "${TARGET_ROOT}/verify" \
     "${TARGET_ROOT}/packaging"
 
 move_if_missing() {
@@ -39,8 +39,6 @@ legacy_template_targets=(
     "inbound_vmess_ws_tls.json.tpl:inbounds/05_vmess_ws_tls.json.tpl"
     "inbound_vless_reality_vision.json.tpl:inbounds/07_vless_reality_tcp.json.tpl"
     "inbound_vless_xhttp_tls.json.tpl:inbounds/08_vless_xhttp.json.tpl"
-    "inbound_hysteria2.json.tpl:inbounds/12_hysteria2.json.tpl"
-    "inbound_tun.json.tpl:inbounds/20_tun.json.tpl"
 )
 
 for mapping in "${legacy_template_targets[@]}"; do
@@ -62,21 +60,6 @@ legacy_profile_names=(
     "local_tun.env"
 )
 
-legacy_flat_libs=(
-    "common.sh"
-    "env.sh"
-    "firewall.sh"
-    "nginx.sh"
-    "profiles.sh"
-    "routing.sh"
-    "sniffing.sh"
-    "sockopt.sh"
-    "system.sh"
-    "tls.sh"
-    "users.sh"
-    "xray_core.sh"
-)
-
 legacy_feature_wrappers=(
     "browser_dialer.sh"
     "ech.sh"
@@ -87,14 +70,55 @@ legacy_feature_wrappers=(
     "vless_enc.sh"
 )
 
+legacy_flat_helpers=(
+    "env.sh"
+    "firewall.sh"
+    "profiles.sh"
+    "sniffing.sh"
+    "sockopt.sh"
+    "users.sh"
+    "xray_core.sh"
+)
+
 for legacy_name in "${legacy_profile_names[@]}"; do
     rm -f "${legacy_profile_dir}/${legacy_name}"
-done
-
-for legacy_name in "${legacy_flat_libs[@]}"; do
-    rm -f "${TARGET_ROOT}/lib/${legacy_name}"
 done
 
 for legacy_name in "${legacy_feature_wrappers[@]}"; do
     rm -f "${TARGET_ROOT}/lib/features/${legacy_name}"
 done
+
+for legacy_name in "${legacy_flat_helpers[@]}"; do
+    rm -f "${TARGET_ROOT}/lib/${legacy_name}"
+done
+
+rm -rf \
+    "${TARGET_ROOT}/lib/common" \
+    "${TARGET_ROOT}/lib/runtime" \
+    "${TARGET_ROOT}/lib/system" \
+    "${TARGET_ROOT}/lib/tls" \
+    "${TARGET_ROOT}/lib/core" \
+    "${TARGET_ROOT}/lib/nginx" \
+    "${TARGET_ROOT}/lib/protocols" \
+    "${TARGET_ROOT}/lib/accounts" \
+    "${TARGET_ROOT}/lib/routing" \
+    "${TARGET_ROOT}/lib/features" \
+    "${TARGET_ROOT}/lib/apps" \
+    "${TARGET_ROOT}/lib/external" \
+    "${TARGET_ROOT}/lib/experimental" \
+    "${TARGET_ROOT}/profiles/experimental" \
+    "${TARGET_ROOT}/templates/xray/snippets" \
+    "${TARGET_ROOT}/templates/cron" \
+    "${TARGET_ROOT}/templates/packages" \
+    "${TARGET_ROOT}/verify" \
+    "${TARGET_ROOT}/scripts"
+
+rm -f \
+    "${TARGET_ROOT}/templates/xray/inbounds/12_hysteria2.json.tpl" \
+    "${TARGET_ROOT}/templates/xray/inbounds/20_tun.json.tpl" \
+    "${TARGET_ROOT}/templates/xray/extras/access_log_off.patch.json" \
+    "${TARGET_ROOT}/templates/xray/extras/access_log_on.patch.json" \
+    "${TARGET_ROOT}/templates/xray/extras/sniffing_off.patch.json" \
+    "${TARGET_ROOT}/templates/xray/extras/sniffing_on.patch.json" \
+    "${TARGET_ROOT}/templates/xray/extras/sockopt.patch.json" \
+    "${TARGET_ROOT}/templates/nginx/mirror_replace.sed.tpl"

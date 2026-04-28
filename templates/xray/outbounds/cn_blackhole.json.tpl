@@ -1,4 +1,4 @@
 {
   "protocol": "blackhole",
-  "tag": "blackhole-out"
+  "tag": "cn-blackhole"
 }

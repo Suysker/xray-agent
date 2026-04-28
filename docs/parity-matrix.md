@@ -1,25 +1,25 @@
 # parity-matrix
 
-- `echoContent/xray_agent_confirm/xray_agent_error` -> `lib/common/output.sh`
-- `xray_agent_render_template/xray_agent_json_write/xray_agent_apply_json_patch` -> `lib/common/json.sh`
-- `initVar/checkBTPanel/xrayAgentLoadFeatureFlags/xrayAgentPersistFeatureFlags` -> `lib/runtime/env.sh`
-- `checkSystem/checkCPUVendor` -> `lib/runtime/detect.sh`
-- `readInstallType/readInstallProtocolType/readConfigHostPathUUID/showInstallStatus` -> `lib/runtime/state.sh`
-- `installTools/installNginxTools/mkdirTools` -> `lib/system/packages.sh`
-- `allowPort/checkPort` -> `lib/system/firewall.sh`
-- `handleXray/handleNginx/installXrayService/customPortFunction` -> `lib/system/services.sh`
-- `installCronTLS/auto_update_geodata` -> `lib/system/cron.sh`
-- `switchSSLType/customSSLEmail/acmeInstallSSL` -> `lib/tls/acme.sh`
-- `initTLSNginxConfig/randomPathFunction/installTLS/renewalTLS/manageCert` -> `lib/tls/certs.sh`
-- `initTLSRealityConfig` -> `lib/tls/reality.sh`
-- `installXray/updateXray/reloadCore` -> `lib/core/xray.sh`
-- `checkGFWStatue/getPublicIP` -> `lib/core/health.sh`
-- `xrayVersionManageMenu` -> `lib/core/versions.sh`
-- `updateRedirectNginxConf/backupNginxConfig/updateNginxBlog` -> `lib/nginx/render.sh`
-- `generate_clients/xray_agent_prepare_uuid/xray_agent_prepare_reality_keys` -> `lib/protocols/shared.sh`
-- `initXrayConfig/initXrayRealityConfig/xrayCoreInstall/xrayCoreInstall_Reality` -> `lib/protocols/compose.sh`
-- `TLS/Reality 套餐中的协议组合选择` -> `profiles/install/*.profile` `protocols=` -> `lib/protocols/compose.sh`
-- `TLS/Reality 套餐中的安装流水线顺序` -> `profiles/install/*.profile` `steps=` -> `lib/protocols/compose.sh`
-- `manageUser/showAccounts/defaultBase64Code` -> `lib/accounts/*`
-- `warpRouting/blacklist/ipv6Routing/unInstallRouting/unInstallOutbounds` -> `lib/routing/*`
-- `manageSniffing/manageSockopt/checkLog/addCorePort/unInstall/updateXRayAgent/aliasInstall` -> `lib/features/*`
+- `echoContent/xray_agent_println/xray_agent_print_inline/xray_agent_blank/xray_agent_confirm/xray_agent_error` -> `lib/common.sh`
+- `xray_agent_render_template/xray_agent_render_template_stdout/xray_agent_json_write/xray_agent_apply_json_patch` -> `lib/common.sh`
+- `initVar/checkBTPanel` -> `lib/runtime.sh`
+- `checkSystem/checkCPUVendor` -> `lib/runtime.sh`
+- `readInstallType/readInstallProtocolType/readConfigHostPathUUID/showInstallStatus` -> `lib/runtime.sh`
+- `installTools/installNginxTools/mkdirTools` -> `lib/system.sh`
+- `allowPort/checkFirewalldAllowPort/checkUFWAllowPort/checkPort` -> `lib/system.sh`
+- `handleXray/handleNginx/installXrayService/customPortFunction` -> `lib/system.sh`
+- `installCronTLS/auto_update_geodata` -> `lib/system.sh`
+- `switchSSLType/customSSLEmail/acmeInstallSSL` -> `lib/tls.sh`
+- `initTLSNginxConfig/randomPathFunction/installTLS/renewalTLS/manageCert` -> `lib/tls.sh`
+- `initTLSRealityConfig` -> `lib/tls.sh`
+- `installXray/updateXray/reloadCore` -> `lib/core.sh`
+- `checkGFWStatue/getPublicIP` -> `lib/core.sh`
+- `xrayVersionManageMenu` -> `lib/core.sh`
+- `updateRedirectNginxConf/backupNginxConfig/updateNginxBlog` -> `lib/nginx.sh`
+- `generate_clients/xray_agent_prepare_uuid/xray_agent_prepare_reality_keys` -> `lib/protocols.sh`
+- `initXrayConfig/initXrayRealityConfig/xrayCoreInstall/xrayCoreInstall_Reality` -> `lib/protocols.sh`
+- `TLS/Reality 套餐中的协议组合选择` -> `profiles/install/*.profile` `protocols=` -> `lib/protocols.sh`
+- `TLS/Reality 套餐中的安装流水线顺序` -> `profiles/install/*.profile` `steps=` -> `lib/protocols.sh`
+- `manageUser/showAccounts/defaultBase64Code` -> `lib/accounts.sh`
+- `warpRouting/blacklist/ipv6Routing/unInstallRouting/unInstallOutbounds` -> `lib/routing.sh`
+- `manageSniffing/manageSockopt/checkLog/addCorePort/unInstall/updateXRayAgent/aliasInstall` -> `lib/features.sh`
