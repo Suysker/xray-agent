@@ -346,7 +346,7 @@ customPortFunction() {
             xray_agent_json_update_file "${configPath}${frontingType}.json" ".inbounds[0].port = ${port}"
         fi
         if [[ "${historyCustomPortStatus}" == "n" ]]; then
-            rm -rf "$(find ${configPath}* | grep "dokodemodoor")"
+            find "${configPath}" -maxdepth 1 -type f -name "02_dokodemodoor_inbounds_*.json" -delete
         fi
     elif [[ "$1" == "Reality" ]]; then
         RealityPort="${port}"

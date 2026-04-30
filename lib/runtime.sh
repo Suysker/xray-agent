@@ -428,6 +428,92 @@ showInstallStatus() {
     fi
 }
 
+xray_agent_install_type_label() {
+    case "${coreInstallType:-}" in
+        1) printf 'TLS套餐\n' ;;
+        2) printf 'Reality套餐\n' ;;
+        3) printf 'TLS+Reality套餐\n' ;;
+        *) printf '未安装\n' ;;
+    esac
+}
+
+xray_agent_protocol_summary() {
+    local summary=()
+    if echo "${currentInstallProtocolType:-}" | grep -q 0; then
+        summary+=("VLESS-TCP-TLS")
+    fi
+    if echo "${currentInstallProtocolType:-}" | grep -q 1; then
+        summary+=("VLESS-WS-TLS")
+    fi
+    if echo "${currentInstallProtocolType:-}" | grep -q 2; then
+        summary+=("VMess-WS-TLS")
+    fi
+    if echo "${currentInstallProtocolType:-}" | grep -q 7; then
+        summary+=("VLESS-TCP-Reality")
+    fi
+    if echo "${currentInstallProtocolType:-}" | grep -q 8; then
+        summary+=("XHTTP")
+    fi
+    if echo "${currentInstallProtocolType:-}" | grep -q 9; then
+        summary+=("Hysteria2")
+    fi
+
+    if [[ "${#summary[@]}" -eq 0 ]]; then
+        printf '无\n'
+    else
+        xray_agent_join_by ', ' "${summary[@]}"
+        printf '\n'
+    fi
+}
+
+xray_agent_port_owner() {
+    local protocol="$1"
+    local port="$2"
+    if ! command -v lsof >/dev/null 2>&1; then
+        printf '未检测(lsof缺失)\n'
+        return 0
+    fi
+
+    local owner
+    if [[ "${protocol}" == "UDP" ]]; then
+        owner="$(lsof -nP -iUDP:"${port}" 2>/dev/null | awk 'NR == 2 {print $1"/"$2; exit}')"
+    else
+        owner="$(lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 {print $1"/"$2; exit}')"
+    fi
+    printf '%s\n' "${owner:-空闲}"
+}
+
+xray_agent_tool_status_header() {
+    local title="$1"
+    local cert_status="未检测"
+
+    readInstallType
+    readInstallProtocolType
+    readConfigHostPathUUID
+    xray_agent_detect_network_capabilities
+    if declare -F xray_agent_cert_primary_status >/dev/null 2>&1; then
+        cert_status="$(xray_agent_cert_primary_status)"
+    fi
+
+    xray_agent_blank
+    echoContent skyBlue "-------------------------${title}-----------------------------"
+    echoContent yellow "安装类型: $(xray_agent_install_type_label)"
+    echoContent yellow "已启用协议: $(xray_agent_protocol_summary)"
+    echoContent yellow "域名: ${domain:-无}  TLS证书域名: ${TLSDomain:-无}"
+    if [[ -n "${RealityDestDomain:-}" ]]; then
+        echoContent yellow "Reality目标: ${RealityDestDomain}  端口: ${RealityPort:-未检测}"
+    fi
+    if [[ -f "$(xray_agent_hysteria2_inbound_file)" ]]; then
+        echoContent yellow "Hysteria2: 已启用 UDP/${Hysteria2Port:-443}  伪装: ${Hysteria2MasqueradeURL:-未检测}"
+    else
+        echoContent yellow "Hysteria2: 未启用"
+    fi
+    echoContent yellow "证书: ${cert_status}"
+    echoContent yellow "网络栈: $(xray_agent_route_mode_label)  WARP: $(xray_agent_warp_mode_label)"
+    echoContent yellow "端口占用: TCP/80=$(xray_agent_port_owner TCP 80) TCP/443=$(xray_agent_port_owner TCP 443) UDP/443=$(xray_agent_port_owner UDP 443)"
+    echoContent red "=============================================================="
+}
+
 xray_agent_bootstrap_state() {
     checkBTPanel
     if declare -F xray_agent_run_legacy_migrations >/dev/null 2>&1; then

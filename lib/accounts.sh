@@ -4,6 +4,18 @@ if [[ -z "${XRAY_AGENT_PROJECT_ROOT:-}" ]]; then
     XRAY_AGENT_PROJECT_ROOT="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 
+xray_agent_uuid_exists_anywhere() {
+    local candidate_uuid="$1"
+    local config_file
+    while IFS= read -r config_file; do
+        [[ -f "${config_file}" ]] || continue
+        if jq -e --arg uuid "${candidate_uuid}" 'any(.inbounds[0].settings.clients[]?; (.id? == $uuid) or (.auth? == $uuid))' "${config_file}" >/dev/null 2>&1; then
+            return 0
+        fi
+    done < <(find "${configPath}" -maxdepth 1 -type f -name "*_inbounds.json" 2>/dev/null)
+    return 1
+}
+
 customUUID() {
     read -r -p "请输入合法的UUID，[回车]随机UUID:" currentCustomUUID
     if [[ -z "${currentCustomUUID}" ]]; then
@@ -12,18 +24,14 @@ customUUID() {
         return 0
     fi
 
-    local config_file
-    for config_file in "${configPath}${frontingType}.json" "${configPath}${RealityfrontingType}.json"; do
-        [[ -f "${config_file}" ]] || continue
-        if jq -e --arg uuid "${currentCustomUUID}" 'any(.inbounds[0].settings.clients[]?; (.id? == $uuid) or (.auth? == $uuid))' "${config_file}" >/dev/null; then
-            echoContent red " ---> UUID已存在，请重新输入"
-            currentCustomUUID=
-            customUUID
-            return 0
-        fi
-    done
-    config_file="${configPath}09_Hysteria2_inbounds.json"
-    if [[ -f "${config_file}" ]] && jq -e --arg uuid "${currentCustomUUID}" 'any(.inbounds[0].settings.clients[]?; .auth? == $uuid)' "${config_file}" >/dev/null; then
+    if ! xray_agent_validate_uuid "${currentCustomUUID}"; then
+        echoContent red " ---> UUID格式不合法，请重新输入"
+        currentCustomUUID=
+        customUUID
+        return 0
+    fi
+
+    if xray_agent_uuid_exists_anywhere "${currentCustomUUID}"; then
         echoContent red " ---> UUID已存在，请重新输入"
         currentCustomUUID=
         customUUID
@@ -39,8 +47,9 @@ xray_agent_append_client_to_inbound() {
 
 addUser() {
     read -r -p "请输入要添加的用户数量:" userNum
-    if [[ -z ${userNum} || ${userNum} -le 0 ]]; then
-        exit 0
+    if ! [[ "${userNum}" =~ ^[0-9]+$ ]] || [[ "${userNum}" -le 0 ]]; then
+        echoContent red " ---> 用户数量必须是大于 0 的整数"
+        return 0
     fi
     if [[ "${userNum}" == "1" ]]; then
         customUUID
@@ -101,11 +110,24 @@ removeUser() {
     if [[ -f "${configPath}09_Hysteria2_inbounds.json" ]]; then
         userIds=$({ printf '%s\n' "${userIds}"; jq -r -c '.inbounds[0].settings.clients[]?.auth' "${configPath}09_Hysteria2_inbounds.json" | tr -d '\r'; } | sed '/^$/d' | sort | uniq)
     fi
+    if [[ -z "${userIds}" ]]; then
+        echoContent yellow " ---> 当前没有可删除的用户"
+        return 0
+    fi
     echo "${userIds}" | awk '{print NR""":"$0}'
     read -r -p "请选择要删除的用户编号[仅支持单个删除]:" delUserIndex
     mapfile -t userIdsArray <<< "${userIds}"
+    if ! [[ "${delUserIndex}" =~ ^[0-9]+$ ]] || [[ "${delUserIndex}" -lt 1 || "${delUserIndex}" -gt "${#userIdsArray[@]}" ]]; then
+        echoContent red " ---> 选择错误"
+        return 0
+    fi
     userIdToDelete=${userIdsArray[$((delUserIndex-1))]}
     if [[ -n "${userIdToDelete}" ]]; then
+        xray_agent_account_removal_impact "${userIdToDelete}"
+        if ! xray_agent_confirm "确认删除该用户？[y/N]:" "n"; then
+            echoContent yellow " ---> 已取消"
+            return 0
+        fi
         if echo "${currentInstallProtocolType}" | grep -q 0; then
             xray_agent_remove_client_from_inbound "${configPath}${frontingType}.json" "${userIdToDelete}"
         fi
@@ -130,6 +152,49 @@ removeUser() {
 
 manageUser() {
     manageAccount "$@"
+}
+
+xray_agent_account_count_for_file() {
+    local target_file="$1"
+    [[ -f "${target_file}" ]] || {
+        printf '未安装\n'
+        return 0
+    }
+    jq -r '[.inbounds[0].settings.clients[]?] | length' "${target_file}" 2>/dev/null | tr -d '\r'
+}
+
+xray_agent_account_protocol_matrix() {
+    echoContent skyBlue "-------------------------账号矩阵-----------------------------"
+    echoContent yellow "VLESS TCP TLS: $(xray_agent_account_count_for_file "${configPath}${frontingType:-02_VLESS_TCP_inbounds}.json")"
+    echoContent yellow "VLESS WS TLS: $(xray_agent_account_count_for_file "${configPath}03_VLESS_WS_inbounds.json")"
+    echoContent yellow "VMess WS TLS: $(xray_agent_account_count_for_file "${configPath}05_VMess_WS_inbounds.json")"
+    echoContent yellow "VLESS TCP Reality: $(xray_agent_account_count_for_file "${configPath}${RealityfrontingType:-07_VLESS_Reality_TCP_inbounds}.json")"
+    echoContent yellow "VLESS XHTTP: $(xray_agent_account_count_for_file "${configPath}08_VLESS_XHTTP_inbounds.json")"
+    echoContent yellow "Hysteria2: $(xray_agent_account_count_for_file "${configPath}09_Hysteria2_inbounds.json")"
+}
+
+xray_agent_account_user_exists_in_file() {
+    local target_file="$1"
+    local user_id="$2"
+    [[ -f "${target_file}" ]] || return 1
+    jq -e --arg uid "${user_id}" 'any(.inbounds[0].settings.clients[]?; (.id? == $uid) or (.auth? == $uid))' "${target_file}" >/dev/null 2>&1
+}
+
+xray_agent_account_removal_impact() {
+    local user_id="$1"
+    local affected=()
+    xray_agent_account_user_exists_in_file "${configPath}${frontingType}.json" "${user_id}" && affected+=("VLESS TCP TLS")
+    xray_agent_account_user_exists_in_file "${configPath}03_VLESS_WS_inbounds.json" "${user_id}" && affected+=("VLESS WS TLS")
+    xray_agent_account_user_exists_in_file "${configPath}05_VMess_WS_inbounds.json" "${user_id}" && affected+=("VMess WS TLS")
+    xray_agent_account_user_exists_in_file "${configPath}${RealityfrontingType}.json" "${user_id}" && affected+=("VLESS TCP Reality")
+    xray_agent_account_user_exists_in_file "${configPath}08_VLESS_XHTTP_inbounds.json" "${user_id}" && affected+=("VLESS XHTTP")
+    xray_agent_account_user_exists_in_file "${configPath}09_Hysteria2_inbounds.json" "${user_id}" && affected+=("Hysteria2")
+    echoContent yellow "将删除用户: ${user_id}"
+    if [[ "${#affected[@]}" -gt 0 ]]; then
+        echoContent yellow "影响协议: $(xray_agent_join_by ', ' "${affected[@]}")"
+    else
+        echoContent yellow "影响协议: 未检测到"
+    fi
 }
 
 showAccounts() {
@@ -210,8 +275,8 @@ manageAccount() {
         menu
         exit 0
     fi
-    xray_agent_blank
-    echoContent skyBlue "功能 1/${totalProgress} : 账号管理"
+    xray_agent_tool_status_header "账号管理"
+    xray_agent_account_protocol_matrix
     xray_agent_blank
     echoContent red "=============================================================="
     echoContent yellow "1.查看账号"
@@ -224,7 +289,10 @@ manageAccount() {
             showAccounts 1
             ;;
         2)
-            addUser
+            echoContent yellow "添加用户会同步写入所有已安装协议，包括 Hysteria2 auth。"
+            if xray_agent_confirm "确认继续？[Y/n]:" "y"; then
+                addUser
+            fi
             ;;
         3)
             removeUser

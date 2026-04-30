@@ -4,6 +4,306 @@ if [[ -z "${XRAY_AGENT_PROJECT_ROOT:-}" ]]; then
     XRAY_AGENT_PROJECT_ROOT="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 
+xray_agent_cert_normalize_domain() {
+    local raw_domain="$1"
+    raw_domain="${raw_domain#http://}"
+    raw_domain="${raw_domain#https://}"
+    raw_domain="${raw_domain%%/*}"
+    raw_domain="${raw_domain%%:*}"
+    raw_domain="${raw_domain#.}"
+    if [[ "${raw_domain}" == \*.* ]]; then
+        raw_domain="${raw_domain#\*.}"
+    fi
+    printf '%s\n' "${raw_domain}"
+}
+
+xray_agent_cert_base_domain() {
+    local input_domain
+    input_domain="$(xray_agent_cert_normalize_domain "$1")"
+    local base_domain
+    base_domain="$(echo "${input_domain}" | awk -F "." '{print $(NF-1)"."$NF}')"
+    if [[ "${base_domain}" == "eu.org" ]]; then
+        base_domain="$(echo "${input_domain}" | awk -F "." '{print $(NF-2)"."$(NF-1)"."$NF}')"
+    fi
+    printf '%s\n' "${base_domain}"
+}
+
+xray_agent_cert_acme_dir() {
+    local cert_domain="$1"
+    if [[ -d "$HOME/.acme.sh/${cert_domain}_ecc" ]]; then
+        printf '%s\n' "$HOME/.acme.sh/${cert_domain}_ecc"
+    fi
+}
+
+xray_agent_cert_days_left() {
+    local cert_file="$1"
+    local end_date end_epoch now_epoch
+    [[ -f "${cert_file}" ]] || return 1
+    command -v openssl >/dev/null 2>&1 || return 1
+    end_date="$(openssl x509 -in "${cert_file}" -noout -enddate 2>/dev/null | awk -F= '{print $2}')"
+    [[ -n "${end_date}" ]] || return 1
+    end_epoch="$(date -d "${end_date}" +%s 2>/dev/null || true)"
+    [[ -n "${end_epoch}" ]] || return 1
+    now_epoch="$(date +%s)"
+    printf '%s\n' "$(((end_epoch - now_epoch) / 86400))"
+}
+
+xray_agent_cert_key_match_status() {
+    local cert_file="$1"
+    local key_file="$2"
+    local cert_pub key_pub
+    [[ -f "${cert_file}" && -f "${key_file}" ]] || {
+        printf '缺失\n'
+        return 0
+    }
+    command -v openssl >/dev/null 2>&1 || {
+        printf '未检测(openssl缺失)\n'
+        return 0
+    }
+    cert_pub="$(openssl x509 -in "${cert_file}" -pubkey -noout 2>/dev/null | openssl pkey -pubin -outform PEM 2>/dev/null | sha256sum 2>/dev/null | awk '{print $1}')"
+    key_pub="$(openssl pkey -in "${key_file}" -pubout -outform PEM 2>/dev/null | sha256sum 2>/dev/null | awk '{print $1}')"
+    if [[ -n "${cert_pub}" && "${cert_pub}" == "${key_pub}" ]]; then
+        printf '匹配\n'
+    else
+        printf '不匹配\n'
+    fi
+}
+
+xray_agent_cert_inventory_domains() {
+    local cert_file acme_dir
+    {
+        for cert_file in "${XRAY_AGENT_TLS_DIR}"/*.crt; do
+            [[ -f "${cert_file}" ]] && basename "${cert_file}" .crt
+        done
+        for acme_dir in "$HOME/.acme.sh"/*_ecc; do
+            [[ -d "${acme_dir}" ]] && basename "${acme_dir}" _ecc
+        done
+    } | sed '/^\*$/d;/^$/d' | sort -u
+}
+
+xray_agent_cert_inventory() {
+    local cert_domain cert_file key_file acme_dir days_left match_status acme_status has_cert=false
+    echoContent skyBlue "-------------------------证书库存-----------------------------"
+    while IFS= read -r cert_domain; do
+        [[ -n "${cert_domain}" ]] || continue
+        has_cert=true
+        cert_file="${XRAY_AGENT_TLS_DIR}/${cert_domain}.crt"
+        key_file="${XRAY_AGENT_TLS_DIR}/${cert_domain}.key"
+        acme_dir="$(xray_agent_cert_acme_dir "${cert_domain}")"
+        if days_left="$(xray_agent_cert_days_left "${cert_file}" 2>/dev/null)"; then
+            :
+        else
+            days_left="未知"
+        fi
+        match_status="$(xray_agent_cert_key_match_status "${cert_file}" "${key_file}")"
+        acme_status="$([[ -n "${acme_dir}" ]] && printf '存在' || printf '缺失')"
+        echoContent yellow "${cert_domain}: 到期剩余=${days_left}天 文件=$([[ -f "${cert_file}" && -f "${key_file}" ]] && printf '完整' || printf '缺失') 私钥=${match_status} acme记录=${acme_status}"
+    done < <(xray_agent_cert_inventory_domains)
+    if [[ "${has_cert}" != "true" ]]; then
+        echoContent yellow "暂无证书文件或 acme 记录"
+    fi
+}
+
+xray_agent_cert_primary_domain() {
+    if [[ -n "${TLSDomain:-}" ]]; then
+        printf '%s\n' "${TLSDomain}"
+    elif [[ -n "${domain:-}" ]]; then
+        printf '%s\n' "$(xray_agent_cert_normalize_domain "${domain}")"
+    fi
+}
+
+xray_agent_cert_primary_status() {
+    local cert_domain cert_file days_left match_status
+    cert_domain="$(xray_agent_cert_primary_domain)"
+    [[ -n "${cert_domain}" ]] || {
+        printf '无证书域名\n'
+        return 0
+    }
+    cert_file="${XRAY_AGENT_TLS_DIR}/${cert_domain}.crt"
+    if [[ ! -f "${cert_file}" ]]; then
+        printf '%s 缺失\n' "${cert_domain}"
+        return 0
+    fi
+    if days_left="$(xray_agent_cert_days_left "${cert_file}" 2>/dev/null)"; then
+        match_status="$(xray_agent_cert_key_match_status "${cert_file}" "${XRAY_AGENT_TLS_DIR}/${cert_domain}.key")"
+        if [[ "${days_left}" =~ ^-?[0-9]+$ && "${days_left}" -le 14 ]]; then
+            printf '%s 临期(%s天) 私钥%s\n' "${cert_domain}" "${days_left}" "${match_status}"
+        else
+            printf '%s 正常(%s天) 私钥%s\n' "${cert_domain}" "${days_left}" "${match_status}"
+        fi
+    else
+        printf '%s 存在，到期未知\n' "${cert_domain}"
+    fi
+}
+
+xray_agent_cert_resolved_records() {
+    local record_type="$1"
+    local cert_domain="$2"
+    command -v dig >/dev/null 2>&1 || return 0
+    dig +short "${record_type}" "${cert_domain}" 2>/dev/null | sed '/^$/d' | sort -u
+}
+
+xray_agent_cert_csv_contains() {
+    local csv="$1"
+    local value="$2"
+    xray_agent_csv_to_lines "${csv}" | grep -Fxq "${value}"
+}
+
+xray_agent_cert_records_match_public() {
+    local records="$1"
+    local csv="$2"
+    local record
+    while IFS= read -r record; do
+        [[ -n "${record}" ]] || continue
+        if xray_agent_cert_csv_contains "${csv}" "${record}"; then
+            return 0
+        fi
+    done <<<"${records}"
+    return 1
+}
+
+xray_agent_cert_port_owner() {
+    local port="$1"
+    xray_agent_port_owner TCP "${port}"
+}
+
+xray_agent_cert_preflight() {
+    local input_domain="$1"
+    local want_wildcard="${2:-false}"
+    local normalized_domain base_domain a_records aaaa_records port80_owner port443_owner
+    normalized_domain="$(xray_agent_cert_normalize_domain "${input_domain}")"
+    if ! xray_agent_validate_domain "${normalized_domain}"; then
+        echoContent red " ---> 域名不合法: ${input_domain}"
+        return 1
+    fi
+
+    domain="${normalized_domain}"
+    if [[ "${want_wildcard}" == "true" ]]; then
+        base_domain="$(xray_agent_cert_base_domain "${normalized_domain}")"
+        TLSDomain="${base_domain}"
+    else
+        TLSDomain="${normalized_domain}"
+    fi
+
+    xray_agent_detect_network_capabilities --refresh
+    a_records="$(xray_agent_cert_resolved_records A "${normalized_domain}")"
+    aaaa_records="$(xray_agent_cert_resolved_records AAAA "${normalized_domain}")"
+    port80_owner="$(xray_agent_cert_port_owner 80)"
+    port443_owner="$(xray_agent_cert_port_owner 443)"
+
+    echoContent skyBlue "-------------------------申请前预检-----------------------------"
+    echoContent yellow "申请域名: ${domain}  证书域名: ${TLSDomain}"
+    echoContent yellow "网络栈: $(xray_agent_route_mode_label)"
+    echoContent yellow "公网IPv4: ${publicIPv4CSV:-未检测到}"
+    echoContent yellow "公网IPv6: ${publicIPv6CSV:-未检测到}"
+    echoContent yellow "DNS A: ${a_records:-未解析到}"
+    echoContent yellow "DNS AAAA: ${aaaa_records:-未解析到}"
+    echoContent yellow "端口: TCP/80=${port80_owner} TCP/443=${port443_owner}"
+    if [[ "${warpDefaultIPv4}" == "true" || "${warpDefaultIPv6}" == "true" ]]; then
+        echoContent yellow "提示: 系统默认路由存在 WARP 接管，公网探测结果可能是 WARP 出口。"
+    fi
+
+    xray_agent_cert_recommend_method "${want_wildcard}" "${a_records}" "${aaaa_records}" "${port80_owner}"
+}
+
+xray_agent_cert_recommend_method() {
+    local want_wildcard="$1"
+    local a_records="$2"
+    local aaaa_records="$3"
+    local port80_owner="$4"
+    certRecommendMethod="dns"
+    certRecommendReason="DNS 解析或端口条件不适合 standalone"
+
+    if [[ "${want_wildcard}" == "true" ]]; then
+        certRecommendMethod="dns"
+        certRecommendReason="通配证书必须使用 DNS-01"
+    elif [[ "${routeIPv4}" != "true" && "${routeIPv6}" != "true" ]]; then
+        certRecommendMethod="dns"
+        certRecommendReason="当前没有可用默认路由，HTTP-01 不可靠"
+    elif [[ -n "${a_records}${aaaa_records}" ]] &&
+        { xray_agent_cert_records_match_public "${a_records}" "${publicIPv4CSV}" || xray_agent_cert_records_match_public "${aaaa_records}" "${publicIPv6CSV}"; }; then
+        if [[ "${port80_owner}" == "空闲" || "${port80_owner}" == nginx/* ]]; then
+            certRecommendMethod="http"
+            certRecommendReason="解析匹配当前公网，80 端口可由脚本临时接管"
+        else
+            certRecommendMethod="dns"
+            certRecommendReason="80 端口被 ${port80_owner} 占用，DNS-01 更稳"
+        fi
+    fi
+
+    if [[ "${certRecommendMethod}" == "http" ]]; then
+        echoContent green "推荐方式: HTTP-01 standalone。原因: ${certRecommendReason}"
+    else
+        echoContent yellow "推荐方式: DNS-01。原因: ${certRecommendReason}"
+    fi
+}
+
+xray_agent_cert_explain_failure() {
+    local log_file="${1:-${XRAY_AGENT_TLS_DIR}/acme.log}"
+    if [[ ! -f "${log_file}" ]]; then
+        echoContent yellow "暂无 acme 日志: ${log_file}"
+        return 0
+    fi
+    echoContent skyBlue "-------------------------失败原因分析-----------------------------"
+    if grep -qiE "validate email|Could not validate email" "${log_file}"; then
+        echoContent red "邮箱错误: 重新输入可用邮箱，ZeroSSL/HiCA 尤其需要有效邮箱。"
+    elif grep -qiE "rate limit|too many certificates|too many failed authorizations" "${log_file}"; then
+        echoContent red "CA 限流: 等待限流窗口恢复，或切换 CA/减少重复申请。"
+    elif grep -qiE "TXT value|No TXT record|dns manual" "${log_file}"; then
+        echoContent yellow "TXT 未生效: 确认 _acme-challenge 记录和值一致，并等待 DNS 传播。"
+    elif grep -qiE "Invalid status|unauthorized|Verify error|timeout|connection refused" "${log_file}"; then
+        echoContent red "验证失败: 检查域名 A/AAAA 是否指向本机、公网 80 是否可达、防火墙和云安全组是否放行。"
+    elif grep -qiE "eab|EAB|access_key|invalid api" "${log_file}"; then
+        echoContent red "EAB/API 错误: 检查 ZeroSSL API Key 或 DNS 服务商 API 权限。"
+    else
+        echoContent yellow "未匹配到已知错误类型，最近日志如下:"
+        tail -n 20 "${log_file}"
+    fi
+}
+
+xray_agent_cert_select_apply_method() {
+    local selected_method
+    if [[ "${certRecommendMethod:-dns}" == "http" ]]; then
+        read -r -p "使用推荐的 HTTP-01 standalone？[Y/n]:" selected_method
+        selected_method="${selected_method:-y}"
+        [[ "${selected_method}" == "y" ]] && {
+            installSSLType=3
+            return 0
+        }
+    else
+        read -r -p "使用推荐的 DNS-01？[Y/n]:" selected_method
+        selected_method="${selected_method:-y}"
+        [[ "${selected_method}" == "y" ]] && {
+            installSSLType=1
+            return 0
+        }
+    fi
+
+    echoContent yellow "1.HTTP-01 standalone"
+    echoContent yellow "2.DNS-01 API"
+    echoContent yellow "3.DNS-01 手动TXT"
+    read -r -p "请选择申请方式:" selected_method
+    case "${selected_method}" in
+        1) installSSLType=3 ;;
+        3) installSSLType=2 ;;
+        *) installSSLType=1 ;;
+    esac
+}
+
+xray_agent_cert_apply() {
+    local input_domain="$1"
+    local want_wildcard="${2:-false}"
+    xray_agent_cert_preflight "${input_domain}" "${want_wildcard}" || return 1
+    xray_agent_cert_select_apply_method
+    echoContent yellow "即将申请/安装证书: ${TLSDomain}，方式: $([[ "${installSSLType}" == "3" ]] && printf 'HTTP-01' || printf 'DNS-01')"
+    if ! xray_agent_confirm "确认继续？[y/N]:" "n"; then
+        echoContent yellow " ---> 已取消"
+        return 0
+    fi
+    installTLS 1 0
+    installCronTLS 1
+}
+
 switchSSLType() {
     if [[ -z "${sslType}" ]]; then
         xray_agent_blank
@@ -49,6 +349,7 @@ customSSLEmail() {
 }
 
 acmeInstallSSL() {
+    mkdir -p "${XRAY_AGENT_TLS_DIR}"
     xray_agent_detect_network_capabilities
     if [[ "${routeIPv6}" == "true" ]]; then
         installSSLIPv6="--listen-v6"
@@ -58,11 +359,15 @@ acmeInstallSSL() {
 
     xray_agent_blank
     echoContent red "=============================================================="
-    echoContent yellow "1. 密钥（通配证书）"
-    echoContent yellow "2. DNS（通配证书）"
-    echoContent yellow "3. 普通证书【默认】"
-    read -r -p "申请SSL证书的方式 [默认: 3]：" installSSLType
-    installSSLType=${installSSLType:-3}
+    if [[ -z "${installSSLType:-}" ]]; then
+        echoContent yellow "1. 密钥（通配证书）"
+        echoContent yellow "2. DNS（通配证书）"
+        echoContent yellow "3. 普通证书【默认】"
+        read -r -p "申请SSL证书的方式 [默认: 3]：" installSSLType
+        installSSLType=${installSSLType:-3}
+    else
+        echoContent yellow "申请方式: ${installSSLType}"
+    fi
 
     if [[ "${installSSLType}" == "1" ]]; then
         xray_agent_blank
@@ -106,6 +411,8 @@ acmeInstallSSL() {
         if [[ -n "${txtValue}" ]]; then
             echoContent green " --->  name：_acme-challenge"
             echoContent green " --->  value：${txtValue}"
+            echoContent yellow " --->  检测命令: dig @1.1.1.1 +short TXT _acme-challenge.${TLSDomain}"
+            echoContent yellow " --->  TXT 生效可能需要几分钟，未生效时不要反复申请。"
             read -r -p "是否添加完成[y/n]:" addDNSTXTRecordStatus
             if [[ "${addDNSTXTRecordStatus}" == "y" ]]; then
                 txtAnswer=$(dig @1.1.1.1 +nocmd "_acme-challenge.${TLSDomain}" txt +noall +answer | awk -F "[\"]" '{print $2}')
@@ -219,6 +526,7 @@ renewalTLS() {
     if [[ "$1" == "all" ]]; then
         local TLSDomain
         for certFile in /etc/xray-agent/tls/*.crt; do
+            [[ -f "${certFile}" ]] || continue
             TLSDomain=$(basename "$certFile" .crt)
             updateTLSCertificate "${TLSDomain}"
         done
@@ -249,8 +557,34 @@ updateTLSCertificate() {
     fi
 }
 
+xray_agent_cert_force_renew_all() {
+    local cert_domain
+    if ! xray_agent_confirm "强制续签会触发 CA 频率限制风险，确认继续？[y/N]:" "n"; then
+        echoContent yellow " ---> 已取消"
+        return 0
+    fi
+    handleNginx stop
+    handleXray stop
+    while IFS= read -r cert_domain; do
+        [[ -n "${cert_domain}" ]] || continue
+        if [[ -d "$HOME/.acme.sh/${cert_domain}_ecc" ]]; then
+            echoContent yellow " ---> 强制续签 ${cert_domain}"
+            sudo "$HOME/.acme.sh/acme.sh" --renew -d "${cert_domain}" --force --ecc 2>&1 | tee -a "${XRAY_AGENT_TLS_DIR}/acme.log" >/dev/null
+            sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${cert_domain}" --fullchainpath "${XRAY_AGENT_TLS_DIR}/${cert_domain}.crt" --keypath "${XRAY_AGENT_TLS_DIR}/${cert_domain}.key" --ecc
+        else
+            echoContent yellow " ---> 跳过 ${cert_domain}: acme 记录缺失"
+        fi
+    done < <(xray_agent_cert_inventory_domains)
+    reloadCore
+    handleNginx start
+}
+
 removeCert() {
-    mapfile -t certificates < <(for certFile in /etc/xray-agent/tls/*.crt; do basename "$certFile" .crt; done)
+    mapfile -t certificates < <(for certFile in /etc/xray-agent/tls/*.crt; do [[ -f "${certFile}" ]] && basename "$certFile" .crt; done)
+    if [[ "${#certificates[@]}" -eq 0 ]]; then
+        echoContent yellow " ---> 暂无可删除证书"
+        return 0
+    fi
     for i in "${!certificates[@]}"; do
         echo "$((i + 1)): ${certificates[$i]}"
     done
@@ -264,29 +598,46 @@ removeCert() {
 }
 
 manageCert() {
-    if [[ ! -d "$HOME/.acme.sh" ]] || [[ -z $(find "$HOME/.acme.sh/acme.sh") ]]; then
+    if [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
         xray_agent_error " ---> 未安装，请使用脚本安装"
     fi
-    xray_agent_blank
-    echoContent skyBlue "功能 1/${totalProgress} : 证书管理"
+    local manageCertStatus input_domain default_domain wildcard_status
+    xray_agent_tool_status_header "证书管理"
+    xray_agent_cert_inventory
     xray_agent_blank
     echoContent red "=============================================================="
-    echoContent yellow "1.申请证书"
-    echoContent yellow "2.更新证书"
-    echoContent yellow "3.删除证书"
+    echoContent yellow "1.智能申请/重装证书"
+    echoContent yellow "2.更新临期证书"
+    echoContent yellow "3.强制续签全部证书"
+    echoContent yellow "4.删除证书"
+    echoContent yellow "5.解释最近一次申请失败"
     echoContent red "=============================================================="
     read -r -p "请输入:" manageCertStatus
     case "${manageCertStatus}" in
         1)
-            read -r -p "域名:" domain
-            installTLS 1 0
-            installCronTLS 1
+            default_domain="${domain:-${TLSDomain:-}}"
+            if [[ -n "${default_domain}" ]]; then
+                read -r -p "域名[回车使用 ${default_domain}]:" input_domain
+                input_domain="${input_domain:-${default_domain}}"
+            else
+                read -r -p "域名:" input_domain
+            fi
+            read -r -p "是否申请通配证书(*.$(xray_agent_cert_base_domain "${input_domain}"))？[y/N]:" wildcard_status
+            installSSLType=
+            xray_agent_cert_apply "${input_domain}" "$([[ "${wildcard_status}" == "y" ]] && printf true || printf false)"
             ;;
         2)
+            echoContent yellow "将只续签到期/14天内临期证书。"
             renewalTLS "all"
             ;;
         3)
+            xray_agent_cert_force_renew_all
+            ;;
+        4)
             removeCert
+            ;;
+        5)
+            xray_agent_cert_explain_failure "${XRAY_AGENT_TLS_DIR}/acme.log"
             ;;
     esac
 }

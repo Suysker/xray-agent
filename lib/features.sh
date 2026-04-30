@@ -103,12 +103,32 @@ xray_agent_render_dokodemo_port() {
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/extras/dokodemo_port.json.tpl" "${configPath}02_dokodemodoor_inbounds_${port}.json"
 }
 
+xray_agent_extra_port_files() {
+    find "${configPath}" -maxdepth 1 -type f -name "02_dokodemodoor_inbounds_*.json" 2>/dev/null | sort
+}
+
+xray_agent_extra_port_summary() {
+    local port_file port
+    echoContent skyBlue "-------------------------额外端口-----------------------------"
+    if ! xray_agent_extra_port_files | grep -q .; then
+        echoContent yellow "暂无额外端口"
+        return 0
+    fi
+    while IFS= read -r port_file; do
+        port="${port_file##*_}"
+        port="${port%.json}"
+        echoContent yellow "端口: ${port} -> 后端 ${Port:-未检测}"
+    done < <(xray_agent_extra_port_files)
+}
+
 addCorePort() {
     if [[ "${coreInstallType}" != "1" ]] && [[ "${coreInstallType}" != "3" ]]; then
         echoContent red " ---> 未安装，请使用脚本安装"
         menu
         exit 0
     fi
+    xray_agent_tool_status_header "添加新端口"
+    xray_agent_extra_port_summary
     echoContent yellow "# 只给TLS+VISION添加新端口，永远不会支持Reality(Reality只建议用443)"
     xray_agent_blank
     echoContent yellow "1.添加端口"
@@ -119,25 +139,43 @@ addCorePort() {
         read -r -p "请输入端口号:" newPort
         if [[ -n "${newPort}" ]]; then
             while read -r port; do
-                if [[ "${port}" == "${Port}" ]]; then
+                if ! xray_agent_validate_port "${port}"; then
+                    echoContent red " ---> 跳过非法端口: ${port}"
                     continue
                 fi
-                rm -rf "$(find ${configPath}* | grep "${port}")"
+                if [[ "${port}" == "${Port}" ]]; then
+                    echoContent yellow " ---> 跳过主端口: ${port}"
+                    continue
+                fi
+                checkPort "${port}"
+                echoContent yellow "将新增公开端口 ${port}，转发到 TLS Vision 后端 ${Port}。"
+                xray_agent_confirm "确认继续？[y/N]:" "n" || continue
+                rm -f "${configPath}02_dokodemodoor_inbounds_${port}.json"
                 allowPort "${port}"
                 xray_agent_render_dokodemo_port "${port}"
             done < <(echo "${newPort}" | tr ',' '\n')
             reloadCore
         fi
     elif [[ "${selectNewPortType}" == "2" ]]; then
-        find "${configPath}" -name "*dokodemodoor*" | awk -F "[c][o][n][f][/]" '{print ""NR""":"$2}'
+        mapfile -t dokoFiles < <(xray_agent_extra_port_files)
+        if [[ "${#dokoFiles[@]}" -eq 0 ]]; then
+            echoContent yellow " ---> 暂无可删除额外端口"
+            return 0
+        fi
+        for i in "${!dokoFiles[@]}"; do
+            echo "$((i + 1)): ${dokoFiles[$i]##*/}"
+        done
         read -r -p "请输入要删除的端口编号:" portIndex
-        dokoConfig=$(find "${configPath}" -name "*dokodemodoor*" | awk -F "[c][o][n][f][/]" '{print ""NR""":"$2}' | grep "${portIndex}:")
-        if [[ -n "${dokoConfig}" ]]; then
-            rm "${configPath}/$(echo "${dokoConfig}" | awk -F "[:]" '{print $2}')"
+        if [[ "${portIndex}" =~ ^[0-9]+$ && "${portIndex}" -ge 1 && "${portIndex}" -le "${#dokoFiles[@]}" ]]; then
+            echoContent yellow "将删除 ${dokoFiles[$((portIndex - 1))]##*/}"
+            xray_agent_confirm "确认继续？[y/N]:" "n" || return 0
+            rm -f "${dokoFiles[$((portIndex - 1))]}"
             reloadCore
+        else
+            echoContent red " ---> 选择错误"
         fi
     else
-        find "${configPath}" -name "*dokodemodoor*" | awk -F "[c][o][n][f][/]" '{print $2}' | awk -F "[_]" '{print $4}' | awk -F "[.]" '{print ""NR""":"$1}'
+        xray_agent_extra_port_summary
     fi
 }
 
@@ -145,7 +183,53 @@ xray_agent_default_sniffing_json() {
     jq -nc '{enabled:true,destOverride:["http","tls","quic"],metadataOnly:false,routeOnly:false}'
 }
 
+xray_agent_inbound_config_files() {
+    find "${configPath}" -maxdepth 1 -type f -name "*_inbounds.json" 2>/dev/null | sort
+}
+
+xray_agent_prompt_inbound_config_file() {
+    local prompt_title="$1"
+    local selected_index
+    mapfile -t inboundConfigFiles < <(xray_agent_inbound_config_files)
+    if [[ "${#inboundConfigFiles[@]}" -eq 0 ]]; then
+        echoContent red " ---> 未找到 inbound 配置文件"
+        selectedInboundConfigFile=
+        return 1
+    fi
+    echoContent yellow "${prompt_title}"
+    for i in "${!inboundConfigFiles[@]}"; do
+        echo "$((i + 1)): ${inboundConfigFiles[$i]##*/}"
+    done
+    read -r -p "请选择编号:" selected_index
+    if ! [[ "${selected_index}" =~ ^[0-9]+$ ]] || [[ "${selected_index}" -lt 1 || "${selected_index}" -gt "${#inboundConfigFiles[@]}" ]]; then
+        echoContent red " ---> 选择错误"
+        selectedInboundConfigFile=
+        return 1
+    fi
+    selectedInboundConfigFile="${inboundConfigFiles[$((selected_index - 1))]}"
+}
+
+xray_agent_sniffing_status_matrix() {
+    local configfile tag enabled route_only
+    echoContent skyBlue "-------------------------嗅探状态-----------------------------"
+    if ! xray_agent_inbound_config_files | grep -q .; then
+        echoContent yellow "未找到 inbound 配置文件"
+        return 0
+    fi
+    while IFS= read -r configfile; do
+        tag="$(jq -r '.inbounds[0].tag // empty' "${configfile}" 2>/dev/null | tr -d '\r')"
+        enabled="$(jq -r '.inbounds[0].sniffing.enabled // false' "${configfile}" 2>/dev/null | tr -d '\r')"
+        route_only="$(jq -r '.inbounds[0].sniffing.routeOnly // false' "${configfile}" 2>/dev/null | tr -d '\r')"
+        echoContent yellow "${configfile##*/}: tag=${tag:-无} enabled=${enabled} routeOnly=${route_only}"
+    done < <(xray_agent_inbound_config_files)
+}
+
 manageSniffing() {
+    if [[ -z "${coreInstallType}" ]]; then
+        xray_agent_error " ---> 未安装，请使用脚本安装"
+    fi
+    xray_agent_tool_status_header "流量嗅探管理"
+    xray_agent_sniffing_status_matrix
     if [[ "${coreInstallType}" == "1" ]]; then
         current_sniffing=$(jq '.inbounds[].sniffing.enabled' "${configPath}${frontingType}.json")
         current_routeOnly=$(jq '.inbounds[].sniffing.routeOnly' "${configPath}${frontingType}.json")
@@ -156,8 +240,9 @@ manageSniffing() {
         current_sniffing=$(jq -s '.[0].inbounds[].sniffing.enabled and .[1].inbounds[].sniffing.enabled' "${configPath}${frontingType}.json" "${configPath}${RealityfrontingType}.json")
         current_routeOnly=$(jq -s '.[0].inbounds[].sniffing.routeOnly and .[1].inbounds[].sniffing.routeOnly' "${configPath}${frontingType}.json" "${configPath}${RealityfrontingType}.json")
     fi
-    echoContent yellow "1. $( [[ "${current_sniffing}" == "true" ]] && echo "关闭" || echo "开启" ) 流量嗅探"
-    echoContent yellow "2. $( [[ "${current_routeOnly}" == "true" ]] && echo "关闭" || echo "开启" ) 流量嗅探仅供路由"
+    echoContent yellow "1.全部$( [[ "${current_sniffing}" == "true" ]] && echo "关闭" || echo "开启" )流量嗅探"
+    echoContent yellow "2.全部$( [[ "${current_routeOnly}" == "true" ]] && echo "关闭" || echo "开启" )流量嗅探仅供路由"
+    echoContent yellow "3.按协议切换流量嗅探"
     read -r -p "请按照上面示例输入:" sniffingtype
     case ${sniffingtype} in
         1)
@@ -177,6 +262,16 @@ manageSniffing() {
                     xray_agent_json_update_file "${configfile}" '.inbounds[].sniffing.routeOnly = true'
                 fi
             done
+            ;;
+        3)
+            xray_agent_prompt_inbound_config_file "请选择要切换嗅探的协议" || return 0
+            local selected_sniffing
+            selected_sniffing="$(jq -r '.inbounds[0].sniffing.enabled // false' "${selectedInboundConfigFile}" | tr -d '\r')"
+            if [[ "${selected_sniffing}" == "true" ]]; then
+                xray_agent_json_update_file "${selectedInboundConfigFile}" '.inbounds[].sniffing.enabled = false'
+            else
+                xray_agent_json_update_file "${selectedInboundConfigFile}" '.inbounds[].sniffing.enabled = true'
+            fi
             ;;
     esac
     reloadCore
@@ -204,7 +299,28 @@ xray_agent_apply_trusted_xff_patch() {
     xray_agent_apply_trusted_x_forwarded_for "${target_path}" "${trusted_source}"
 }
 
+xray_agent_sockopt_status_matrix() {
+    local configfile tag mptcp nodelay fastopen
+    echoContent skyBlue "-------------------------sockopt状态-----------------------------"
+    if ! xray_agent_inbound_config_files | grep -q .; then
+        echoContent yellow "未找到 inbound 配置文件"
+        return 0
+    fi
+    while IFS= read -r configfile; do
+        tag="$(jq -r '.inbounds[0].tag // empty' "${configfile}" 2>/dev/null | tr -d '\r')"
+        mptcp="$(jq -r '.inbounds[0].streamSettings.sockopt.tcpMptcp // false' "${configfile}" 2>/dev/null | tr -d '\r')"
+        nodelay="$(jq -r '.inbounds[0].streamSettings.sockopt.tcpNoDelay // false' "${configfile}" 2>/dev/null | tr -d '\r')"
+        fastopen="$(jq -r '.inbounds[0].streamSettings.sockopt.tcpFastOpen // false' "${configfile}" 2>/dev/null | tr -d '\r')"
+        echoContent yellow "${configfile##*/}: tag=${tag:-无} tcpMptcp=${mptcp} tcpNoDelay=${nodelay} tcpFastOpen=${fastopen}"
+    done < <(xray_agent_inbound_config_files)
+}
+
 manageSockopt() {
+    if [[ -z "${coreInstallType}" ]]; then
+        xray_agent_error " ---> 未安装，请使用脚本安装"
+    fi
+    xray_agent_tool_status_header "sockopt进阶管理"
+    xray_agent_sockopt_status_matrix
     if [[ "${coreInstallType}" == "1" ]]; then
         current_tcpMptcp=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp' "${configPath}${frontingType}.json")
         current_tcpNoDelay=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay' "${configPath}${frontingType}.json")
@@ -221,6 +337,7 @@ manageSockopt() {
     echoContent yellow "1. $( [[ "${current_tcpMptcp}" == "true" ]] && echo "关闭" || echo "开启" ) tcpMptcp"
     echoContent yellow "2. $( [[ "${current_tcpNoDelay}" == "true" ]] && echo "关闭" || echo "开启" ) tcpNoDelay"
     echoContent yellow "3. $( [[ "${current_tcpFastOpen}" == "true" ]] && echo "关闭" || echo "开启" ) tcpFastOpen"
+    echoContent yellow "4.按协议切换 tcpNoDelay"
     read -r -p "请按照上面示例输入:" sockopttype
     case ${sockopttype} in
         1)
@@ -252,6 +369,16 @@ manageSockopt() {
                 fi
             done
             sysctl -p
+            ;;
+        4)
+            xray_agent_prompt_inbound_config_file "请选择要切换 tcpNoDelay 的协议" || return 0
+            local selected_tcp_no_delay
+            selected_tcp_no_delay="$(jq -r '.inbounds[0].streamSettings.sockopt.tcpNoDelay // false' "${selectedInboundConfigFile}" | tr -d '\r')"
+            if [[ "${selected_tcp_no_delay}" == "true" ]]; then
+                xray_agent_json_update_file "${selectedInboundConfigFile}" '.inbounds[].streamSettings.sockopt.tcpNoDelay = false'
+            else
+                xray_agent_json_update_file "${selectedInboundConfigFile}" '.inbounds[].streamSettings.sockopt.tcpNoDelay = true'
+            fi
             ;;
     esac
     reloadCore

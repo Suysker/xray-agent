@@ -523,12 +523,41 @@ xray_agent_hysteria2_enable_or_reconfigure() {
 xray_agent_hysteria2_uninstall() {
     local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
     if [[ -f "${hysteria2_file}" ]]; then
+        xray_agent_hysteria2_status_summary
+        xray_agent_confirm "确认卸载 Hysteria2 inbound？[y/N]:" "n" || return 0
         rm -f "${hysteria2_file}"
         reloadCore
         echoContent green " ---> Hysteria2 已卸载"
     else
         echoContent yellow " ---> Hysteria2 未安装"
     fi
+}
+
+xray_agent_hysteria2_client_count() {
+    local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
+    [[ -f "${hysteria2_file}" ]] || {
+        printf '0\n'
+        return 0
+    }
+    jq -r '[.inbounds[0].settings.clients[]?] | length' "${hysteria2_file}" 2>/dev/null | tr -d '\r'
+}
+
+xray_agent_hysteria2_status_summary() {
+    local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
+    echoContent skyBlue "-------------------------Hysteria2状态-----------------------------"
+    if [[ ! -f "${hysteria2_file}" ]]; then
+        echoContent yellow "状态: 未安装"
+        echoContent yellow "默认端口: UDP/443，与 TCP/443 不冲突"
+        return 0
+    fi
+    echoContent yellow "状态: 已安装"
+    echoContent yellow "监听: UDP/${Hysteria2Port:-443}"
+    echoContent yellow "证书域名: ${TLSDomain:-未检测}"
+    echoContent yellow "伪装站: ${Hysteria2MasqueradeURL:-未检测}"
+    echoContent yellow "Brutal上行: ${Hysteria2BrutalUpMbps:-0} Mbps"
+    echoContent yellow "Brutal下行: ${Hysteria2BrutalDownMbps:-0} Mbps"
+    echoContent yellow "账号数量: $(xray_agent_hysteria2_client_count)"
+    echoContent yellow "UDP/443占用: $(xray_agent_port_owner UDP 443)"
 }
 
 xray_agent_hysteria2_show_accounts() {
@@ -551,8 +580,8 @@ xray_agent_hysteria2_manage_menu() {
     readInstallType
     readInstallProtocolType
     readConfigHostPathUUID
-    xray_agent_blank
-    echoContent skyBlue "功能 1/${totalProgress} : Hysteria2"
+    xray_agent_tool_status_header "Hysteria2管理"
+    xray_agent_hysteria2_status_summary
     echoContent red "=============================================================="
     echoContent yellow "1.查看 Hysteria2 账号"
     echoContent yellow "2.启用或重配 Hysteria2"
@@ -561,7 +590,10 @@ xray_agent_hysteria2_manage_menu() {
     read -r -p "请输入:" hysteria2_status
     case "${hysteria2_status}" in
         1) xray_agent_hysteria2_show_accounts ;;
-        2) xray_agent_hysteria2_enable_or_reconfigure ;;
+        2)
+            echoContent yellow "启用/重配会重写 Hysteria2 inbound，账号将复用当前 UUID/auth 列表。"
+            xray_agent_confirm "确认继续？[Y/n]:" "y" && xray_agent_hysteria2_enable_or_reconfigure
+            ;;
         3) xray_agent_hysteria2_uninstall ;;
     esac
 }

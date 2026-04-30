@@ -18,7 +18,7 @@ xray_agent_render_nginx_alone_conf() {
 
 updateRedirectNginxConf() {
     xray_agent_blank
-    echoContent skyBlue "进度  $2/${totalProgress} : 配置镜像站点，默认使用kaggle官网"
+    echoContent skyBlue "进度  $2/${totalProgress} : 配置镜像站点，默认使用huggingface官网"
     rm -f "${nginxConfigPath}default.conf"
     if declare -F xray_agent_cleanup_default_nginx_site >/dev/null 2>&1; then
         xray_agent_cleanup_default_nginx_site
@@ -56,15 +56,64 @@ backupNginxConfig() {
     fi
 }
 
+xray_agent_nginx_current_upstream_url() {
+    local nginx_file="${nginxConfigPath}alone.conf"
+    [[ -f "${nginx_file}" ]] || return 0
+    awk '$1 == "proxy_pass" && $2 ~ /^https?:\/\// {gsub(";","",$2); print $2; exit}' "${nginx_file}"
+}
+
+xray_agent_nginx_normalize_upstream_url() {
+    local upstream_url="$1"
+    if [[ "${upstream_url}" != http://* && "${upstream_url}" != https://* ]]; then
+        upstream_url="https://${upstream_url}"
+    fi
+    printf '%s\n' "${upstream_url}"
+}
+
+xray_agent_nginx_validate_upstream_url() {
+    [[ "$1" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?(/.*)?$ ]]
+}
+
+xray_agent_nginx_test_config() {
+    if command -v nginx >/dev/null 2>&1; then
+        nginx -t >/tmp/xray-agent-nginx-test.log 2>&1
+    else
+        return 0
+    fi
+}
+
 updateNginxBlog() {
     if [[ "${coreInstallType}" != "1" ]] && [[ "${coreInstallType}" != "3" ]]; then
         xray_agent_error " ---> 未安装，请使用脚本安装"
     fi
+    xray_agent_tool_status_header "更换伪装站"
     if [[ -f "${nginxConfigPath}alone.conf" ]]; then
-        read -r -p "请输入要镜像的域名,例如 www.baidu.com，无http/https:" mirrorDomain
-        currentmirrorDomain=$(grep -m 1 "proxy_pass https://*" "${nginxConfigPath}alone.conf" | sed 's/;//' | awk -F "//" '{print $2}')
+        local current_upstream input_upstream mirror_url
+        current_upstream="$(xray_agent_nginx_current_upstream_url)"
+        echoContent yellow "当前伪装站: ${current_upstream:-未检测到}"
+        read -r -p "请输入新的伪装站URL或域名[回车取消]:" input_upstream
+        [[ -n "${input_upstream}" ]] || {
+            echoContent yellow " ---> 已取消"
+            return 0
+        }
+        mirror_url="$(xray_agent_nginx_normalize_upstream_url "${input_upstream}")"
+        if ! xray_agent_nginx_validate_upstream_url "${mirror_url}"; then
+            echoContent red " ---> URL 不合法，示例: https://www.example.com/"
+            return 0
+        fi
+        echoContent yellow "将把伪装站从 ${current_upstream:-未知} 改为 ${mirror_url}"
+        if ! xray_agent_confirm "确认继续？[y/N]:" "n"; then
+            echoContent yellow " ---> 已取消"
+            return 0
+        fi
         backupNginxConfig backup
-        sed -i "s/${currentmirrorDomain}/${mirrorDomain}/g" "${nginxConfigPath}alone.conf"
+        xray_agent_render_nginx_alone_conf "Vision" "${mirror_url}"
+        if ! xray_agent_nginx_test_config; then
+            echoContent red " ---> nginx -t 失败，已回滚。"
+            [[ -f /tmp/xray-agent-nginx-test.log ]] && tail -n 20 /tmp/xray-agent-nginx-test.log
+            backupNginxConfig restoreBackup
+            return 1
+        fi
         handleNginx stop
         handleNginx start
         if [[ -z $(pgrep -f nginx) ]]; then

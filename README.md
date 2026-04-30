@@ -12,6 +12,8 @@ xray-agent 已从单文件安装脚本收口为一套模块化的 Xray profile b
 - install profile 的 `protocols=` 直接决定 TLS/Reality 套餐渲染哪些 inbound；TLS 套餐默认包含 `VLESS-TCP / VLESS-WS / VMess-WS / XHTTP / Hysteria2`；Reality 套餐安装时可选择同时启用 Hysteria2，默认不强制开启；`steps=` 进一步决定安装流水线顺序。
 - Hysteria2 的连接域名/SNI/证书域名默认复用当前 `domain`/`TLSDomain`，不使用 Reality 目标域名签证书；masquerade 默认优先复用已有 Hy2 配置，其次复用 Nginx 伪装站 upstream，Reality-only 场景再把 Reality 目标域名作为内容源候选。
 - 网络栈按运行时动态探测：默认不自动启用 IPv6/WARP 分流；IPv6-only 场景会生成 IPv6 可用基线；菜单只显示当前网络栈可执行动作；内部 Nginx/Xray 回环、AdGuard DNS、WARP outbound 和 Reality 公网地址选择都按 IPv4/IPv6/WARP 能力派生。
+- 菜单 3-12 是核心控制台：进入账号、伪装站、证书、IPv4/IPv6、黑名单、WARP、新端口、嗅探、sockopt、Hysteria2 前都会展示安装状态、协议、证书、网络栈和关键端口占用；高风险写入会先预览影响再确认。
+- 证书管理已改成智能向导：先读取 `/etc/xray-agent/tls` 和 acme 记录，再做域名解析、公网 IP、80/443 端口和网络栈预检，按条件推荐 HTTP-01 standalone 或 DNS-01，并能解释常见 acme 失败原因。
 - 不引入 upstream/v2ray-agent 的 sing-box、订阅、anytls 等非本仓库 master 主线能力。
 
 ## 目录
@@ -49,7 +51,7 @@ wget -P /root -N --no-check-certificate "https://raw.githubusercontent.com/Suysk
 ```bash
 bash -n install.sh
 find lib packaging -name "*.sh" -print0 | xargs -0 -n1 bash -n
-bash -c 'source ./install.sh; declare -F xray_agent_main >/dev/null; declare -F menu >/dev/null; declare -F xray_agent_run_install_profile >/dev/null'
+bash -c 'source ./install.sh; declare -F xray_agent_main >/dev/null; declare -F menu >/dev/null; declare -F xray_agent_run_install_profile >/dev/null; declare -F xray_agent_tool_status_header >/dev/null; declare -F xray_agent_cert_inventory >/dev/null'
 ```
 
 配置模板变更需要用临时目录手工渲染，并对生成的 Xray JSON 执行 `jq empty`。同时检查 `find templates -type f`，确认没有新增原子级 tiny tpl。
