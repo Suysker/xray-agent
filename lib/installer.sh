@@ -331,12 +331,14 @@ xray_agent_render_common_xray_configs() {
     export XRAY_POLICY_CONN_IDLE=$(((RANDOM % 11) * 30 + 300))
     export XRAY_OUTBOUNDS_JSON
     export XRAY_ROUTING_RULES_JSON
-    export XRAY_ROUTING_DOMAIN_STRATEGY="AsIs"
+    export XRAY_ROUTING_DOMAIN_STRATEGY
     export XRAY_DNS_SERVERS_JSON
-    export XRAY_DNS_QUERY_STRATEGY="UseIP"
+    export XRAY_DNS_QUERY_STRATEGY
     XRAY_OUTBOUNDS_JSON="$(xray_agent_default_outbounds_json)"
     XRAY_ROUTING_RULES_JSON="$(xray_agent_default_routing_rules_json)"
     XRAY_DNS_SERVERS_JSON="$(xray_agent_default_dns_servers_json)"
+    XRAY_ROUTING_DOMAIN_STRATEGY="$(xray_agent_default_routing_domain_strategy)"
+    XRAY_DNS_QUERY_STRATEGY="$(xray_agent_default_dns_query_strategy)"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/base/00_log.json.tpl" "${configPath}00_log.json"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/base/01_policy.json.tpl" "${configPath}01_policy.json"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/base/09_routing.json.tpl" "${configPath}09_routing.json"

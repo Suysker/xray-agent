@@ -6,7 +6,7 @@
     }
   },
   "settings": {
-    "domainStrategy": "UseIP"
+    "domainStrategy": "${XRAY_WARP_DOMAIN_STRATEGY}"
   },
   "tag": "cn-out"
 }

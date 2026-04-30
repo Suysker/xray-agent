@@ -37,7 +37,8 @@ xray_agent_load_routing_profile() {
 xray_agent_render_outbound_template() {
     local template_name="$1"
     local template_path="${XRAY_AGENT_PROJECT_ROOT}/templates/xray/outbounds/${template_name}"
-    export XRAY_WARP_INTERFACE="${XRAY_WARP_INTERFACE:-WARP}"
+    export XRAY_WARP_INTERFACE="${XRAY_WARP_INTERFACE:-${warpInterface:-WARP}}"
+    export XRAY_WARP_DOMAIN_STRATEGY="${XRAY_WARP_DOMAIN_STRATEGY:-$(xray_agent_warp_domain_strategy)}"
     xray_agent_render_template_stdout "${template_path}"
 }
 
@@ -52,14 +53,44 @@ xray_agent_render_outbound_by_tag() {
     esac
 }
 
-xray_agent_default_outbounds_json() {
-    xray_agent_load_routing_profile "ipv4_default"
+xray_agent_default_routing_profile_name() {
+    xray_agent_detect_network_capabilities
+    if [[ "${routeIPv4}" != "true" && "${routeIPv6}" == "true" ]]; then
+        printf 'ipv6_first\n'
+    else
+        printf 'ipv4_default\n'
+    fi
+}
+
+xray_agent_outbounds_json_for_profile() {
+    local profile_name="$1"
+    xray_agent_load_routing_profile "${profile_name}"
     local outbound_jsons=()
     local outbound_tag
     while IFS= read -r outbound_tag; do
         outbound_jsons+=("$(xray_agent_render_outbound_by_tag "${outbound_tag}")")
     done < <(echo "${XRAY_AGENT_ROUTING_OUTBOUND_ORDER}" | tr ',' '\n')
     printf '%s\n' "${outbound_jsons[@]}" | jq -sc '.'
+}
+
+xray_agent_default_outbounds_json() {
+    xray_agent_outbounds_json_for_profile "$(xray_agent_default_routing_profile_name)"
+}
+
+xray_agent_default_routing_domain_strategy() {
+    xray_agent_load_routing_profile "$(xray_agent_default_routing_profile_name)"
+    printf '%s\n' "${XRAY_AGENT_ROUTING_DOMAIN_STRATEGY:-AsIs}"
+}
+
+xray_agent_default_dns_query_strategy() {
+    local profile_name
+    profile_name="$(xray_agent_default_routing_profile_name)"
+    if [[ "${profile_name}" == "ipv6_first" ]]; then
+        printf 'UseIPv6\n'
+    else
+        xray_agent_load_routing_profile "${profile_name}"
+        printf '%s\n' "${XRAY_AGENT_ROUTING_DNS_QUERY_STRATEGY:-UseIP}"
+    fi
 }
 
 xray_agent_default_routing_rules_json() {
@@ -115,17 +146,47 @@ xray_agent_apply_routing_profile() {
 }
 
 ipv6Routing() {
-    currentIPv6IP=$(curl -s -6 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | cut -d "=" -f 2)
-    if [[ -z "${currentIPv6IP}" ]]; then
-        xray_agent_error " ---> 不支持ipv6"
+    local selected action domainList
+    local -a actions
+    xray_agent_network_summary
+
+    if [[ "${routeIPv4}" != "true" && "${routeIPv6}" != "true" ]]; then
+        echoContent red " ---> 当前未检测到 IPv4/IPv6 默认路由，不能新增出站策略。"
+        return 0
     fi
-    echoContent yellow "1.添加域名"
-    echoContent yellow "2.卸载IPv6分流"
-    echoContent yellow "3.查看已分流域名"
-    echoContent yellow "4.全局IPv6优先"
-    echoContent yellow "5.全局IPv4优先"
-    read -r -p "请选择:" ipv6Status
-    if [[ "${ipv6Status}" == "1" ]]; then
+
+    echoContent skyBlue "-------------------------IPv4/IPv6出站策略-----------------------------"
+    echoContent yellow "当前出站栈: $(xray_agent_route_mode_label)"
+
+    if [[ "${routeIPv6}" == "true" ]]; then
+        actions+=("add_ipv6_domain")
+        echoContent yellow "${#actions[@]}.添加域名到IPv6出站"
+    else
+        echoContent yellow "提示: 当前没有 IPv6 默认路由，不显示 IPv6 新增/优先动作。"
+    fi
+
+    actions+=("remove_ipv6_domain")
+    echoContent yellow "${#actions[@]}.卸载IPv6域名出站"
+    actions+=("show_ipv6_domain")
+    echoContent yellow "${#actions[@]}.查看IPv6出站域名"
+
+    if [[ "${routeIPv4}" == "true" && "${routeIPv6}" == "true" ]]; then
+        actions+=("prefer_ipv6")
+        echoContent yellow "${#actions[@]}.全局IPv6优先"
+        actions+=("prefer_ipv4")
+        echoContent yellow "${#actions[@]}.全局IPv4优先"
+    elif [[ "${routeIPv6}" == "true" ]]; then
+        echoContent yellow "提示: 当前为 IPv6-only，默认基线已使用 IPv6 出站。"
+    fi
+
+    read -r -p "请选择:" selected
+    if ! [[ "${selected}" =~ ^[0-9]+$ ]] || [[ "${selected}" -lt 1 || "${selected}" -gt "${#actions[@]}" ]]; then
+        echoContent red " ---> 无效选择"
+        return 0
+    fi
+    action="${actions[$((selected - 1))]}"
+
+    if [[ "${action}" == "add_ipv6_domain" ]]; then
         read -r -p "请按照上面示例录入域名:" domainList
         if [[ -f "${configPath}09_routing.json" ]]; then
             unInstallRouting IPv6-out outboundTag
@@ -134,18 +195,18 @@ ipv6Routing() {
             XRAY_ROUTING_DOMAINS_JSON="$(xray_agent_geosite_domains_json "${domainList}")"
             xray_agent_append_routing_rule_json "${configPath}09_routing.json" "$(xray_agent_domain_outbound_rule_json "${XRAY_ROUTING_DOMAINS_JSON}" "${XRAY_ROUTING_OUTBOUND_TAG}")"
         fi
-    elif [[ "${ipv6Status}" == "2" ]]; then
+    elif [[ "${action}" == "remove_ipv6_domain" ]]; then
         unInstallRouting IPv6-out outboundTag
-    elif [[ "${ipv6Status}" == "3" ]]; then
+    elif [[ "${action}" == "show_ipv6_domain" ]]; then
         jq -r -c '.routing.rules[]|select (.outboundTag=="IPv6-out")|.domain' "${configPath}09_routing.json" | jq -r
         return 0
     fi
 
-    if [[ "${ipv6Status}" == "1" || "${ipv6Status}" == "4" || "${ipv6Status}" == "5" ]]; then
+    if [[ "${action}" == "add_ipv6_domain" || "${action}" == "prefer_ipv6" || "${action}" == "prefer_ipv4" ]]; then
         unInstallOutbounds IPv4-out
         unInstallOutbounds IPv6-out
         unInstallOutbounds blackhole-out
-        if [[ "${ipv6Status}" == "4" ]]; then
+        if [[ "${action}" == "prefer_ipv6" ]]; then
             xray_agent_apply_routing_profile "ipv6_first"
         else
             xray_agent_apply_routing_profile "ipv4_first"
@@ -155,14 +216,24 @@ ipv6Routing() {
 }
 
 warpRouting() {
-    if [[ "$(ip a)" =~ ": WARP:" ]]; then
-        warpinterface="WARP"
-    elif [[ "$(ip a)" =~ ": wgcf:" ]]; then
-        warpinterface="wgcf"
-    elif [[ "$(ip a)" =~ ": warp:" ]]; then
-        warpinterface="warp"
-    else
+    xray_agent_network_summary
+    warpinterface="$(xray_agent_detect_usable_warp_interface || true)"
+    if [[ -z "${warpinterface}" ]]; then
         xray_agent_error " ---> 未安装或未开启，请使用脚本安装或开启"
+    fi
+    case "${warpMode:-none}" in
+        default_*)
+            echoContent yellow "提示: 当前系统默认路由已经走 WARP，下面的规则只会让 Xray 显式绑定该接口，不会改变系统默认路由。"
+            ;;
+    esac
+    if [[ "${warpHasIPv4}" == "true" && "${warpHasIPv6}" == "true" ]]; then
+        echoContent yellow "WARP出站能力: IPv4/IPv6 双栈，domainStrategy=UseIP"
+    elif [[ "${warpHasIPv4}" == "true" ]]; then
+        echoContent yellow "WARP出站能力: IPv4-only，domainStrategy=UseIPv4"
+    elif [[ "${warpHasIPv6}" == "true" ]]; then
+        echoContent yellow "WARP出站能力: IPv6-only，domainStrategy=UseIPv6"
+    else
+        xray_agent_error " ---> WARP接口没有可用 IPv4/IPv6 地址"
     fi
     echoContent yellow "1.添加域名"
     echoContent yellow "2.卸载WARP分流"
@@ -177,10 +248,12 @@ warpRouting() {
         if [[ "${warpStatus}" == "1" ]]; then
             unInstallOutbounds warp-out
             XRAY_WARP_INTERFACE="${warpinterface}"
+            XRAY_WARP_DOMAIN_STRATEGY="$(xray_agent_warp_domain_strategy)"
             xray_agent_append_outbound_by_tag "${configPath}10_ipv4_outbounds.json" "warp-out"
         elif [[ "${warpStatus}" == "4" ]]; then
             unInstallOutbounds cn-out
             XRAY_WARP_INTERFACE="${warpinterface}"
+            XRAY_WARP_DOMAIN_STRATEGY="$(xray_agent_warp_domain_strategy)"
             xray_agent_append_outbound_by_tag "${configPath}10_ipv4_outbounds.json" "cn-out"
         fi
         if [[ "${warpStatus}" == "1" ]]; then

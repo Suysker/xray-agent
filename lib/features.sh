@@ -97,6 +97,7 @@ xray_agent_write_access_log_config() {
 
 xray_agent_render_dokodemo_port() {
     local port="$1"
+    xray_agent_export_xray_network_template_vars
     export XRAY_DOKODEMO_PORT="${port}"
     export XRAY_TARGET_PORT="${Port}"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/extras/dokodemo_port.json.tpl" "${configPath}02_dokodemodoor_inbounds_${port}.json"
@@ -192,14 +193,14 @@ xray_agent_sockopt_with_proxy_protocol() {
 
 xray_agent_apply_trusted_x_forwarded_for() {
     local target_path="$1"
-    local trusted_source="${2:-127.0.0.1}"
+    local trusted_source="${2:-$(xray_agent_internal_loopback_host)}"
     [[ -f "${target_path}" ]] || return 0
     xray_agent_json_update_file "${target_path}" '.inbounds[0].streamSettings.sockopt.trustedXForwardedFor = [$trustedSource]' --arg trustedSource "${trusted_source}"
 }
 
 xray_agent_apply_trusted_xff_patch() {
     local target_path="$1"
-    local trusted_source="${XRAY_AGENT_TRUSTED_X_FORWARDED_FOR:-127.0.0.1}"
+    local trusted_source="${XRAY_AGENT_TRUSTED_X_FORWARDED_FOR:-$(xray_agent_internal_loopback_host)}"
     xray_agent_apply_trusted_x_forwarded_for "${target_path}" "${trusted_source}"
 }
 

@@ -7,7 +7,8 @@ fi
 xray_agent_render_nginx_alone_conf() {
     local profile_name="$1"
     local upstream_url="${2:-https://huggingface.co}"
-    export NGINX_HTTP_PORT="127.0.0.1:31300 http2 so_keepalive=on"
+    export NGINX_HTTP_PORT="$(xray_agent_loopback_endpoint 31300) http2 so_keepalive=on"
+    export NGINX_XHTTP_GRPC_TARGET="$(xray_agent_loopback_endpoint 31305)"
     export SERVER_NAME="${domain}"
     export UPSTREAM_URL="${upstream_url}"
     export NGINX_XHTTP_PATH="/${path}"
@@ -97,9 +98,11 @@ xray_agent_render_nginx_stream_conf() {
 
     export NGINX_STREAM_DEFAULT_TARGET="vision_backend"
     export NGINX_STREAM_SERVER_NAME_MAP="        ${domain} vision_backend;"$'\n'"${realityDomainConfig}"
-    export NGINX_STREAM_VISION_TARGET="127.0.0.1:${Port}"
-    export NGINX_STREAM_REALITY_TARGET="127.0.0.1:${RealityPort:-443}"
+    export NGINX_STREAM_VISION_TARGET="$(xray_agent_loopback_endpoint "${Port}")"
+    export NGINX_STREAM_REALITY_TARGET="$(xray_agent_loopback_endpoint "${RealityPort:-443}")"
     export NGINX_STREAM_PORT="443"
+    export NGINX_STREAM_LISTEN_DIRECTIVES
+    NGINX_STREAM_LISTEN_DIRECTIVES="$(xray_agent_nginx_stream_listen_directives "${NGINX_STREAM_PORT}")"
     export XRAY_DOLLAR='$'
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/nginx/alone.stream.tpl" "${nginxConfigPath}alone.stream"
 }

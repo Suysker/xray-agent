@@ -11,6 +11,7 @@ xray-agent 已从单文件安装脚本收口为一套模块化的 Xray profile b
 - Xray 配置与分享链接按 Xray-core 源码优先审计：Reality 服务端配置不写客户端 `publicKey`，XHTTP 默认只写必要 `path`，Hysteria2 使用 Xray-core `hysteria` inbound 和 `finalmask.quicParams`，分享 URI 按官方约定编码。
 - install profile 的 `protocols=` 直接决定 TLS/Reality 套餐渲染哪些 inbound；TLS 套餐默认包含 `VLESS-TCP / VLESS-WS / VMess-WS / XHTTP / Hysteria2`；Reality 套餐安装时可选择同时启用 Hysteria2，默认不强制开启；`steps=` 进一步决定安装流水线顺序。
 - Hysteria2 的连接域名/SNI/证书域名默认复用当前 `domain`/`TLSDomain`，不使用 Reality 目标域名签证书；masquerade 默认优先复用已有 Hy2 配置，其次复用 Nginx 伪装站 upstream，Reality-only 场景再把 Reality 目标域名作为内容源候选。
+- 网络栈按运行时动态探测：默认不自动启用 IPv6/WARP 分流；IPv6-only 场景会生成 IPv6 可用基线；菜单只显示当前网络栈可执行动作；内部 Nginx/Xray 回环、AdGuard DNS、WARP outbound 和 Reality 公网地址选择都按 IPv4/IPv6/WARP 能力派生。
 - 不引入 upstream/v2ray-agent 的 sing-box、订阅、anytls 等非本仓库 master 主线能力。
 
 ## 目录
@@ -26,7 +27,7 @@ xray-agent/
 ```
 
 - `install.sh`：bootstrap、模块加载、调用 `xray_agent_main`。
-- `lib/`：领域级运行时模块，边界为 `common.sh`、`runtime.sh`、`system.sh`、`tls.sh`、`core.sh`、`nginx.sh`、`protocols.sh`、`installer.sh`、`cli.sh`、`accounts.sh`、`routing.sh`、`features.sh`、`apps.sh`、`external.sh`。
+- `lib/`：领域级运行时模块，边界为 `common.sh`、`network.sh`、`runtime.sh`、`system.sh`、`tls.sh`、`core.sh`、`nginx.sh`、`protocols.sh`、`installer.sh`、`cli.sh`、`accounts.sh`、`routing.sh`、`features.sh`、`apps.sh`、`external.sh`。
 - `templates/`：只放完整配置文件、重要配置块和稳定外部格式，例如 Xray、Nginx、分享链接和 systemd；不为 `[]`、一行 rule、cron 行、包源行单独建模板。
 - `profiles/`：安装组合、协议、路由描述。
 - `packaging/`：安装布局、升级迁移、卸载辅助。

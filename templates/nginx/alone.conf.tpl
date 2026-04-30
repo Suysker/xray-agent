@@ -6,7 +6,7 @@ server {
     keepalive_timeout 1071906480m;
 
     location ${NGINX_XHTTP_PATH} {
-        grpc_pass grpc://127.0.0.1:31305;
+        grpc_pass grpc://${NGINX_XHTTP_GRPC_TARGET};
         grpc_set_header Host ${XRAY_DOLLAR}host;
         grpc_set_header X-Real-IP ${XRAY_DOLLAR}proxy_protocol_addr;
         grpc_set_header X-Forwarded-For ${XRAY_DOLLAR}proxy_add_x_forwarded_for;

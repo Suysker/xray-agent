@@ -49,11 +49,11 @@ customSSLEmail() {
 }
 
 acmeInstallSSL() {
-    currentIPv6IP=$(curl -s -6 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | cut -d "=" -f 2)
-    if [[ -z "${currentIPv6IP}" ]]; then
-        installSSLIPv6=""
-    else
+    xray_agent_detect_network_capabilities
+    if [[ "${routeIPv6}" == "true" ]]; then
         installSSLIPv6="--listen-v6"
+    else
+        installSSLIPv6=""
     fi
 
     xray_agent_blank

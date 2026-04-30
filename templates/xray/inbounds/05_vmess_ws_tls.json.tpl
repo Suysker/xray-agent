@@ -1,7 +1,7 @@
 {
   "inbounds": [
     {
-      "listen": "127.0.0.1",
+      "listen": "${XRAY_INTERNAL_LISTEN_ADDRESS}",
       "port": 31299,
       "protocol": "vmess",
       "tag": "VMessWS",

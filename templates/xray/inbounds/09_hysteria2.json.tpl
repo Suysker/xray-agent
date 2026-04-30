@@ -1,7 +1,7 @@
 {
   "inbounds": [
     {
-      "listen": "0.0.0.0",
+      "listen": "${XRAY_PUBLIC_LISTEN_ADDRESS}",
       "port": 443,
       "protocol": "hysteria",
       "tag": "Hysteria2",

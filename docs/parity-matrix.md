@@ -2,8 +2,9 @@
 
 - `echoContent/xray_agent_println/xray_agent_print_inline/xray_agent_blank/xray_agent_confirm/xray_agent_error` -> `lib/common.sh`
 - `xray_agent_render_template/xray_agent_render_template_stdout/xray_agent_json_write/xray_agent_json_update_file/xray_agent_apply_json_patch` -> `lib/common.sh`
+- `xray_agent_detect_network_capabilities/getPublicIP/Reality公网地址选择/WARP接口探测` -> `lib/network.sh`
 - `initVar/checkBTPanel` -> `lib/runtime.sh`
-- `checkSystem/checkCPUVendor` -> `lib/runtime.sh`
+- `checkSystem` -> `lib/runtime.sh` -> `lib/network.sh`，`checkCPUVendor` -> `lib/runtime.sh`
 - `readInstallType/readInstallProtocolType/readConfigHostPathUUID/showInstallStatus` -> `lib/runtime.sh`
 - `menu/xray_agent_main/RenewTLS 参数路由` -> `lib/cli.sh`
 - `installTools/installNginxTools/mkdirTools` -> `lib/system.sh`

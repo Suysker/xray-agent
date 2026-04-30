@@ -1,7 +1,7 @@
 {
   "inbounds": [
     {
-      "listen": "127.0.0.1",
+      "listen": "${XRAY_INTERNAL_LISTEN_ADDRESS}",
       "port": ${XRAY_INBOUND_PORT},
       "protocol": "vless",
       "tag": "${XRAY_INBOUND_TAG}",

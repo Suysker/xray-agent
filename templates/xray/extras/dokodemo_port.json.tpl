@@ -1,11 +1,11 @@
 {
   "inbounds": [
     {
-      "listen": "0.0.0.0",
+      "listen": "${XRAY_PUBLIC_LISTEN_ADDRESS}",
       "port": ${XRAY_DOKODEMO_PORT},
       "protocol": "dokodemo-door",
       "settings": {
-        "address": "127.0.0.1",
+        "address": "${XRAY_INTERNAL_TARGET_ADDRESS}",
         "port": ${XRAY_TARGET_PORT},
         "network": "raw",
         "followRedirect": false

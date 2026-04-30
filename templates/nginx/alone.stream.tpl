@@ -13,8 +13,7 @@ ${NGINX_STREAM_SERVER_NAME_MAP}
     }
 
     server {
-        listen ${NGINX_STREAM_PORT};
-        listen [::]:${NGINX_STREAM_PORT};
+${NGINX_STREAM_LISTEN_DIRECTIVES}
         ssl_preread on;
         proxy_protocol on;
         proxy_pass ${XRAY_DOLLAR}backend_name;

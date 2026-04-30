@@ -35,7 +35,7 @@ xray_agent_print_management_menu_items() {
     echoContent yellow "3.账号管理"
     echoContent yellow "4.更换伪装站"
     echoContent yellow "5.证书管理"
-    echoContent yellow "6.IPv6分流"
+    echoContent yellow "6.IPv4/IPv6出站策略"
     echoContent yellow "7.阻止访问黑名单及中国大陆IP"
     echoContent yellow "8.WARP分流及中国大陆域名+IP"
     echoContent yellow "9.添加新端口"

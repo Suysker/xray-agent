@@ -65,6 +65,7 @@ xray_agent_runtime_layout_complete() {
     local required_path
     for required_path in \
         "${SCRIPT_DIR}/lib/common.sh" \
+        "${SCRIPT_DIR}/lib/network.sh" \
         "${SCRIPT_DIR}/lib/runtime.sh" \
         "${SCRIPT_DIR}/lib/system.sh" \
         "${SCRIPT_DIR}/lib/tls.sh" \
@@ -148,6 +149,7 @@ xray_agent_ensure_jq_on_path
 
 for module_file in \
     "${SCRIPT_DIR}/lib/common.sh" \
+    "${SCRIPT_DIR}/lib/network.sh" \
     "${SCRIPT_DIR}/lib/runtime.sh" \
     "${SCRIPT_DIR}/lib/system.sh" \
     "${SCRIPT_DIR}/lib/tls.sh" \

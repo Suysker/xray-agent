@@ -125,11 +125,15 @@ xray_agent_protocol_address_value() {
             echo "${domain}"
             ;;
         public_ip)
-            getPublicIP
+            if [[ "${variant}" == "reality" ]]; then
+                xray_agent_select_public_ip_for_reality
+            else
+                getPublicIP
+            fi
             ;;
         auto)
             if [[ "${variant}" == "reality" ]]; then
-                getPublicIP
+                xray_agent_select_public_ip_for_reality
             else
                 echo "${domain}"
             fi
@@ -208,14 +212,23 @@ xray_agent_protocol_path_value() {
 }
 
 xray_agent_tls_fallbacks_json() {
+    local ws_dest vmess_ws_dest nginx_dest
+    ws_dest="$(xray_agent_loopback_endpoint 31297)"
+    vmess_ws_dest="$(xray_agent_loopback_endpoint 31299)"
+    nginx_dest="$(xray_agent_loopback_endpoint 31300)"
     jq -nc \
         --arg wsPath "${XRAY_FALLBACK_WS_PATH}" \
         --arg vmessWsPath "${XRAY_FALLBACK_VMESS_WS_PATH}" \
-        '[{path:$wsPath,dest:31297,xver:1},{path:$vmessWsPath,dest:31299,xver:1},{dest:31300,xver:0}]'
+        --arg wsDest "${ws_dest}" \
+        --arg vmessWsDest "${vmess_ws_dest}" \
+        --arg nginxDest "${nginx_dest}" \
+        '[{path:$wsPath,dest:$wsDest,xver:1},{path:$vmessWsPath,dest:$vmessWsDest,xver:1},{dest:$nginxDest,xver:0}]'
 }
 
 xray_agent_reality_fallbacks_json() {
-    jq -nc '[{dest:31305,xver:0}]'
+    local xhttp_dest
+    xhttp_dest="$(xray_agent_loopback_endpoint 31305)"
+    jq -nc --arg xhttpDest "${xhttp_dest}" '[{dest:$xhttpDest,xver:0}]'
 }
 
 xray_agent_csv_json_array() {
@@ -244,6 +257,7 @@ xray_agent_render_vless_tcp_tls_inbound() {
     local accept_proxy_protocol="$2"
     local sniffing_json="$3"
     xray_agent_load_protocol_profile "vless_tcp_tls"
+    xray_agent_export_xray_network_template_vars
     export XRAY_CLIENTS_JSON="${clients_json}"
     export XRAY_FALLBACK_WS_PATH="/${path}ws"
     export XRAY_FALLBACK_VMESS_WS_PATH="/${path}vws"
@@ -261,6 +275,7 @@ xray_agent_render_vless_tcp_tls_inbound() {
 
 xray_agent_render_vless_ws_legacy_config() {
     xray_agent_load_protocol_profile "vless_ws_tls"
+    xray_agent_export_xray_network_template_vars
     export XRAY_CLIENTS_JSON="$1"
     export XRAY_SNIFFING_JSON="$2"
     export XRAY_WS_PATH="/${path}ws"
@@ -269,6 +284,7 @@ xray_agent_render_vless_ws_legacy_config() {
 
 xray_agent_render_vmess_ws_legacy_config() {
     xray_agent_load_protocol_profile "vmess_ws_tls"
+    xray_agent_export_xray_network_template_vars
     export XRAY_CLIENTS_JSON="$1"
     export XRAY_SNIFFING_JSON="$2"
     export XRAY_WS_PATH="/${path}vws"
@@ -280,6 +296,7 @@ xray_agent_render_vless_reality_tcp_inbound() {
     local accept_proxy_protocol="$2"
     local sniffing_json="$3"
     xray_agent_load_protocol_profile "vless_reality_tcp"
+    xray_agent_export_xray_network_template_vars
     export XRAY_CLIENTS_JSON="${clients_json}"
     export XRAY_FALLBACKS_JSON
     export XRAY_SOCKOPT_JSON
@@ -303,6 +320,7 @@ xray_agent_render_vless_xhttp_inbound() {
     local inbound_port="$2"
     local sniffing_json="$3"
     xray_agent_load_protocol_profile "vless_xhttp"
+    xray_agent_export_xray_network_template_vars
     export XRAY_CLIENTS_JSON="${clients_json}"
     export XRAY_INBOUND_PORT="${inbound_port}"
     export XRAY_INBOUND_TAG="VLESSXHTTP"
@@ -408,6 +426,9 @@ xray_agent_hysteria2_prepare_runtime() {
     local default_masquerade_url input_masquerade_url
     xray_agent_hysteria2_prepare_tls_domain
     echoContent yellow " ---> Hysteria2 需要当前 Xray-core 支持 protocol=hysteria；旧内核请先用菜单12升级"
+    if [[ "$(xray_agent_public_ip_total_count)" -gt 1 ]]; then
+        echoContent yellow " ---> 检测到多个公网 IP。Hysteria2/UDP 在多出口场景可能需要你确认系统路由和云防火墙，避免 UDP 回复源地址不一致。"
+    fi
     checkUDPPort 443
     allowPort 443 udp
 
@@ -461,6 +482,7 @@ xray_agent_render_hysteria2_inbound() {
     local clients_json="$1"
     local sniffing_json="$2"
     xray_agent_load_protocol_profile "hysteria2"
+    xray_agent_export_xray_network_template_vars
     export XRAY_HYSTERIA2_CLIENTS_JSON="${clients_json}"
     export XRAY_HYSTERIA2_MASQUERADE_URL_JSON
     export XRAY_HYSTERIA2_FINALMASK_SUFFIX

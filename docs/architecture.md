@@ -4,8 +4,9 @@
 - `lib/cli.sh` 承载菜单 1-23、参数路由和 `RenewTLS` 兼容入口；菜单只调度 workflow，不直接拼配置。
 - `lib/installer.sh` 承载 install profile 加载、必填字段校验、安装 step dispatch、TLS/Reality 套餐编排。
 - `lib/protocols.sh` 只负责 protocol profile、客户端 JSON、Xray inbound 与分享链接相关渲染；Hysteria2 是 Xray-core 内置协议，不再调用外部 Hysteria YAML 服务。
+- `lib/network.sh` 负责系统发行版、默认路由 IPv4/IPv6、公网 IPv4/IPv6、本机回环、WARP 接口和 WARP 默认路由模式探测；它不写状态文件，菜单、模板渲染和分享链接只读取探测结果。
 - `lib/runtime.sh` 负责系统检测、安装状态检测、协议状态检测，并集中从现有 Xray/Nginx 配置反推 domain/path/UUID/端口/Reality 信息；不新增 state.json。
-- `lib/` 是运行时真源，按领域级文件收口为 `common.sh`、`runtime.sh`、`system.sh`、`tls.sh`、`core.sh`、`nginx.sh`、`protocols.sh`、`installer.sh`、`cli.sh`、`accounts.sh`、`routing.sh`、`features.sh`、`apps.sh`、`external.sh`。
+- `lib/` 是运行时真源，按领域级文件收口为 `common.sh`、`network.sh`、`runtime.sh`、`system.sh`、`tls.sh`、`core.sh`、`nginx.sh`、`protocols.sh`、`installer.sh`、`cli.sh`、`accounts.sh`、`routing.sh`、`features.sh`、`apps.sh`、`external.sh`。
 - `templates/` 只承载完整配置文件、重要配置块和稳定外部格式：Xray 在 `templates/xray`，Nginx 在 `templates/nginx`，分享链接在 `templates/share`，systemd unit 在 `templates/systemd`。
 - 原子级配置不进模板目录：`[]`、fallback、routing rule、headers、sniffing、sockopt、cron 行、包源行都由领域代码中的命名函数生成。
 - `profiles/` 使用 shell `key=value` 的 `.profile` 文件；主线配置只依赖 `install`、`protocol`、`routing`。

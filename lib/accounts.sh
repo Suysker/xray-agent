@@ -259,7 +259,8 @@ xray_agent_vless_profile_share_uri() {
     xray_agent_load_protocol_profile "${profile_name}" || return 1
 
     local address port sni share_path security mode reality_params
-    address="$(xray_agent_protocol_address_value "${variant}")"
+    address="$(xray_agent_protocol_address_value "${variant}")" || return 1
+    [[ -n "${address}" ]] || return 1
     port="$(xray_agent_protocol_port_value "${variant}")"
     sni="$(xray_agent_protocol_sni_value "${variant}")"
     share_path="$(xray_agent_protocol_path_value)"
@@ -345,9 +346,12 @@ defaultBase64Code() {
             ;;
         vlesstcpreality)
             echoContent yellow " ---> 通用格式 (VLESS+TCP+Reality)"
-            xray_agent_print_vless_profile_share "vless_reality_tcp" "${id}"
-            echoContent yellow " ---> 格式化明文 (VLESS+TCP+Reality)"
-            echoContent green "协议类型: VLESS Reality，地址: $(getPublicIP)，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_reality_tcp)，用户ID: ${id}，传输方式: tcp，账户名: ${id}"
+            if xray_agent_print_vless_profile_share "vless_reality_tcp" "${id}"; then
+                local reality_address
+                reality_address="$(xray_agent_select_public_ip_for_reality)" || return 1
+                echoContent yellow " ---> 格式化明文 (VLESS+TCP+Reality)"
+                echoContent green "协议类型: VLESS Reality，地址: ${reality_address}，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_reality_tcp)，用户ID: ${id}，传输方式: tcp，账户名: ${id}"
+            fi
             ;;
         vlessxhttp)
             if [[ "${coreInstallType}" == "1" || "${coreInstallType}" == "3" ]]; then
@@ -358,9 +362,12 @@ defaultBase64Code() {
             fi
             if [[ "${coreInstallType}" == "2" || "${coreInstallType}" == "3" ]]; then
                 echoContent yellow " ---> 通用格式 (VLESS+XHTTP+Reality)"
-                xray_agent_print_vless_profile_share "vless_xhttp" "${id}" "reality"
-                echoContent yellow " ---> 格式化明文 (VLESS+XHTTP+Reality)"
-                echoContent green "协议类型: VLESS XHTTP，地址: $(getPublicIP)，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_xhttp reality)，用户ID: ${id}，传输方式: XHTTP，client-fingerprint: chrome，账户名: ${id}"
+                if xray_agent_print_vless_profile_share "vless_xhttp" "${id}" "reality"; then
+                    local reality_address
+                    reality_address="$(xray_agent_select_public_ip_for_reality)" || return 1
+                    echoContent yellow " ---> 格式化明文 (VLESS+XHTTP+Reality)"
+                    echoContent green "协议类型: VLESS XHTTP，地址: ${reality_address}，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_xhttp reality)，用户ID: ${id}，传输方式: XHTTP，client-fingerprint: chrome，账户名: ${id}"
+                fi
             fi
             ;;
         hysteria2)

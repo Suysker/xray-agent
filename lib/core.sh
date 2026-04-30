@@ -13,12 +13,7 @@ xray_agent_download_geodata() {
 }
 
 getPublicIP() {
-    local currentIP=
-    currentIP=$(curl -s -4 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | awk -F "[=]" '{print $2}')
-    if [[ -z "${currentIP}" ]]; then
-        currentIP=$(curl -s -6 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | awk -F "[=]" '{print $2}')
-    fi
-    echo "${currentIP}"
+    xray_agent_get_public_ip
 }
 
 checkGFWStatue() {

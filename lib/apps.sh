@@ -7,21 +7,26 @@ fi
 xray_agent_adguard_restore_dns() {
     if [[ -d /etc/resolvconf/resolv.conf.d ]]; then
         sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head
+        sudo sed -i '/^nameserver ::1/d' /etc/resolvconf/resolv.conf.d/head
         sudo resolvconf -u
     else
         sudo chattr -i /etc/resolv.conf 2>/dev/null || true
         if [[ -f /etc/resolv.conf.bak ]]; then
             sudo mv /etc/resolv.conf.bak /etc/resolv.conf
         else
-            printf '%s\n' "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf >/dev/null
+            printf 'nameserver %s\n' "$(xray_agent_fallback_public_dns)" | sudo tee /etc/resolv.conf >/dev/null
         fi
     fi
 }
 
 xray_agent_adguard_use_local_dns() {
+    local nameserver
+    nameserver="$(xray_agent_adguard_nameserver)"
     if [[ -d /etc/resolvconf/resolv.conf.d ]]; then
-        if ! grep -q "^nameserver 127.0.0.1" /etc/resolvconf/resolv.conf.d/head; then
-            sudo sed -i '1inameserver 127.0.0.1' /etc/resolvconf/resolv.conf.d/head
+        sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head
+        sudo sed -i '/^nameserver ::1/d' /etc/resolvconf/resolv.conf.d/head
+        if ! grep -q "^nameserver ${nameserver}$" /etc/resolvconf/resolv.conf.d/head; then
+            sudo sed -i "1inameserver ${nameserver}" /etc/resolvconf/resolv.conf.d/head
         fi
         sudo resolvconf -u
     else
@@ -31,7 +36,7 @@ xray_agent_adguard_use_local_dns() {
         if [[ ! -f /etc/resolv.conf.bak ]]; then
             sudo cp /etc/resolv.conf /etc/resolv.conf.bak
         fi
-        printf '%s\n' "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf >/dev/null
+        printf 'nameserver %s\n' "${nameserver}" | sudo tee /etc/resolv.conf >/dev/null
         sudo chattr +i /etc/resolv.conf 2>/dev/null || true
     fi
 }

@@ -89,7 +89,7 @@ installTools() {
         rm -rf /var/run/yum.pid
         ${installType} epel-release >/dev/null 2>&1
     fi
-    declare -a tools=("wget" "curl" "unzip" "tar" "cron" "jq" "ld" "lsb_release" "sudo" "lsof" "dig")
+    declare -a tools=("wget" "curl" "unzip" "tar" "cron" "jq" "ld" "lsb_release" "sudo" "lsof" "dig" "ip" "iptables" "ip6tables")
     for tool in "${tools[@]}"; do
         if ! command -v "${tool}" >/dev/null 2>&1; then
             if [[ "${tool}" == "cron" ]]; then
@@ -108,6 +108,14 @@ installTools() {
                 else
                     ${installType} bind-utils >/dev/null 2>&1
                 fi
+            elif [[ "${tool}" == "ip" ]]; then
+                if echo "${installType}" | grep -q -w "apt"; then
+                    ${installType} iproute2 >/dev/null 2>&1
+                else
+                    ${installType} iproute >/dev/null 2>&1
+                fi
+            elif [[ "${tool}" == "iptables" || "${tool}" == "ip6tables" ]]; then
+                ${installType} iptables >/dev/null 2>&1
             else
                 ${installType} "${tool}" >/dev/null 2>&1
             fi
@@ -159,7 +167,9 @@ xray_agent_firewall_comment() {
 }
 
 checkFirewalldAllowPort() {
-    if firewall-cmd --list-ports --permanent | grep -q "$1"; then
+    local port="$1"
+    local type="${2:-tcp}"
+    if firewall-cmd --list-ports --permanent | grep -qw "${port}/${type}"; then
         echoContent green " ---> $1端口开放成功"
     else
         echoContent red " ---> $1端口开放失败"
@@ -168,7 +178,9 @@ checkFirewalldAllowPort() {
 }
 
 checkUFWAllowPort() {
-    if ufw status | grep -q "$1"; then
+    local port="$1"
+    local type="${2:-tcp}"
+    if ufw status | grep -q "${port}/${type}"; then
         echoContent green " ---> $1端口开放成功"
     else
         echoContent red " ---> $1端口开放失败"
@@ -181,11 +193,11 @@ allowPort() {
     local type="${2:-tcp}"
     if systemctl status netfilter-persistent 2>/dev/null | grep -q "active (exited)"; then
         local update_firewall_status=
-        if ! iptables -L | grep -q "${port}"; then
+        if command -v iptables >/dev/null 2>&1 && ! iptables -L INPUT -n 2>/dev/null | grep -q "${type}.*dpt:${port}"; then
             update_firewall_status=true
             iptables -I INPUT -p "${type}" --dport "${port}" -m comment --comment "allow ${port}($(xray_agent_firewall_comment))" -j ACCEPT
         fi
-        if ! ip6tables -L | grep -q "${port}"; then
+        if command -v ip6tables >/dev/null 2>&1 && ! ip6tables -L INPUT -n 2>/dev/null | grep -q "${type}.*dpt:${port}"; then
             update_firewall_status=true
             ip6tables -I INPUT -p "${type}" --dport "${port}" -m comment --comment "allow ${port}($(xray_agent_firewall_comment))" -j ACCEPT
         fi
@@ -195,20 +207,22 @@ allowPort() {
     elif systemctl status ufw 2>/dev/null | grep -q "active (exited)"; then
         if ufw status | grep -q "Status: active" && ! ufw status | grep -q "${port}/${type}"; then
             sudo ufw allow "${port}/${type}"
-            sudo ufw allow from any to any proto ipv6 "${type}" port "${port}"
-            checkUFWAllowPort "${port}"
+            checkUFWAllowPort "${port}" "${type}"
+        elif ! ufw status | grep -q "Status: active"; then
+            echoContent yellow " ---> UFW未启用，跳过防火墙放行"
         fi
     elif systemctl status firewalld 2>/dev/null | grep -q "active (running)"; then
         local update_firewall_status=
         if ! firewall-cmd --list-ports --permanent | grep -qw "${port}/${type}"; then
             update_firewall_status=true
             firewall-cmd --zone=public --add-port="${port}/${type}" --permanent
-            firewall-cmd --zone=public --add-port="${port}/${type}" --permanent --add-rich-rule="rule family=ipv6"
-            checkFirewalldAllowPort "${port}"
         fi
         if [[ "${update_firewall_status}" == "true" ]]; then
             firewall-cmd --reload
+            checkFirewalldAllowPort "${port}" "${type}"
         fi
+    else
+        echoContent yellow " ---> 未检测到已启用防火墙，跳过${port}/${type}放行"
     fi
 }
 
