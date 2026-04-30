@@ -1,40 +1,59 @@
 # xray-agent
 
-xray-agent 已从单文件安装脚本收口为一套模块化的 Xray profile builder。`install.sh` 只负责 bootstrap 和加载主入口，真实实现收敛在 `lib/*.sh` 领域模块、`profiles/`、`templates/` 和 `packaging/`。
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Xray-core](https://img.shields.io/badge/Xray--core-supported-brightgreen.svg)](https://github.com/XTLS/Xray-core)
+[![Shell](https://img.shields.io/badge/Shell-Bash-4EAA25.svg)](https://www.gnu.org/software/bash/)
+[![Platform](https://img.shields.io/badge/Platform-Linux-lightgrey.svg)](#系统要求)
 
-## 当前状态
+xray-agent 是一个面向 Xray-core 的 N 合一安装与管理脚本，提供 TLS、Reality、XHTTP、Hysteria2、证书、账号、路由、WARP、Nginx 伪装站等常用能力。脚本保留简单的菜单体验，同时将 Xray、Nginx、systemd 和分享链接配置集中到模板与 profile 中，便于长期维护。
 
-- 以本仓库 `master:install.sh` 为兼容基线，保留菜单 1-23、`RenewTLS` 兼容入口、TLS/Reality 套餐、多用户、WARP/IPv6/黑名单、日志、证书、伪装站、外部工具菜单；Hysteria2 已收口为工具管理里的 Xray-core 内置协议管理。
-- 运行时只加载领域级 `lib/*.sh` 模块，不再保留旧碎片化 `lib/<domain>/*.sh`、旧 `profiles/*.env`、旧平铺模板。
-- CLI、安装编排、协议渲染已经分层：`cli.sh` 管菜单和参数路由，`installer.sh` 管 install profile 和安装流水线，`protocols.sh` 只管协议 profile 与配置渲染。
-- 协议渲染、安装组合、分享链接导出统一从 `profiles/*.profile` 和重要配置模板读取；一行默认值、小 JSON 片段、cron 行和包源行由领域代码生成。
-- Xray 配置与分享链接按 Xray-core 正式 release 源码优先审计：Reality 服务端配置不写客户端 `publicKey`，XHTTP 默认只写必要 `path`，Hysteria2 使用 Xray-core `hysteria` inbound 和 `finalmask.quicParams`，分享 URI 按官方约定编码。
-- 正式 release 已支持的强化能力会按内核能力启用：VLESS WS/XHTTP 使用 VLESS Encryption，Reality 支持 ML-DSA-65 `pqv`，TLS 支持 ECH/`pcs`/`vcn` 分享参数；如果当前 Xray-core 不支持，脚本会提示升级，不生成不可运行配置。
-- install profile 的 `protocols=` 直接决定 TLS/Reality 套餐渲染哪些 inbound；TLS 套餐默认包含 `VLESS-TCP / VLESS-WS / VMess-WS / XHTTP / Hysteria2`；Reality 套餐安装时可选择同时启用 Hysteria2，默认不强制开启；`steps=` 进一步决定安装流水线顺序。
-- Hysteria2 的连接域名/SNI/证书域名默认复用当前 `domain`/`TLSDomain`，不使用 Reality 目标域名签证书；masquerade 默认优先复用已有 Hy2 配置，其次复用 Nginx 伪装站 upstream，Reality-only 场景再把 Reality 目标域名作为内容源候选。
-- 网络栈按运行时动态探测：默认不自动启用 IPv6/WARP 分流；IPv6-only 场景会生成 IPv6 可用基线；菜单只显示当前网络栈可执行动作；内部 Nginx/Xray 回环、AdGuard DNS、WARP outbound 和 Reality 公网地址选择都按 IPv4/IPv6/WARP 能力派生。
-- 菜单 3-12 是核心控制台：进入账号、伪装站、证书、IPv4/IPv6、黑名单、WARP、新端口、嗅探、sockopt、Hysteria2 前都会展示安装状态、协议、证书、网络栈和关键端口占用；高风险写入会先预览影响再确认。
-- 证书管理已改成智能向导：先读取 `/etc/xray-agent/tls` 和 acme 记录，再做域名解析、公网 IP、80/443 端口和网络栈预检，按条件推荐 HTTP-01 standalone 或 DNS-01，并能解释常见 acme 失败原因。
-- Nginx 模板区分 XHTTP/gRPC 长连接和普通镜像 proxy 超时，不再使用异常超长 timeout，也不默认写入 HSTS preload；渲染后先执行 `nginx -t`，失败不继续重启。
-- 不引入 upstream/v2ray-agent 的 sing-box、订阅、anytls 等非本仓库 master 主线能力。
+> 本项目仅供学习、研究和合法的网络管理用途。网络环境和审查策略会持续变化，任何工具都不能保证绝对可用或不可识别。本项目的目标是减少常见配置错误，并按 Xray-core 正式版能力降低明显指纹风险。
 
-## 目录
+## 为什么选择 xray-agent
 
-```text
-xray-agent/
-├── install.sh
-├── lib/
-├── templates/
-├── profiles/
-├── docs/
-└── packaging/
-```
+xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的 Xray-core 能力做成一套可以长期维护的 N 合一控制台。你可以从同一个菜单完成安装、证书、账号、分享、伪装站、路由、WARP、Hysteria2、日志和内核管理，不需要在多个脚本、配置文件和外部项目之间来回切换。
 
-- `install.sh`：bootstrap、模块加载、调用 `xray_agent_main`。
-- `lib/`：领域级运行时模块，边界为 `common.sh`、`network.sh`、`runtime.sh`、`system.sh`、`tls.sh`、`core.sh`、`nginx.sh`、`protocols.sh`、`installer.sh`、`cli.sh`、`accounts.sh`、`routing.sh`、`features.sh`、`apps.sh`、`external.sh`。
-- `templates/`：只放完整配置文件、重要配置块和稳定外部格式，例如 Xray、Nginx、分享链接和 systemd；不为 `[]`、一行 rule、cron 行、包源行单独建模板。
-- `profiles/`：安装组合、协议、路由描述。
-- `packaging/`：安装布局、升级迁移、卸载辅助。
+- **一套入口管理多协议**：TLS 套餐默认提供 VLESS TCP Vision、VLESS WS、VMess WS、XHTTP 和 Hysteria2；Reality 套餐提供 VLESS Reality 和 XHTTP Reality，并可按需启用 Hysteria2。
+- **配置可读、可维护**：Xray、Nginx、systemd 和分享链接采用模板与 profile 管理，脚本负责渲染和检查，重要配置不会散落在难以维护的 Bash 字符串里。
+- **证书流程更稳**：证书管理会先展示证书库存、解析结果、端口占用和网络栈状态，再推荐 HTTP-01 或 DNS-01，减少因为 DNS、防火墙或端口冲突导致的反复失败。
+- **面向真实网络环境**：安装和路由逻辑会考虑 IPv4-only、IPv6-only、双栈、多公网 IP、WARP 默认路由和 WARP 专用接口等常见 VPS 场景。
+- **内置 Hysteria2，不额外拉服务**：使用 Xray-core 内置 Hysteria2，占用 UDP/443，与 TCP/443 上的 Nginx/Xray 分流共存，账号跟随现有用户体系。
+- **失败前先检查**：涉及 Nginx、Xray、证书、端口、防火墙的关键操作会尽量先做状态检查或配置测试，避免无提示写坏运行环境。
+
+## 功能特性
+
+- 只使用 Xray-core，不引入 sing-box、订阅系统或外部 Hysteria YAML 服务。
+- TLS 套餐默认包含 `VLESS-TCP`、`VLESS-WS`、`VMess-WS`、`XHTTP` 和 Xray-core 内置 `Hysteria2`。
+- Reality 套餐包含 `VLESS-TCP Reality Vision` 和 `XHTTP Reality`，安装时可选择同时启用 Hysteria2。
+- 支持多用户管理、分享链接生成、自定义 UUID、端口管理、日志查看、卸载与脚本更新。
+- 支持 ACME 证书申请与续签，包含 HTTP-01、DNS-01、Cloudflare、DNSPod、Aliyun 和手动 TXT。
+- 支持 IPv4-only、IPv6-only、双栈、多公网 IP、WARP 专用接口与 WARP 默认路由场景。
+- 支持黑名单、CN IP/域名策略、WARP 分流、IPv4/IPv6 出站策略。
+- 支持 Nginx 伪装站管理，配置写入前会执行配置测试，失败时不继续重启。
+- 按当前 Xray-core 正式能力启用 VLESS Encryption、REALITY ML-DSA-65、TLS ECH、Hysteria2 `finalmask.quicParams` 等增强字段；内核不支持时会提示升级，不生成不可运行配置。
+
+## 支持协议
+
+| 套餐 | 协议 | 说明 |
+| --- | --- | --- |
+| TLS | VLESS TCP Vision | TCP/443 入口，负责 TLS 分流与回落 |
+| TLS | VLESS WS TLS | 兼容 WebSocket 客户端和 CDN 场景 |
+| TLS | VMess WS TLS | 保留 legacy 客户端兼容 |
+| TLS | VLESS XHTTP TLS | 默认经 Nginx 反代到本机 Xray |
+| TLS | Hysteria2 | Xray-core 内置协议，占用 UDP/443 |
+| Reality | VLESS TCP Reality Vision | 默认推荐的 Reality 入口 |
+| Reality | VLESS XHTTP Reality | Reality 环境下的 XHTTP 入口 |
+| Reality 可选 | Hysteria2 | 复用或申请同域名 TLS 证书 |
+
+更多协议和分享链接说明见 [协议说明](docs/protocols.md)。
+
+## 系统要求
+
+- 建议使用纯净系统：Debian 11/12 或 Ubuntu 20.04/22.04/24.04。
+- 需要 root 用户执行。
+- 需要一个已解析到服务器的域名；Reality 目标域名不是证书域名。
+- 服务器安全组/云防火墙需要放行 TCP/80、TCP/443；启用 Hysteria2 时还需要放行 UDP/443。
+- CentOS 可尝试使用，但不作为首选环境；过旧系统不建议使用。
 
 ## 安装
 
@@ -42,25 +61,63 @@ xray-agent/
 wget -P /root -N --no-check-certificate "https://raw.githubusercontent.com/Suysker/xray-agent/master/install.sh" && chmod 700 /root/install.sh && /root/install.sh
 ```
 
-- 首次只下载到单个 `install.sh` 时，它会自动下载仓库归档并铺设完整模块化布局。
-- 安装后入口为 `/etc/xray-agent/install.sh`
-- 快捷方式仍为 `vasma`
-
-## 验证
-
-仓库不保留一键验证脚本；改动后至少执行：
+首次只下载单个 `install.sh` 时，脚本会自动铺设完整运行目录。安装完成后可以通过以下命令重新打开菜单：
 
 ```bash
-bash -n install.sh
-find lib packaging -name "*.sh" -print0 | xargs -0 -n1 bash -n
-bash -c 'source ./install.sh; declare -F xray_agent_main >/dev/null; declare -F menu >/dev/null; declare -F xray_agent_run_install_profile >/dev/null; declare -F xray_agent_tool_status_header >/dev/null; declare -F xray_agent_cert_inventory >/dev/null'
+vasma
 ```
 
-配置模板变更需要用临时目录手工渲染，并对生成的 Xray JSON 执行 `jq empty`。同时检查 `find templates -type f`，确认没有新增原子级 tiny tpl。
+运行时入口：
+
+```text
+/etc/xray-agent/install.sh
+```
+
+快速开始见 [快速开始](docs/getting-started.md)。
+
+## 菜单概览
+
+```text
+1. 安装TLS套餐
+2. 安装Reality套餐
+3. 账号管理
+4. 更换伪装站
+5. 证书管理
+6. IPv4/IPv6出站策略
+7. 阻止访问黑名单及中国大陆IP
+8. WARP分流及中国大陆域名+IP
+9. 添加新端口
+10. 流量嗅探管理
+11. sockopt进阶管理
+12. Hysteria2管理
+13. core管理
+14. 更新脚本
+15. 查看日志
+16. 卸载脚本
+17-23. AdGuardHome、WARP、BBR、测速、回程、流媒体、VPS信息
+```
+
+完整说明见 [菜单参考](docs/menu-reference.md)。
 
 ## 文档
 
-- 架构说明见 `docs/architecture.md`
-- 旧函数到新模块映射见 `docs/parity-matrix.md`
-- Xray-core 官方源码审计说明见 `docs/official-xray-audit.md`
-- 迁移与回滚见 `docs/migration-plan.md`
+- [快速开始](docs/getting-started.md)
+- [协议说明](docs/protocols.md)
+- [证书管理](docs/certificates.md)
+- [网络与路由](docs/network-routing.md)
+- [菜单参考](docs/menu-reference.md)
+- [配置与目录](docs/configuration.md)
+- [故障排查](docs/troubleshooting.md)
+- [安全与兼容性](docs/security-and-compatibility.md)
+
+## 注意事项
+
+- 如果域名接入 Cloudflare，使用 TLS/WS/XHTTP/CDN 场景时请确认 SSL/TLS 模式为 Full 或 Full(strict)。
+- Oracle Cloud、GCP、部分云厂商有额外安全组或本机防火墙，请同时检查云控制台和系统防火墙。
+- Hysteria2 使用 UDP/443，不会占用 TCP/443；但云防火墙必须单独放行 UDP。
+- Reality 的目标域名应选择真实、稳定、证书链合理的站点；不要把 Reality 目标域名当作自己的证书域名。
+- 修改证书、Nginx、端口和路由前，建议先确认当前菜单中的状态提示。
+
+## License
+
+本项目基于 [AGPL-3.0](LICENSE) 许可证发布。
