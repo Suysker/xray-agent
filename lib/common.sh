@@ -77,12 +77,17 @@ xray_agent_trim_quotes() {
 
 xray_agent_urlencode() {
     local value="$1"
+    if command -v jq >/dev/null 2>&1; then
+        jq -nr --arg value "${value}" '$value | @uri'
+        return 0
+    fi
     value="${value//'%'/%25}"
     value="${value//' '/%20}"
     value="${value//\"/%22}"
     value="${value//'#'/%23}"
     value="${value//'&'/%26}"
     value="${value//'+'/%2B}"
+    value="${value//','/%2C}"
     value="${value//'/'/%2F}"
     value="${value//':'/%3A}"
     value="${value//';'/%3B}"
@@ -92,14 +97,68 @@ xray_agent_urlencode() {
     echo "${value}"
 }
 
+xray_agent_uri_authority_host() {
+    local host="$1"
+    if [[ "${host}" == *:* && "${host}" != \[*\] ]]; then
+        printf '[%s]\n' "${host}"
+        return 0
+    fi
+    printf '%s\n' "${host}"
+}
+
 xray_agent_ensure_dir() {
     mkdir -p "$1"
+}
+
+xray_agent_command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+xray_agent_download_file() {
+    local url="$1"
+    local output_path="$2"
+    if xray_agent_command_exists curl; then
+        curl -fsSL "${url}" -o "${output_path}"
+    elif xray_agent_command_exists wget; then
+        wget -q -O "${output_path}" "${url}"
+    else
+        echoContent red "curl or wget is required"
+        return 1
+    fi
+}
+
+xray_agent_safe_remove() {
+    local target_path
+    for target_path in "$@"; do
+        [[ -n "${target_path}" && "${target_path}" != "/" ]] || continue
+        rm -rf -- "${target_path}"
+    done
 }
 
 xray_agent_json_write() {
     local target_path="$1"
     local json_content="$2"
-    printf '%s\n' "${json_content}" | jq . >"${target_path}"
+    local temp_path="${target_path}.tmp"
+    printf '%s\n' "${json_content}" | jq . >"${temp_path}" && mv "${temp_path}" "${target_path}"
+}
+
+xray_agent_json_update_file() {
+    local target_path="$1"
+    local jq_filter="$2"
+    local temp_path="${target_path}.tmp"
+    shift 2
+    jq "$@" "${jq_filter}" "${target_path}" >"${temp_path}" && mv "${temp_path}" "${target_path}"
+}
+
+xray_agent_json_query() {
+    local target_path="$1"
+    local jq_filter="$2"
+    local default_value="${3:-}"
+    if [[ ! -f "${target_path}" ]]; then
+        printf '%s\n' "${default_value}"
+        return 0
+    fi
+    jq -r "${jq_filter}" "${target_path}" 2>/dev/null | head -1
 }
 
 xray_agent_render_template() {
@@ -128,8 +187,7 @@ xray_agent_render_json_template() {
 xray_agent_apply_json_patch() {
     local target_path="$1"
     local jq_filter="$2"
-    local temp_path="${target_path}.tmp"
-    jq "${jq_filter}" "${target_path}" >"${temp_path}" && mv "${temp_path}" "${target_path}"
+    xray_agent_json_update_file "${target_path}" "${jq_filter}"
 }
 
 xray_agent_join_by() {

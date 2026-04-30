@@ -16,6 +16,147 @@ XRAY_AGENT_XRAY_DIR="${XRAY_AGENT_ETC_DIR}/xray"
 XRAY_AGENT_XRAY_CONF_DIR="${XRAY_AGENT_XRAY_DIR}/conf"
 XRAY_AGENT_XRAY_BINARY="${XRAY_AGENT_XRAY_DIR}/xray"
 
+xray_agent_etc_path() {
+    printf '%s/%s\n' "${XRAY_AGENT_ETC_DIR}" "$1"
+}
+
+xray_agent_xray_conf_file() {
+    printf '%s/%s\n' "${XRAY_AGENT_XRAY_CONF_DIR}" "$1"
+}
+
+xray_agent_nginx_conf_file() {
+    printf '%s%s\n' "${nginxConfigPath}" "$1"
+}
+
+xray_agent_tls_inbound_file() {
+    [[ -n "${frontingType:-}" ]] || return 1
+    xray_agent_xray_conf_file "${frontingType}.json"
+}
+
+xray_agent_reality_inbound_file() {
+    [[ -n "${RealityfrontingType:-}" ]] || return 1
+    xray_agent_xray_conf_file "${RealityfrontingType}.json"
+}
+
+xray_agent_xhttp_inbound_file() {
+    xray_agent_xray_conf_file "08_VLESS_XHTTP_inbounds.json"
+}
+
+xray_agent_inbound_clients_csv() {
+    local inbound_file="$1"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r '.inbounds[0].settings.clients[]?.id' "${inbound_file}" | paste -sd, -
+}
+
+xray_agent_inbound_port() {
+    local inbound_file="$1"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r '.inbounds[0].port // empty' "${inbound_file}"
+}
+
+xray_agent_tls_base_path_from_inbound() {
+    local inbound_file="$1"
+    local fallback_path base_path
+    [[ -f "${inbound_file}" ]] || return 0
+    fallback_path="$(jq -r '.inbounds[0].settings.fallbacks[]? | select(.path) | .path' "${inbound_file}" | head -1)"
+    base_path="${fallback_path#/}"
+    case "${base_path}" in
+        *vws) base_path="${base_path%vws}" ;;
+        *ws) base_path="${base_path%ws}" ;;
+    esac
+    printf '%s\n' "${base_path}"
+}
+
+xray_agent_tls_domain_from_inbound() {
+    local inbound_file="$1"
+    local cert_path cert_file
+    [[ -f "${inbound_file}" ]] || return 0
+    cert_path="$(jq -r '.inbounds[0].streamSettings.tlsSettings.certificates[0].certificateFile // empty' "${inbound_file}")"
+    cert_file="${cert_path##*/}"
+    printf '%s\n' "${cert_file%.crt}"
+}
+
+xray_agent_nginx_server_name() {
+    local nginx_file
+    nginx_file="$(xray_agent_nginx_conf_file "alone.conf")"
+    [[ -f "${nginx_file}" ]] || return 0
+    awk '$1 == "server_name" && $2 ~ /\./ {gsub(";","",$2); print $2; exit}' "${nginx_file}"
+}
+
+xray_agent_reality_value() {
+    local inbound_file="$1"
+    local jq_filter="$2"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r "${jq_filter}" "${inbound_file}"
+}
+
+xray_agent_parse_x25519_field() {
+    local output="$1"
+    local field="$2"
+    awk -F ':' -v field="${field}" '
+        BEGIN {
+            wanted = tolower(field)
+            gsub(/[[:space:]_-]/, "", wanted)
+        }
+        {
+            key = tolower($1)
+            gsub(/[[:space:]_-]/, "", key)
+            if (key == wanted) {
+                value = $0
+                sub(/^[^:]*:[[:space:]]*/, "", value)
+                print value
+                exit
+            }
+        }
+    ' <<<"${output}"
+}
+
+xray_agent_generate_reality_keypair() {
+    local reality_keypair
+    [[ -x "${ctlPath:-}" ]] || return 1
+    reality_keypair="$("${ctlPath}" x25519 2>/dev/null)" || return 1
+    RealityPrivateKey="$(xray_agent_parse_x25519_field "${reality_keypair}" "Private key")"
+    RealityPublicKey="$(xray_agent_parse_x25519_field "${reality_keypair}" "Public key")"
+    [[ -n "${RealityPrivateKey}" && -n "${RealityPublicKey}" ]]
+}
+
+xray_agent_reality_public_key_from_private() {
+    local private_key="$1"
+    local reality_keypair
+    [[ -n "${private_key}" && -x "${ctlPath:-}" ]] || return 1
+    reality_keypair="$("${ctlPath}" x25519 -i "${private_key}" 2>/dev/null)" || return 1
+    xray_agent_parse_x25519_field "${reality_keypair}" "Public key"
+}
+
+xray_agent_ensure_reality_public_key() {
+    local derived_public_key
+    if [[ -n "${RealityPrivateKey:-}" ]]; then
+        derived_public_key="$(xray_agent_reality_public_key_from_private "${RealityPrivateKey}" || true)"
+        if [[ -n "${derived_public_key}" ]]; then
+            RealityPublicKey="${derived_public_key}"
+        fi
+    fi
+    [[ -n "${RealityPublicKey:-}" ]]
+}
+
+xray_agent_reality_public_key_value() {
+    if xray_agent_ensure_reality_public_key; then
+        printf '%s\n' "${RealityPublicKey}"
+    fi
+}
+
+xray_agent_xhttp_path_from_inbound() {
+    local inbound_file="$1"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r '.inbounds[0].streamSettings.xhttpSettings.path // empty' "${inbound_file}" | awk -F "[/]" '{print $2}'
+}
+
+xray_agent_xhttp_mode_from_inbound() {
+    local inbound_file="$1"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r '.inbounds[0].streamSettings.xhttpSettings.mode // "auto"' "${inbound_file}"
+}
+
 initVar() {
     installType='yum -y install'
     removeType='yum -y remove'
@@ -33,8 +174,8 @@ initVar() {
     release=
     updateReleaseInfoChange=
     nginxConfigPath=/etc/nginx/conf.d/
-    configPath=/etc/xray-agent/xray/conf/
-    ctlPath=/etc/xray-agent/xray/xray
+    configPath="${XRAY_AGENT_XRAY_CONF_DIR}/"
+    ctlPath="${XRAY_AGENT_XRAY_BINARY}"
     prereleaseStatus=false
     sslType=
     TLSDomain=
@@ -118,16 +259,16 @@ checkCPUVendor() {
 }
 
 xray_agent_run_legacy_migrations() {
-    mkdir -p /etc/xray-agent/tls /etc/xray-agent/xray/conf
-    if [[ -f "/etc/xray-agent/xray/conf/10_outbounds.json" ]] && [[ ! -f "/etc/xray-agent/xray/conf/10_ipv4_outbounds.json" ]]; then
-        mv /etc/xray-agent/xray/conf/10_outbounds.json /etc/xray-agent/xray/conf/10_ipv4_outbounds.json
+    mkdir -p "${XRAY_AGENT_TLS_DIR}" "${XRAY_AGENT_XRAY_CONF_DIR}"
+    if [[ -f "$(xray_agent_xray_conf_file "10_outbounds.json")" ]] && [[ ! -f "$(xray_agent_xray_conf_file "10_ipv4_outbounds.json")" ]]; then
+        mv "$(xray_agent_xray_conf_file "10_outbounds.json")" "$(xray_agent_xray_conf_file "10_ipv4_outbounds.json")"
     fi
 }
 
 readInstallType() {
     coreInstallType=
     reuse443=
-    if [[ -d "/etc/xray-agent" ]]; then
+    if [[ -d "${XRAY_AGENT_ETC_DIR}" ]]; then
         if [[ -d "/etc/xray-agent/xray" && -f "${ctlPath}" ]]; then
             if [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}02_VLESS_TCP_inbounds.json" ]] && [[ -f "${configPath}07_VLESS_Reality_TCP_inbounds.json" ]]; then
                 coreInstallType=3
@@ -182,36 +323,37 @@ readConfigHostPathUUID() {
     RealityShortID=
     XHTTPMode=auto
 
-    if [[ -f "${configPath}${frontingType}.json" ]]; then
-        local fallback
-        fallback=$(jq -r -c '.inbounds[0].settings.fallbacks[]|select(.path)' "${configPath}${frontingType}.json" | head -1)
-        path=$(echo "${fallback}" | jq -r .path | awk -F "[/]" '{print $2}' | awk -F "[w][s]" '{print $1}')
-        if [[ -z "${path}" ]]; then
-            path=$(echo "${fallback}" | jq -r .path | awk -F "[/]" '{print $2}' | awk -F "[v][w][s]" '{print $1}')
-        fi
-        Port=$(jq -r .inbounds[0].port "${configPath}${frontingType}.json")
-        domain=$(grep "server_name" "${nginxConfigPath}alone.conf" | awk '$2 ~ /\./ {gsub(";","",$2); print $2; exit}')
-        UUID=$(jq -r '.inbounds[0].settings.clients[] | .id' "${configPath}${frontingType}.json" | paste -sd, -)
-        TLSDomain=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].certificateFile "${configPath}${frontingType}.json" | awk -F "[/]" '{print $5}' | awk -F "[.][c][r][t]" '{print $1}')
+    local tls_inbound_file reality_inbound_file xhttp_inbound_file
+    tls_inbound_file="$(xray_agent_tls_inbound_file 2>/dev/null || true)"
+    reality_inbound_file="$(xray_agent_reality_inbound_file 2>/dev/null || true)"
+    xhttp_inbound_file="$(xray_agent_xhttp_inbound_file)"
+
+    if [[ -n "${tls_inbound_file}" && -f "${tls_inbound_file}" ]]; then
+        path="$(xray_agent_tls_base_path_from_inbound "${tls_inbound_file}")"
+        Port="$(xray_agent_inbound_port "${tls_inbound_file}")"
+        domain="$(xray_agent_nginx_server_name)"
+        UUID="$(xray_agent_inbound_clients_csv "${tls_inbound_file}")"
+        TLSDomain="$(xray_agent_tls_domain_from_inbound "${tls_inbound_file}")"
     fi
 
-    if [[ -f "${configPath}${RealityfrontingType}.json" ]]; then
+    if [[ -n "${reality_inbound_file}" && -f "${reality_inbound_file}" ]]; then
         if [[ -z "${path}" ]]; then
-            UUID=$(jq -r '.inbounds[0].settings.clients[] | .id' "${configPath}${RealityfrontingType}.json" | paste -sd, -)
+            UUID="$(xray_agent_inbound_clients_csv "${reality_inbound_file}")"
         fi
-        RealityServerNames=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames | join(",")' "${configPath}${RealityfrontingType}.json")
-        RealityPublicKey=$(jq -r .inbounds[0].streamSettings.realitySettings.publicKey "${configPath}${RealityfrontingType}.json")
-        RealityPort=$(jq -r .inbounds[0].port "${configPath}${RealityfrontingType}.json")
-        RealityDestDomain=$(jq -r .inbounds[0].streamSettings.realitySettings.dest "${configPath}${RealityfrontingType}.json")
-        RealityPrivateKey=$(jq -r .inbounds[0].streamSettings.realitySettings.privateKey "${configPath}${RealityfrontingType}.json")
-        RealityShortID=$(jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0] // empty' "${configPath}${RealityfrontingType}.json")
-        if [[ -z "${path}" ]] && [[ -f "${configPath}08_VLESS_XHTTP_inbounds.json" ]]; then
-            path=$(jq -r .inbounds[0].streamSettings.xhttpSettings.path "${configPath}08_VLESS_XHTTP_inbounds.json" | awk -F "[/]" '{print $2}')
+        RealityServerNames="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.serverNames | join(",")')"
+        RealityPublicKey="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.publicKey // .inbounds[0].streamSettings.realitySettings.password // empty')"
+        RealityPort="$(xray_agent_inbound_port "${reality_inbound_file}")"
+        RealityDestDomain="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.target // .inbounds[0].streamSettings.realitySettings.dest // empty')"
+        RealityPrivateKey="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.privateKey')"
+        RealityShortID="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.shortIds[0] // empty')"
+        xray_agent_ensure_reality_public_key || true
+        if [[ -z "${path}" && -f "${xhttp_inbound_file}" ]]; then
+            path="$(xray_agent_xhttp_path_from_inbound "${xhttp_inbound_file}")"
         fi
     fi
 
-    if [[ -f "${configPath}08_VLESS_XHTTP_inbounds.json" ]]; then
-        XHTTPMode=$(jq -r '.inbounds[0].streamSettings.xhttpSettings.mode // "auto"' "${configPath}08_VLESS_XHTTP_inbounds.json")
+    if [[ -f "${xhttp_inbound_file}" ]]; then
+        XHTTPMode="$(xray_agent_xhttp_mode_from_inbound "${xhttp_inbound_file}")"
     fi
 }
 

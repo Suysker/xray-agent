@@ -1,7 +1,7 @@
 # menu-map
 
-- `1` -> `profiles/install/tls_vision_xhttp.profile` -> `lib/protocols.sh`
-- `2` -> `profiles/install/reality_vision_xhttp.profile` -> `lib/protocols.sh`
+- `1` -> `lib/cli.sh` -> `profiles/install/tls_vision_xhttp.profile` -> `lib/installer.sh`
+- `2` -> `lib/cli.sh` -> `profiles/install/reality_vision_xhttp.profile` -> `lib/installer.sh`
 - `3` -> `lib/accounts.sh`
 - `4` -> `lib/nginx.sh`
 - `5` -> `lib/tls.sh`

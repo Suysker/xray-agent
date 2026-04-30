@@ -6,16 +6,16 @@ server {
     keepalive_timeout 1071906480m;
 
     location ${NGINX_XHTTP_PATH} {
-        proxy_pass http://127.0.0.1:31305;
-        proxy_http_version 1.1;
-        proxy_set_header Host ${XRAY_DOLLAR}host;
-        proxy_set_header X-Real-IP ${XRAY_DOLLAR}proxy_protocol_addr;
-        proxy_set_header X-Forwarded-For ${XRAY_DOLLAR}proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto ${XRAY_DOLLAR}scheme;
-        proxy_set_header X-Forwarded-Host ${XRAY_DOLLAR}host;
-        proxy_set_header X-Forwarded-Port ${XRAY_DOLLAR}server_port;
-        proxy_read_timeout 1071906480m;
-        proxy_send_timeout 1071906480m;
+        grpc_pass grpc://127.0.0.1:31305;
+        grpc_set_header Host ${XRAY_DOLLAR}host;
+        grpc_set_header X-Real-IP ${XRAY_DOLLAR}proxy_protocol_addr;
+        grpc_set_header X-Forwarded-For ${XRAY_DOLLAR}proxy_add_x_forwarded_for;
+        grpc_set_header X-Forwarded-Proto ${XRAY_DOLLAR}scheme;
+        grpc_set_header X-Forwarded-Host ${XRAY_DOLLAR}host;
+        grpc_set_header X-Forwarded-Port ${XRAY_DOLLAR}server_port;
+        grpc_read_timeout 1071906480m;
+        grpc_send_timeout 1071906480m;
+        grpc_socket_keepalive on;
         client_body_timeout 1071906480m;
         client_max_body_size 0;
     }

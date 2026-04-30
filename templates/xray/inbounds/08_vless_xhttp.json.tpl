@@ -12,9 +12,7 @@
       "streamSettings": {
         "network": "xhttp",
         "xhttpSettings": {
-          "path": "${XRAY_XHTTP_PATH}",
-          "mode": "${XRAY_XHTTP_MODE}",
-          "headers": ${XRAY_XHTTP_HEADERS_JSON}
+          "path": "${XRAY_XHTTP_PATH}"
         },
         "sockopt": ${XRAY_SOCKOPT_JSON}
       },

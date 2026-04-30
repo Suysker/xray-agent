@@ -1,1 +1,1 @@
-vless://${XRAY_SHARE_UUID}@${XRAY_SHARE_ADDRESS}:${XRAY_SHARE_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${XRAY_SHARE_SNI}&fp=chrome&pbk=${XRAY_SHARE_PUBLIC_KEY}&spx=%2F&type=tcp&headerType=none#${XRAY_SHARE_NAME}
+vless://${XRAY_SHARE_UUID}@${XRAY_SHARE_ADDRESS}:${XRAY_SHARE_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${XRAY_SHARE_SNI}&fp=${XRAY_SHARE_FP}${XRAY_SHARE_REALITY_PARAMS}&type=tcp&headerType=none#${XRAY_SHARE_NAME}

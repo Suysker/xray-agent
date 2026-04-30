@@ -6,7 +6,7 @@ fi
 
 xray_agent_render_nginx_alone_conf() {
     local profile_name="$1"
-    local upstream_url="${2:-https://www.kaggle.com}"
+    local upstream_url="${2:-https://huggingface.co}"
     export NGINX_HTTP_PORT="127.0.0.1:31300 http2 so_keepalive=on"
     export SERVER_NAME="${domain}"
     export UPSTREAM_URL="${upstream_url}"
@@ -22,7 +22,9 @@ updateRedirectNginxConf() {
     if declare -F xray_agent_cleanup_default_nginx_site >/dev/null 2>&1; then
         xray_agent_cleanup_default_nginx_site
     fi
-    xray_agent_render_nginx_alone_conf "$1" "https://www.kaggle.com"
+    if [[ "$1" == "Vision" ]]; then
+        xray_agent_render_nginx_alone_conf "$1" "https://huggingface.co"
+    fi
     if ([[ "${coreInstallType}" == "1" ]] && [[ "$1" == "Reality" ]]) || ([[ "${coreInstallType}" == "2" ]] && [[ "$1" == "Vision" ]]) || [[ "${coreInstallType}" == "3" ]]; then
         xray_agent_blank
         echoContent red "=============================================================="

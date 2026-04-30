@@ -92,18 +92,15 @@ xray_agent_cn_blackhole_rule_json() {
 xray_agent_append_routing_rule_json() {
     local target_file="$1"
     local rule_json="$2"
-    local routing
-    routing=$(jq --argjson rule "${rule_json}" '.routing.rules += [$rule]' "${target_file}")
-    echo "${routing}" | jq . >"${target_file}"
+    xray_agent_json_update_file "${target_file}" '.routing.rules += [$rule]' --argjson rule "${rule_json}"
 }
 
 xray_agent_append_outbound_by_tag() {
     local target_file="$1"
     local outbound_tag="$2"
-    local outbound_json outbounds
+    local outbound_json
     outbound_json="$(xray_agent_render_outbound_by_tag "${outbound_tag}")"
-    outbounds=$(jq --argjson outbound "${outbound_json}" '.outbounds += [$outbound]' "${target_file}")
-    echo "${outbounds}" | jq . >"${target_file}"
+    xray_agent_json_update_file "${target_file}" '.outbounds += [$outbound]' --argjson outbound "${outbound_json}"
 }
 
 xray_agent_apply_routing_profile() {
@@ -255,8 +252,7 @@ unInstallOutbounds() {
         local ipv6OutIndex
         ipv6OutIndex=$(jq .outbounds[].tag "${configPath}10_ipv4_outbounds.json" | awk '{print ""NR""":"$0}' | grep "${tag}" | awk -F "[:]" '{print $1}' | head -1)
         if [[ ${ipv6OutIndex} -gt 0 ]]; then
-            routing=$(jq -r 'del(.outbounds['$((ipv6OutIndex - 1))'])' "${configPath}10_ipv4_outbounds.json")
-            echo "${routing}" | jq . >"${configPath}10_ipv4_outbounds.json"
+            xray_agent_json_update_file "${configPath}10_ipv4_outbounds.json" "del(.outbounds[$((ipv6OutIndex - 1))])"
         fi
     fi
 }
@@ -283,8 +279,7 @@ unInstallRouting() {
                     delStatus=0
                 fi
                 if [[ ${delStatus} == 1 ]]; then
-                    routing=$(jq -r 'del(.routing.rules['$((index - 1))'])' "${configPath}09_routing.json")
-                    echo "${routing}" | jq . >"${configPath}09_routing.json"
+                    xray_agent_json_update_file "${configPath}09_routing.json" "del(.routing.rules[$((index - 1))])"
                 fi
             done
         fi

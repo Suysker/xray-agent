@@ -92,7 +92,7 @@ xray_agent_access_log_config_json() {
 }
 
 xray_agent_write_access_log_config() {
-    xray_agent_access_log_config_json "$1" | jq . >"${configPath}00_log.json"
+    xray_agent_json_write "${configPath}00_log.json" "$(xray_agent_access_log_config_json "$1")"
 }
 
 xray_agent_render_dokodemo_port() {
@@ -103,6 +103,11 @@ xray_agent_render_dokodemo_port() {
 }
 
 addCorePort() {
+    if [[ "${coreInstallType}" != "1" ]] && [[ "${coreInstallType}" != "3" ]]; then
+        echoContent red " ---> 未安装，请使用脚本安装"
+        menu
+        exit 0
+    fi
     echoContent yellow "# 只给TLS+VISION添加新端口，永远不会支持Reality(Reality只建议用443)"
     xray_agent_blank
     echoContent yellow "1.添加端口"
@@ -157,21 +162,19 @@ manageSniffing() {
         1)
             find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
                 if [[ "${current_sniffing}" == "true" ]]; then
-                    updated_json=$(jq '.inbounds[].sniffing.enabled = false' "${configfile}")
+                    xray_agent_json_update_file "${configfile}" '.inbounds[].sniffing.enabled = false'
                 else
-                    updated_json=$(jq '.inbounds[].sniffing.enabled = true' "${configfile}")
+                    xray_agent_json_update_file "${configfile}" '.inbounds[].sniffing.enabled = true'
                 fi
-                echo "${updated_json}" | jq . >"${configfile}"
             done
             ;;
         2)
             find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
                 if [[ "${current_routeOnly}" == "true" ]]; then
-                    updated_json=$(jq '.inbounds[].sniffing.routeOnly = false' "${configfile}")
+                    xray_agent_json_update_file "${configfile}" '.inbounds[].sniffing.routeOnly = false'
                 else
-                    updated_json=$(jq '.inbounds[].sniffing.routeOnly = true' "${configfile}")
+                    xray_agent_json_update_file "${configfile}" '.inbounds[].sniffing.routeOnly = true'
                 fi
-                echo "${updated_json}" | jq . >"${configfile}"
             done
             ;;
     esac
@@ -191,8 +194,7 @@ xray_agent_apply_trusted_x_forwarded_for() {
     local target_path="$1"
     local trusted_source="${2:-127.0.0.1}"
     [[ -f "${target_path}" ]] || return 0
-    jq --arg trustedSource "${trusted_source}" '.inbounds[0].streamSettings.sockopt.trustedXForwardedFor = [$trustedSource]' "${target_path}" >"${target_path}.tmp" &&
-        mv "${target_path}.tmp" "${target_path}"
+    xray_agent_json_update_file "${target_path}" '.inbounds[0].streamSettings.sockopt.trustedXForwardedFor = [$trustedSource]' --arg trustedSource "${trusted_source}"
 }
 
 xray_agent_apply_trusted_xff_patch() {
@@ -223,33 +225,30 @@ manageSockopt() {
         1)
             find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
                 if [[ "${current_tcpMptcp}" == "true" ]]; then
-                    updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp = false' "${configfile}")
+                    xray_agent_json_update_file "${configfile}" '.inbounds[].streamSettings.sockopt.tcpMptcp = false'
                 else
-                    updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp = true' "${configfile}")
+                    xray_agent_json_update_file "${configfile}" '.inbounds[].streamSettings.sockopt.tcpMptcp = true'
                 fi
-                echo "${updated_json}" | jq . >"${configfile}"
             done
             ;;
         2)
             find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
                 if [[ "${current_tcpNoDelay}" == "true" ]]; then
-                    updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay = false' "${configfile}")
+                    xray_agent_json_update_file "${configfile}" '.inbounds[].streamSettings.sockopt.tcpNoDelay = false'
                 else
-                    updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpNoDelay = true' "${configfile}")
+                    xray_agent_json_update_file "${configfile}" '.inbounds[].streamSettings.sockopt.tcpNoDelay = true'
                 fi
-                echo "${updated_json}" | jq . >"${configfile}"
             done
             ;;
         3)
             find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
                 if [[ "${current_tcpFastOpen}" == "true" ]]; then
-                    updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpFastOpen = false' "${configfile}")
+                    xray_agent_json_update_file "${configfile}" '.inbounds[].streamSettings.sockopt.tcpFastOpen = false'
                     sed -i '/net.ipv4.tcp_fastopen/d' /etc/sysctl.conf
                 else
-                    updated_json=$(jq '.inbounds[].streamSettings.sockopt.tcpFastOpen = true' "${configfile}")
+                    xray_agent_json_update_file "${configfile}" '.inbounds[].streamSettings.sockopt.tcpFastOpen = true'
                     sed -i '$a net.ipv4.tcp_fastopen=3' /etc/sysctl.conf
                 fi
-                echo "${updated_json}" | jq . >"${configfile}"
             done
             sysctl -p
             ;;

@@ -18,11 +18,10 @@
         "security": "reality",
         "realitySettings": {
           "show": false,
-          "dest": "${XRAY_REALITY_DEST}",
+          "target": "${XRAY_REALITY_TARGET}",
           "xver": 0,
           "serverNames": ${XRAY_REALITY_SERVER_NAMES_JSON},
           "privateKey": "${XRAY_REALITY_PRIVATE_KEY}",
-          "publicKey": "${XRAY_REALITY_PUBLIC_KEY}",
           "shortIds": ${XRAY_REALITY_SHORT_IDS_JSON}
         },
         "sockopt": ${XRAY_SOCKOPT_JSON}

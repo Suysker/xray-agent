@@ -203,6 +203,7 @@ allowPort() {
         if ! firewall-cmd --list-ports --permanent | grep -qw "${port}/${type}"; then
             update_firewall_status=true
             firewall-cmd --zone=public --add-port="${port}/${type}" --permanent
+            firewall-cmd --zone=public --add-port="${port}/${type}" --permanent --add-rich-rule="rule family=ipv6"
             checkFirewalldAllowPort "${port}"
         fi
         if [[ "${update_firewall_status}" == "true" ]]; then
@@ -318,8 +319,7 @@ customPortFunction() {
     if [[ "$1" == "Vision" ]]; then
         Port="${port}"
         if [[ -f "${configPath}${frontingType}.json" ]]; then
-            updated_json=$(jq ".inbounds[0].port = ${port}" "${configPath}${frontingType}.json")
-            echo "${updated_json}" | jq . >"${configPath}${frontingType}.json"
+            xray_agent_json_update_file "${configPath}${frontingType}.json" ".inbounds[0].port = ${port}"
         fi
         if [[ "${historyCustomPortStatus}" == "n" ]]; then
             rm -rf "$(find ${configPath}* | grep "dokodemodoor")"
@@ -327,8 +327,7 @@ customPortFunction() {
     elif [[ "$1" == "Reality" ]]; then
         RealityPort="${port}"
         if [[ -f "${configPath}${RealityfrontingType}.json" ]]; then
-            updated_json=$(jq ".inbounds[0].port = ${port}" "${configPath}${RealityfrontingType}.json")
-            echo "${updated_json}" | jq . >"${configPath}${RealityfrontingType}.json"
+            xray_agent_json_update_file "${configPath}${RealityfrontingType}.json" ".inbounds[0].port = ${port}"
         fi
     fi
 }
