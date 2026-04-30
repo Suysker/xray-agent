@@ -4,12 +4,13 @@ xray-agent 已从单文件安装脚本收口为一套模块化的 Xray profile b
 
 ## 当前状态
 
-- 以本仓库 `master:install.sh` 为兼容基线，保留菜单 1-23、`RenewTLS` 兼容入口、TLS/Reality 套餐、多用户、WARP/IPv6/黑名单、日志、证书、伪装站、外部工具菜单。
+- 以本仓库 `master:install.sh` 为兼容基线，保留菜单 1-23、`RenewTLS` 兼容入口、TLS/Reality 套餐、多用户、WARP/IPv6/黑名单、日志、证书、伪装站、外部工具菜单；Hysteria2 已收口为工具管理里的 Xray-core 内置协议管理。
 - 运行时只加载领域级 `lib/*.sh` 模块，不再保留旧碎片化 `lib/<domain>/*.sh`、旧 `profiles/*.env`、旧平铺模板。
 - CLI、安装编排、协议渲染已经分层：`cli.sh` 管菜单和参数路由，`installer.sh` 管 install profile 和安装流水线，`protocols.sh` 只管协议 profile 与配置渲染。
 - 协议渲染、安装组合、分享链接导出统一从 `profiles/*.profile` 和重要配置模板读取；一行默认值、小 JSON 片段、cron 行和包源行由领域代码生成。
-- Xray 配置与分享链接按 Xray-core 源码优先审计：Reality 服务端配置不写客户端 `publicKey`，XHTTP 默认只写必要 `path`，分享 URI 按官方约定编码并补齐 Reality/XHTTP 参数。
-- install profile 的 `protocols=` 直接决定 TLS/Reality 套餐渲染哪些 inbound；`steps=` 进一步决定安装流水线顺序；`xrayCoreInstall*` 只保留兼容旧入口。
+- Xray 配置与分享链接按 Xray-core 源码优先审计：Reality 服务端配置不写客户端 `publicKey`，XHTTP 默认只写必要 `path`，Hysteria2 使用 Xray-core `hysteria` inbound 和 `finalmask.quicParams`，分享 URI 按官方约定编码。
+- install profile 的 `protocols=` 直接决定 TLS/Reality 套餐渲染哪些 inbound；TLS 套餐默认包含 `VLESS-TCP / VLESS-WS / VMess-WS / XHTTP / Hysteria2`；Reality 套餐安装时可选择同时启用 Hysteria2，默认不强制开启；`steps=` 进一步决定安装流水线顺序。
+- Hysteria2 的连接域名/SNI/证书域名默认复用当前 `domain`/`TLSDomain`，不使用 Reality 目标域名签证书；masquerade 默认优先复用已有 Hy2 配置，其次复用 Nginx 伪装站 upstream，Reality-only 场景再把 Reality 目标域名作为内容源候选。
 - 不引入 upstream/v2ray-agent 的 sing-box、订阅、anytls 等非本仓库 master 主线能力。
 
 ## 目录

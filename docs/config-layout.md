@@ -14,6 +14,8 @@
 
 仓库和运行时都不保留 `verify/` 或 `scripts/check.sh`；配置可读源集中在 `templates/`，但一行默认值、小 JSON 片段、cron 行和包源行不进入模板目录。
 
-Xray 配置模板按 Xray-core 当前源码字段收口：Reality 服务端模板只保留服务端字段，XHTTP 服务端模板只写必要 `path`，分享链接模板只表达稳定外部 URI/legacy JSON 格式。
+Xray 配置模板按 Xray-core 当前源码字段收口：Reality 服务端模板只保留服务端字段，XHTTP 服务端模板只写必要 `path`，Hysteria2 模板使用 `protocol=hysteria`、`network=hysteria`、TLS 证书和可选 `finalmask.quicParams`，分享链接模板只表达稳定外部 URI/legacy JSON 格式。
+
+Hysteria2 运行时默认值由代码按当前环境推导，不拆成 tiny tpl：连接域名/SNI/证书域名默认使用已有 `domain`/`TLSDomain`；masquerade URL 默认顺序是已有 Hy2 配置、Nginx `alone.conf` 的 `proxy_pass`、Reality 目标域名 HTTPS 内容源，最后才要求手动输入。
 
 运行时不新增 `state.json`；安装状态继续从 Xray/Nginx/acme 现有配置反推，反推逻辑集中在 `lib/runtime.sh`。

@@ -6,8 +6,10 @@
 - `4` -> `lib/nginx.sh`
 - `5` -> `lib/tls.sh`
 - `6~8` -> `lib/routing.sh`
-- `9~15` -> `lib/features.sh`
-- `16` -> `lib/apps.sh`
-- `17~23` -> `lib/external.sh`
+- `9~11`、`14~16` -> `lib/features.sh`
+- `12` -> `lib/protocols.sh` -> Xray-core Hysteria2 管理，显示在工具管理分组
+- `13` -> `lib/core.sh`
+- `17` -> `lib/apps.sh`
+- `18~23` -> `lib/external.sh`
 
-默认入口只暴露本仓库 `master:install.sh` 的 1-23 项菜单。
+默认入口只暴露 1-23 项菜单。菜单能力保持本仓库 `master:install.sh` 兼容，编号按当前显示顺序从上到下连续排列；Hysteria2 是内置协议管理，不属于其他功能或外部脚本。

@@ -19,14 +19,14 @@ xray_agent_print_banner() {
 
 xray_agent_print_install_menu_items() {
     if [[ "${coreInstallType}" == "1" || "${coreInstallType}" == "3" ]]; then
-        echoContent yellow "1.重新安装TLS套餐(VLESS-TCP/VLESS-WS/VMess-WS/XHTTP)"
+        echoContent yellow "1.重新安装TLS套餐(VLESS-TCP/VLESS-WS/VMess-WS/XHTTP/Hysteria2)"
     else
-        echoContent yellow "1.安装TLS套餐(VLESS-TCP/VLESS-WS/VMess-WS/XHTTP)"
+        echoContent yellow "1.安装TLS套餐(VLESS-TCP/VLESS-WS/VMess-WS/XHTTP/Hysteria2)"
     fi
     if [[ "${coreInstallType}" == "2" || "${coreInstallType}" == "3" ]]; then
-        echoContent yellow "2.重新安装Reality套餐(VLESS-TCP/XHTTP)"
+        echoContent yellow "2.重新安装Reality套餐(VLESS-TCP/XHTTP，可选Hysteria2)"
     else
-        echoContent yellow "2.安装Reality套餐(VLESS-TCP/XHTTP)"
+        echoContent yellow "2.安装Reality套餐(VLESS-TCP/XHTTP，可选Hysteria2)"
     fi
 }
 
@@ -41,26 +41,26 @@ xray_agent_print_management_menu_items() {
     echoContent yellow "9.添加新端口"
     echoContent yellow "10.流量嗅探管理"
     echoContent yellow "11.sockopt进阶管理"
+    echoContent yellow "12.Hysteria2管理"
 }
 
 xray_agent_print_version_menu_items() {
     echoContent skyBlue "-------------------------版本管理-----------------------------"
-    echoContent yellow "12.core管理"
-    echoContent yellow "13.更新脚本"
+    echoContent yellow "13.core管理"
+    echoContent yellow "14.更新脚本"
 }
 
 xray_agent_print_script_menu_items() {
     echoContent skyBlue "-------------------------脚本管理-----------------------------"
-    echoContent yellow "14.查看日志"
-    echoContent yellow "15.卸载脚本"
+    echoContent yellow "15.查看日志"
+    echoContent yellow "16.卸载脚本"
 }
 
 xray_agent_print_external_menu_items() {
     echoContent skyBlue "-------------------------其他功能-----------------------------"
-    echoContent yellow "16.Adguardhome"
-    echoContent yellow "17.WARP"
-    echoContent yellow "18.内核管理及BBR优化"
-    echoContent yellow "19.Hysteria一键"
+    echoContent yellow "17.Adguardhome"
+    echoContent yellow "18.WARP"
+    echoContent yellow "19.内核管理及BBR优化"
     echoContent yellow "20.五网测速+IPV6"
     echoContent yellow "21.三网回程路由测试"
     echoContent yellow "22.流媒体解锁检测"
@@ -91,14 +91,14 @@ xray_agent_dispatch_menu_selection() {
         9) addCorePort 1 ;;
         10) manageSniffing 1 ;;
         11) manageSockopt 1 ;;
-        12) xrayVersionManageMenu 1 ;;
-        13) updateXRayAgent 1 ;;
-        14) checkLog 1 ;;
-        15) unInstall 1 ;;
-        16) AdguardManageMenu 1 ;;
-        17) xray_agent_external_warp_menu ;;
-        18) xray_agent_external_kernel_bbr ;;
-        19) xray_agent_external_hysteria_oneclick ;;
+        12) xray_agent_hysteria2_manage_menu ;;
+        13) xrayVersionManageMenu 1 ;;
+        14) updateXRayAgent 1 ;;
+        15) checkLog 1 ;;
+        16) unInstall 1 ;;
+        17) AdguardManageMenu 1 ;;
+        18) xray_agent_external_warp_menu ;;
+        19) xray_agent_external_kernel_bbr ;;
         20) xray_agent_external_hyperspeed ;;
         21) xray_agent_external_backtrace ;;
         22) xray_agent_external_unlock_media ;;

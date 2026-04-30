@@ -228,6 +228,16 @@ checkPort() {
     fi
 }
 
+checkUDPPort() {
+    local port="$1"
+    local port_progress
+    port_progress=$(lsof -nP -iUDP:"${port}" 2>/dev/null | awk 'NR>1 {print $1; exit}')
+    if [[ -n "${port_progress}" && "${port_progress}" != "xray" ]]; then
+        xray_agent_blank
+        xray_agent_error " ---> UDP ${port}端口被占用，请手动关闭后安装"
+    fi
+}
+
 handleNginx() {
     if [[ -z $(pgrep -f "nginx") ]] && [[ "$1" == "start" ]]; then
         systemctl start nginx 2>/etc/xray-agent/nginx_error.log

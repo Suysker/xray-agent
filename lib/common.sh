@@ -78,7 +78,7 @@ xray_agent_trim_quotes() {
 xray_agent_urlencode() {
     local value="$1"
     if command -v jq >/dev/null 2>&1; then
-        jq -nr --arg value "${value}" '$value | @uri'
+        jq -nr --arg value "${value}" '$value | @uri' | tr -d '\r'
         return 0
     fi
     value="${value//'%'/%25}"
@@ -159,6 +159,10 @@ xray_agent_json_query() {
         return 0
     fi
     jq -r "${jq_filter}" "${target_path}" 2>/dev/null | head -1
+}
+
+xray_agent_json_string() {
+    jq -Rn --arg value "$1" '$value' | tr -d '\r'
 }
 
 xray_agent_render_template() {

@@ -77,6 +77,8 @@ xray_agent_generate_clients_json() {
             {id: .}
           elif $protocol == "VMESS_WS" then
             {id: ., alterId: 0}
+          elif $protocol == "HYSTERIA2" then
+            {auth: ., level: 0, email: .}
           else
             {id: .}
           end
@@ -151,6 +153,9 @@ xray_agent_protocol_port_value() {
         RealityPort)
             echo "${RealityPort}"
             ;;
+        hysteria2)
+            echo "443"
+            ;;
         auto)
             if [[ "${variant}" == "reality" ]]; then
                 echo "${RealityPort}"
@@ -195,6 +200,9 @@ xray_agent_protocol_path_value() {
             ;;
         path_vws)
             echo "/${path}vws"
+            ;;
+        *)
+            echo ""
             ;;
     esac
 }
@@ -303,4 +311,235 @@ xray_agent_render_vless_xhttp_inbound() {
     export XRAY_SNIFFING_JSON="${sniffing_json}"
     XRAY_SOCKOPT_JSON="$(xray_agent_sockopt_with_proxy_protocol "false")"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/inbounds/${XRAY_AGENT_PROTOCOL_INBOUND_TEMPLATE}" "${configPath}${XRAY_AGENT_PROTOCOL_CONFIG_FILE}"
+}
+
+xray_agent_hysteria2_default_masquerade_url() {
+    local include_existing="${1:-true}"
+    local candidate
+
+    if [[ "${include_existing}" == "true" && -n "${Hysteria2MasqueradeURL:-}" ]]; then
+        printf '%s\n' "${Hysteria2MasqueradeURL}"
+        return 0
+    fi
+
+    candidate="$(xray_agent_hysteria2_nginx_masquerade_url)"
+    if [[ -n "${candidate}" ]]; then
+        printf '%s\n' "${candidate}"
+        return 0
+    fi
+
+    candidate="$(xray_agent_hysteria2_reality_masquerade_url)"
+    if [[ -n "${candidate}" ]]; then
+        printf '%s\n' "${candidate}"
+        return 0
+    fi
+
+    printf ''
+}
+
+xray_agent_hysteria2_nginx_masquerade_url() {
+    local nginx_file="${nginxConfigPath:-}/alone.conf"
+    [[ -f "${nginx_file}" ]] || return 0
+    awk '$1 == "proxy_pass" && $2 ~ /^https?:\/\// {gsub(";","",$2); print $2; exit}' "${nginx_file}"
+}
+
+xray_agent_hysteria2_reality_masquerade_url() {
+    local target="${RealityDestDomain:-}"
+    target="${target//\"/}"
+    [[ -n "${target}" ]] || return 0
+    target="${target%%,*}"
+    target="${target#https://}"
+    target="${target#http://}"
+    target="${target%%/*}"
+    target="${target%%:*}"
+    [[ -n "${target}" ]] || return 0
+    printf 'https://%s/\n' "${target}"
+}
+
+xray_agent_hysteria2_default_domain() {
+    if [[ -n "${domain:-}" ]]; then
+        printf '%s\n' "${domain}"
+    elif [[ -n "${TLSDomain:-}" ]]; then
+        printf '%s\n' "${TLSDomain}"
+    fi
+}
+
+xray_agent_hysteria2_prompt_mbps() {
+    local label="$1"
+    local default_value="${2:-0}"
+    local input_value
+    while true; do
+        read -r -p "${label}[Mbps，回车默认${default_value}，0表示不开Brutal]:" input_value
+        input_value="${input_value:-${default_value}}"
+        if [[ "${input_value}" =~ ^[0-9]+$ ]]; then
+            printf '%s\n' "${input_value}"
+            return 0
+        fi
+        echoContent red " ---> 请输入整数 Mbps" >&2
+    done
+}
+
+xray_agent_hysteria2_prepare_tls_domain() {
+    local default_domain input_domain
+    default_domain="$(xray_agent_hysteria2_default_domain)"
+    if [[ -n "${default_domain}" ]]; then
+        echoContent yellow "请输入 Hysteria2 使用的域名[回车使用 ${default_domain}]:"
+        read -r -p "域名:" input_domain
+        if [[ -n "${input_domain}" && "${input_domain}" != "${default_domain}" ]]; then
+            domain="${input_domain}"
+            TLSDomain=
+        else
+            domain="${default_domain}"
+        fi
+    else
+        echoContent yellow "请输入 Hysteria2 使用的域名[必须是自己控制且可签发证书的真实域名]:"
+        read -r -p "域名:" domain
+    fi
+    [[ -n "${domain:-}" ]] || xray_agent_error " ---> Hysteria2 域名不可为空"
+    TLSDomain="${TLSDomain:-${domain}}"
+
+    if [[ ! -f "/etc/xray-agent/tls/${TLSDomain}.crt" || ! -f "/etc/xray-agent/tls/${TLSDomain}.key" ]]; then
+        installTLS 1 0
+    fi
+}
+
+xray_agent_hysteria2_prepare_runtime() {
+    local reuse_hysteria2_config="n"
+    local default_masquerade_url input_masquerade_url
+    xray_agent_hysteria2_prepare_tls_domain
+    echoContent yellow " ---> Hysteria2 需要当前 Xray-core 支持 protocol=hysteria；旧内核请先用菜单12升级"
+    checkUDPPort 443
+    allowPort 443 udp
+
+    if [[ -n "${Hysteria2MasqueradeURL:-}" ]]; then
+        read -r -p "读取到上次 Hysteria2 配置，是否继续使用？[Y/n]:" reuse_hysteria2_config
+        reuse_hysteria2_config="${reuse_hysteria2_config:-y}"
+    fi
+
+    if [[ "${reuse_hysteria2_config}" != "y" ]]; then
+        default_masquerade_url="$(xray_agent_hysteria2_default_masquerade_url false)"
+        if [[ -n "${default_masquerade_url}" ]]; then
+            echoContent yellow "请输入 Hysteria2 伪装站 URL，[回车使用 ${default_masquerade_url}]:"
+        else
+            echoContent yellow "请输入 Hysteria2 伪装站 URL[例如 https://www.example.com/]:"
+        fi
+        read -r -p "URL:" input_masquerade_url
+        Hysteria2MasqueradeURL="${input_masquerade_url:-${default_masquerade_url}}"
+        [[ -n "${Hysteria2MasqueradeURL}" ]] || xray_agent_error " ---> Hysteria2 伪装站 URL 不可为空"
+        Hysteria2BrutalUpMbps="$(xray_agent_hysteria2_prompt_mbps "上行带宽" "${Hysteria2BrutalUpMbps:-0}")"
+        Hysteria2BrutalDownMbps="$(xray_agent_hysteria2_prompt_mbps "下行带宽" "${Hysteria2BrutalDownMbps:-0}")"
+    fi
+
+    Hysteria2Port=443
+}
+
+xray_agent_hysteria2_finalmask_suffix() {
+    local up_mbps="${Hysteria2BrutalUpMbps:-0}"
+    local down_mbps="${Hysteria2BrutalDownMbps:-0}"
+    local quic_params
+
+    if [[ "${up_mbps}" == "0" && "${down_mbps}" == "0" ]]; then
+        printf ''
+        return 0
+    fi
+
+    quic_params="$(jq -nc \
+        --arg up "${up_mbps} mbps" \
+        --arg down "${down_mbps} mbps" \
+        --argjson useUp "$([[ "${up_mbps}" == "0" ]] && echo false || echo true)" \
+        --argjson useDown "$([[ "${down_mbps}" == "0" ]] && echo false || echo true)" \
+        '{
+          quicParams:
+            ({congestion:"brutal"}
+            + (if $useUp then {brutalUp:$up} else {} end)
+            + (if $useDown then {brutalDown:$down} else {} end))
+        }')"
+    printf ',\n        "finalmask": %s' "${quic_params}"
+}
+
+xray_agent_render_hysteria2_inbound() {
+    local clients_json="$1"
+    local sniffing_json="$2"
+    xray_agent_load_protocol_profile "hysteria2"
+    export XRAY_HYSTERIA2_CLIENTS_JSON="${clients_json}"
+    export XRAY_HYSTERIA2_MASQUERADE_URL_JSON
+    export XRAY_HYSTERIA2_FINALMASK_SUFFIX
+    export XRAY_SNIFFING_JSON="${sniffing_json}"
+    export XRAY_TLS_DOMAIN="${TLSDomain}"
+    XRAY_HYSTERIA2_MASQUERADE_URL_JSON="$(xray_agent_json_string "${Hysteria2MasqueradeURL:-$(xray_agent_hysteria2_default_masquerade_url)}")"
+    XRAY_HYSTERIA2_FINALMASK_SUFFIX="$(xray_agent_hysteria2_finalmask_suffix)"
+    xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/inbounds/${XRAY_AGENT_PROTOCOL_INBOUND_TEMPLATE}" "${configPath}${XRAY_AGENT_PROTOCOL_CONFIG_FILE}"
+}
+
+xray_agent_hysteria2_render_from_current_users() {
+    local clients_json sniffing_json
+    if [[ -z "${UUID:-}" ]]; then
+        xray_agent_prepare_uuid
+    fi
+    xray_agent_hysteria2_prepare_runtime
+    clients_json="$(xray_agent_generate_clients_json "HYSTERIA2" "${UUID}")"
+    sniffing_json="$(xray_agent_default_sniffing_json)"
+    xray_agent_render_hysteria2_inbound "${clients_json}" "${sniffing_json}"
+}
+
+xray_agent_hysteria2_enable_or_reconfigure() {
+    readInstallType
+    readInstallProtocolType
+    readConfigHostPathUUID
+    if [[ -z "${coreInstallType}" ]]; then
+        echoContent red " ---> 未安装 Xray-core 套餐，请先安装 TLS 或 Reality 套餐"
+        return 1
+    fi
+    xray_agent_hysteria2_render_from_current_users
+    reloadCore
+    readInstallType
+    readInstallProtocolType
+    readConfigHostPathUUID
+    echoContent green " ---> Hysteria2 已启用，UDP/443"
+}
+
+xray_agent_hysteria2_uninstall() {
+    local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
+    if [[ -f "${hysteria2_file}" ]]; then
+        rm -f "${hysteria2_file}"
+        reloadCore
+        echoContent green " ---> Hysteria2 已卸载"
+    else
+        echoContent yellow " ---> Hysteria2 未安装"
+    fi
+}
+
+xray_agent_hysteria2_show_accounts() {
+    local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
+    readConfigHostPathUUID
+    if [[ ! -f "${hysteria2_file}" ]]; then
+        echoContent yellow " ---> Hysteria2 未安装"
+        return 0
+    fi
+    jq -r '.inbounds[0].settings.clients[]?.auth' "${hysteria2_file}" | tr -d '\r' | while read -r auth; do
+        [[ -n "${auth}" ]] || continue
+        xray_agent_blank
+        echoContent skyBlue " ---> 账号:${auth}"
+        defaultBase64Code hysteria2 "${auth}"
+    done
+}
+
+xray_agent_hysteria2_manage_menu() {
+    local hysteria2_status
+    readInstallType
+    readInstallProtocolType
+    readConfigHostPathUUID
+    xray_agent_blank
+    echoContent skyBlue "功能 1/${totalProgress} : Hysteria2"
+    echoContent red "=============================================================="
+    echoContent yellow "1.查看 Hysteria2 账号"
+    echoContent yellow "2.启用或重配 Hysteria2"
+    echoContent yellow "3.卸载 Hysteria2"
+    echoContent red "=============================================================="
+    read -r -p "请输入:" hysteria2_status
+    case "${hysteria2_status}" in
+        1) xray_agent_hysteria2_show_accounts ;;
+        2) xray_agent_hysteria2_enable_or_reconfigure ;;
+        3) xray_agent_hysteria2_uninstall ;;
+    esac
 }

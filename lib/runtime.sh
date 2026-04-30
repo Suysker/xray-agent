@@ -42,23 +42,33 @@ xray_agent_xhttp_inbound_file() {
     xray_agent_xray_conf_file "08_VLESS_XHTTP_inbounds.json"
 }
 
+xray_agent_hysteria2_inbound_file() {
+    xray_agent_xray_conf_file "09_Hysteria2_inbounds.json"
+}
+
 xray_agent_inbound_clients_csv() {
     local inbound_file="$1"
     [[ -f "${inbound_file}" ]] || return 0
-    jq -r '.inbounds[0].settings.clients[]?.id' "${inbound_file}" | paste -sd, -
+    jq -r '.inbounds[0].settings.clients[]?.id' "${inbound_file}" | tr -d '\r' | paste -sd, -
+}
+
+xray_agent_hysteria2_clients_csv() {
+    local inbound_file="$1"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r '.inbounds[0].settings.clients[]?.auth' "${inbound_file}" | tr -d '\r' | paste -sd, -
 }
 
 xray_agent_inbound_port() {
     local inbound_file="$1"
     [[ -f "${inbound_file}" ]] || return 0
-    jq -r '.inbounds[0].port // empty' "${inbound_file}"
+    jq -r '.inbounds[0].port // empty' "${inbound_file}" | tr -d '\r'
 }
 
 xray_agent_tls_base_path_from_inbound() {
     local inbound_file="$1"
     local fallback_path base_path
     [[ -f "${inbound_file}" ]] || return 0
-    fallback_path="$(jq -r '.inbounds[0].settings.fallbacks[]? | select(.path) | .path' "${inbound_file}" | head -1)"
+    fallback_path="$(jq -r '.inbounds[0].settings.fallbacks[]? | select(.path) | .path' "${inbound_file}" | tr -d '\r' | head -1)"
     base_path="${fallback_path#/}"
     case "${base_path}" in
         *vws) base_path="${base_path%vws}" ;;
@@ -71,7 +81,7 @@ xray_agent_tls_domain_from_inbound() {
     local inbound_file="$1"
     local cert_path cert_file
     [[ -f "${inbound_file}" ]] || return 0
-    cert_path="$(jq -r '.inbounds[0].streamSettings.tlsSettings.certificates[0].certificateFile // empty' "${inbound_file}")"
+    cert_path="$(jq -r '.inbounds[0].streamSettings.tlsSettings.certificates[0].certificateFile // empty' "${inbound_file}" | tr -d '\r')"
     cert_file="${cert_path##*/}"
     printf '%s\n' "${cert_file%.crt}"
 }
@@ -87,7 +97,7 @@ xray_agent_reality_value() {
     local inbound_file="$1"
     local jq_filter="$2"
     [[ -f "${inbound_file}" ]] || return 0
-    jq -r "${jq_filter}" "${inbound_file}"
+    jq -r "${jq_filter}" "${inbound_file}" | tr -d '\r'
 }
 
 xray_agent_parse_x25519_field() {
@@ -148,13 +158,13 @@ xray_agent_reality_public_key_value() {
 xray_agent_xhttp_path_from_inbound() {
     local inbound_file="$1"
     [[ -f "${inbound_file}" ]] || return 0
-    jq -r '.inbounds[0].streamSettings.xhttpSettings.path // empty' "${inbound_file}" | awk -F "[/]" '{print $2}'
+    jq -r '.inbounds[0].streamSettings.xhttpSettings.path // empty' "${inbound_file}" | tr -d '\r' | awk -F "[/]" '{print $2}'
 }
 
 xray_agent_xhttp_mode_from_inbound() {
     local inbound_file="$1"
     [[ -f "${inbound_file}" ]] || return 0
-    jq -r '.inbounds[0].streamSettings.xhttpSettings.mode // "auto"' "${inbound_file}"
+    jq -r '.inbounds[0].streamSettings.xhttpSettings.mode // "auto"' "${inbound_file}" | tr -d '\r'
 }
 
 initVar() {
@@ -307,6 +317,9 @@ readInstallProtocolType() {
         if echo "${row}" | grep -q VLESS_XHTTP_inbounds; then
             currentInstallProtocolType=${currentInstallProtocolType}'8'
         fi
+        if echo "${row}" | grep -q Hysteria2_inbounds; then
+            currentInstallProtocolType=${currentInstallProtocolType}'9'
+        fi
     done < <(find "${configPath}" -name "*inbounds.json" 2>/dev/null | awk -F "[.]" '{print $1}')
 }
 
@@ -322,11 +335,16 @@ readConfigHostPathUUID() {
     RealityDestDomain=
     RealityShortID=
     XHTTPMode=auto
+    Hysteria2Port=
+    Hysteria2MasqueradeURL=
+    Hysteria2BrutalUpMbps=
+    Hysteria2BrutalDownMbps=
 
-    local tls_inbound_file reality_inbound_file xhttp_inbound_file
+    local tls_inbound_file reality_inbound_file xhttp_inbound_file hysteria2_inbound_file
     tls_inbound_file="$(xray_agent_tls_inbound_file 2>/dev/null || true)"
     reality_inbound_file="$(xray_agent_reality_inbound_file 2>/dev/null || true)"
     xhttp_inbound_file="$(xray_agent_xhttp_inbound_file)"
+    hysteria2_inbound_file="$(xray_agent_hysteria2_inbound_file)"
 
     if [[ -n "${tls_inbound_file}" && -f "${tls_inbound_file}" ]]; then
         path="$(xray_agent_tls_base_path_from_inbound "${tls_inbound_file}")"
@@ -354,6 +372,22 @@ readConfigHostPathUUID() {
 
     if [[ -f "${xhttp_inbound_file}" ]]; then
         XHTTPMode="$(xray_agent_xhttp_mode_from_inbound "${xhttp_inbound_file}")"
+    fi
+
+    if [[ -f "${hysteria2_inbound_file}" ]]; then
+        Hysteria2Port="$(xray_agent_inbound_port "${hysteria2_inbound_file}")"
+        Hysteria2MasqueradeURL="$(jq -r '.inbounds[0].streamSettings.hysteriaSettings.masquerade.url // empty' "${hysteria2_inbound_file}" | tr -d '\r')"
+        Hysteria2BrutalUpMbps="$(jq -r '.inbounds[0].streamSettings.finalmask.quicParams.brutalUp // empty' "${hysteria2_inbound_file}" | tr -d '\r' | awk '{print $1}')"
+        Hysteria2BrutalDownMbps="$(jq -r '.inbounds[0].streamSettings.finalmask.quicParams.brutalDown // empty' "${hysteria2_inbound_file}" | tr -d '\r' | awk '{print $1}')"
+        if [[ -z "${TLSDomain}" ]]; then
+            TLSDomain="$(xray_agent_tls_domain_from_inbound "${hysteria2_inbound_file}")"
+        fi
+        if [[ -z "${domain}" ]]; then
+            domain="${TLSDomain}"
+        fi
+        if [[ -z "${UUID}" ]]; then
+            UUID="$(xray_agent_hysteria2_clients_csv "${hysteria2_inbound_file}")"
+        fi
     fi
 }
 
@@ -386,6 +420,9 @@ showInstallStatus() {
         fi
         if echo "${currentInstallProtocolType}" | grep -q 8; then
             xray_agent_print_inline yellow "VLESS+XHTTP "
+        fi
+        if echo "${currentInstallProtocolType}" | grep -q 9; then
+            xray_agent_print_inline yellow "Hysteria2 "
         fi
     fi
 }

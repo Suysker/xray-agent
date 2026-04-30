@@ -1,0 +1,16 @@
+name=hysteria2
+inbound_template=09_hysteria2.json.tpl
+share_template=hysteria2.tpl
+protocol=hysteria
+transport=hysteria
+security=tls
+flow=
+address_source=domain
+port_source=hysteria2
+sni_source=domain
+path_source=
+mode=
+alpn=h3
+fp=
+client_kind=HYSTERIA2
+config_file=09_Hysteria2_inbounds.json

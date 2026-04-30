@@ -15,13 +15,20 @@ customUUID() {
     local config_file
     for config_file in "${configPath}${frontingType}.json" "${configPath}${RealityfrontingType}.json"; do
         [[ -f "${config_file}" ]] || continue
-        if jq -e --arg uuid "${currentCustomUUID}" 'any(.inbounds[0].settings.clients[]?; .id == $uuid)' "${config_file}" >/dev/null; then
+        if jq -e --arg uuid "${currentCustomUUID}" 'any(.inbounds[0].settings.clients[]?; (.id? == $uuid) or (.auth? == $uuid))' "${config_file}" >/dev/null; then
             echoContent red " ---> UUID已存在，请重新输入"
             currentCustomUUID=
             customUUID
             return 0
         fi
     done
+    config_file="${configPath}09_Hysteria2_inbounds.json"
+    if [[ -f "${config_file}" ]] && jq -e --arg uuid "${currentCustomUUID}" 'any(.inbounds[0].settings.clients[]?; .auth? == $uuid)' "${config_file}" >/dev/null; then
+        echoContent red " ---> UUID已存在，请重新输入"
+        currentCustomUUID=
+        customUUID
+        return 0
+    fi
 }
 
 xray_agent_append_client_to_inbound() {
@@ -68,6 +75,11 @@ addUser() {
             xhttp_user="${xhttp_user//\,\"alterId\":0/}"
             xray_agent_append_client_to_inbound "${configPath}08_VLESS_XHTTP_inbounds.json" "${xhttp_user}"
         fi
+        if echo "${currentInstallProtocolType}" | grep -q 9; then
+            local hysteria2_user
+            hysteria2_user="$(jq -nc --arg auth "${uuid}" '{auth:$auth,level:0,email:$auth}')"
+            xray_agent_append_client_to_inbound "${configPath}09_Hysteria2_inbounds.json" "${hysteria2_user}"
+        fi
     done
     reloadCore
 }
@@ -75,7 +87,7 @@ addUser() {
 xray_agent_remove_client_from_inbound() {
     local target_file="$1"
     local user_id="$2"
-    xray_agent_json_update_file "${target_file}" '(.inbounds[0].settings.clients|=. - map(select(.id == $uid)))' --arg uid "${user_id}"
+    xray_agent_json_update_file "${target_file}" '(.inbounds[0].settings.clients|=. - map(select((.id? == $uid) or (.auth? == $uid))))' --arg uid "${user_id}"
 }
 
 removeUser() {
@@ -85,6 +97,9 @@ removeUser() {
         userIds=$(jq -r -c .inbounds[0].settings.clients[].id "${configPath}${RealityfrontingType}.json" | sort | uniq)
     else
         userIds=$(jq -r -c .inbounds[0].settings.clients[].id "${configPath}${frontingType}.json" | sort | uniq)
+    fi
+    if [[ -f "${configPath}09_Hysteria2_inbounds.json" ]]; then
+        userIds=$({ printf '%s\n' "${userIds}"; jq -r -c '.inbounds[0].settings.clients[]?.auth' "${configPath}09_Hysteria2_inbounds.json" | tr -d '\r'; } | sed '/^$/d' | sort | uniq)
     fi
     echo "${userIds}" | awk '{print NR""":"$0}'
     read -r -p "请选择要删除的用户编号[仅支持单个删除]:" delUserIndex
@@ -105,6 +120,9 @@ removeUser() {
         fi
         if echo "${currentInstallProtocolType}" | grep -q 8; then
             xray_agent_remove_client_from_inbound "${configPath}08_VLESS_XHTTP_inbounds.json" "${userIdToDelete}"
+        fi
+        if echo "${currentInstallProtocolType}" | grep -q 9; then
+            xray_agent_remove_client_from_inbound "${configPath}09_Hysteria2_inbounds.json" "${userIdToDelete}"
         fi
         reloadCore
     fi
@@ -169,6 +187,16 @@ showAccounts() {
             xray_agent_blank
             echoContent skyBlue " ---> 账号:${uuid}"
             defaultBase64Code vlessxhttp "${uuid}"
+        done
+    fi
+    if echo "${currentInstallProtocolType}" | grep -q 9; then
+        show=1
+        echoContent skyBlue "=============================== Hysteria2 ==============================="
+        jq .inbounds[0].settings.clients "${configPath}09_Hysteria2_inbounds.json" | jq -c '.[]' | while read -r user; do
+            uuid=$(echo "${user}" | jq -r .auth | tr -d '\r')
+            xray_agent_blank
+            echoContent skyBlue " ---> 账号:${uuid}"
+            defaultBase64Code hysteria2 "${uuid}"
         done
     fi
     if [[ -z "${show}" ]]; then
@@ -335,6 +363,12 @@ defaultBase64Code() {
                 echoContent green "协议类型: VLESS XHTTP，地址: $(getPublicIP)，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_xhttp reality)，用户ID: ${id}，传输方式: XHTTP，client-fingerprint: chrome，账户名: ${id}"
             fi
             ;;
+        hysteria2)
+            echoContent yellow " ---> 通用格式 (Hysteria2)"
+            echoContent green "$(xray_agent_build_hysteria2_uri "${id}")"
+            echoContent yellow " ---> 格式化明文 (Hysteria2)"
+            echoContent green "协议类型: Hysteria2，地址: ${domain}，端口: 443/UDP，SNI: ${domain}，auth: ${id}，账户名: ${id}"
+            ;;
     esac
 }
 
@@ -386,4 +420,19 @@ xray_agent_build_vmess_ws_uri() {
         "${port}" \
         "${query}" \
         "$(xray_agent_urlencode "${id}")"
+}
+
+xray_agent_build_hysteria2_uri() {
+    local auth="$1"
+    xray_agent_load_protocol_profile "hysteria2" || return 1
+    local address port sni XRAY_SHARE_AUTH XRAY_SHARE_ADDRESS XRAY_SHARE_PORT XRAY_SHARE_SNI XRAY_SHARE_NAME
+    address="$(xray_agent_protocol_address_value "tls")"
+    port="$(xray_agent_protocol_port_value "tls")"
+    sni="$(xray_agent_protocol_sni_value "tls")"
+    XRAY_SHARE_AUTH="$(xray_agent_urlencode "${auth}")"
+    XRAY_SHARE_ADDRESS="$(xray_agent_uri_authority_host "${address}")"
+    XRAY_SHARE_PORT="${port}"
+    XRAY_SHARE_SNI="$(xray_agent_urlencode "${sni}")"
+    XRAY_SHARE_NAME="$(xray_agent_urlencode "${auth}")"
+    xray_agent_render_share_template_text "${XRAY_AGENT_PROTOCOL_SHARE_TEMPLATE}"
 }

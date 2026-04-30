@@ -12,10 +12,6 @@ xray_agent_external_hyperspeed() {
     bash <(curl -Lso- https://bench.im/hyperspeed)
 }
 
-xray_agent_external_hysteria_oneclick() {
-    bash <(curl -fsSL https://get.hy2.sh)
-}
-
 xray_agent_external_kernel_bbr() {
     wget -N https://raw.githubusercontent.com/jinwyp/one_click_script/master/install_kernel.sh && bash install_kernel.sh
 }

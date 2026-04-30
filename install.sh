@@ -62,26 +62,34 @@ xray_agent_ensure_jq_on_path() {
 }
 
 xray_agent_runtime_layout_complete() {
-    [[ -f "${SCRIPT_DIR}/lib/common.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/runtime.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/system.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/tls.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/core.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/nginx.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/protocols.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/accounts.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/routing.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/features.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/apps.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/external.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/installer.sh" ]] &&
-        [[ -f "${SCRIPT_DIR}/lib/cli.sh" ]] &&
-        [[ -d "${SCRIPT_DIR}/profiles/install" ]] &&
-        [[ -d "${SCRIPT_DIR}/templates/xray" ]] &&
-        [[ -d "${SCRIPT_DIR}/templates/nginx" ]] &&
-        [[ -d "${SCRIPT_DIR}/templates/systemd" ]] &&
-        [[ -d "${SCRIPT_DIR}/templates/share" ]] &&
-        [[ -d "${SCRIPT_DIR}/packaging" ]]
+    local required_path
+    for required_path in \
+        "${SCRIPT_DIR}/lib/common.sh" \
+        "${SCRIPT_DIR}/lib/runtime.sh" \
+        "${SCRIPT_DIR}/lib/system.sh" \
+        "${SCRIPT_DIR}/lib/tls.sh" \
+        "${SCRIPT_DIR}/lib/core.sh" \
+        "${SCRIPT_DIR}/lib/nginx.sh" \
+        "${SCRIPT_DIR}/lib/protocols.sh" \
+        "${SCRIPT_DIR}/lib/accounts.sh" \
+        "${SCRIPT_DIR}/lib/routing.sh" \
+        "${SCRIPT_DIR}/lib/features.sh" \
+        "${SCRIPT_DIR}/lib/apps.sh" \
+        "${SCRIPT_DIR}/lib/external.sh" \
+        "${SCRIPT_DIR}/lib/installer.sh" \
+        "${SCRIPT_DIR}/lib/cli.sh" \
+        "${SCRIPT_DIR}/profiles/install" \
+        "${SCRIPT_DIR}/profiles/protocol" \
+        "${SCRIPT_DIR}/profiles/routing" \
+        "${SCRIPT_DIR}/templates/xray/base" \
+        "${SCRIPT_DIR}/templates/xray/inbounds" \
+        "${SCRIPT_DIR}/templates/xray/outbounds" \
+        "${SCRIPT_DIR}/templates/nginx" \
+        "${SCRIPT_DIR}/templates/systemd" \
+        "${SCRIPT_DIR}/templates/share" \
+        "${SCRIPT_DIR}/packaging"; do
+        [[ -e "${required_path}" ]] || return 1
+    done
 }
 
 xray_agent_download_bootstrap_archive() {

@@ -9,4 +9,4 @@
 
 - 以 master/install.sh 为行为基准
 - 新结构以领域级模块为唯一实现源，不把旧 `install.sh` 视为内部 API
-- 非本仓库 master 主线的 experimental、native TUN、native Hysteria2 不参与默认入口和验收
+- 非本仓库 master 主线的 experimental、native TUN 不参与默认入口和验收；Hysteria2 已作为 Xray-core 内置协议加入 TLS 套餐和工具管理菜单，不再走外部 YAML 服务。

@@ -7,7 +7,7 @@
 - `readInstallType/readInstallProtocolType/readConfigHostPathUUID/showInstallStatus` -> `lib/runtime.sh`
 - `menu/xray_agent_main/RenewTLS 参数路由` -> `lib/cli.sh`
 - `installTools/installNginxTools/mkdirTools` -> `lib/system.sh`
-- `allowPort/checkFirewalldAllowPort/checkUFWAllowPort/checkPort` -> `lib/system.sh`
+- `allowPort/checkFirewalldAllowPort/checkUFWAllowPort/checkPort/checkUDPPort` -> `lib/system.sh`
 - `handleXray/handleNginx/installXrayService/customPortFunction` -> `lib/system.sh`
 - `installCronTLS/auto_update_geodata` -> `lib/system.sh`
 - `switchSSLType/customSSLEmail/acmeInstallSSL` -> `lib/tls.sh`
@@ -25,6 +25,7 @@
 - `manageUser/showAccounts/defaultBase64Code` -> `lib/accounts.sh`
 - `showAccounts/defaultBase64Code` 保留 master 的通用链接、VMess JSON 和明文账号输出；`reuse443=y` 时所有分享端口统一输出 `443`；VMess 额外输出官方 URI 格式。
 - Reality/XHTTP 分享链接按 Xray-core 官方分享标准补齐 `pbk/sid/spx`、`host/path/mode`，并统一 URL encode。
+- Hysteria2 作为 Xray-core 内置协议加入 TLS 套餐；Reality 套餐可在安装时选择启用 Hysteria2；菜单 12 显示在工具管理并管理内置 Hysteria2，分享链接使用 `hysteria2://` URI，不再调用官方 Hysteria 外部一键脚本。
 - `warpRouting/blacklist/ipv6Routing/unInstallRouting/unInstallOutbounds` -> `lib/routing.sh`
 - `manageSniffing/manageSockopt/checkLog/addCorePort/unInstall/updateXRayAgent/aliasInstall` -> `lib/features.sh`
 - `AdguardManageMenu` -> `lib/apps.sh`，包括安装/升级/卸载/启停、DNS 接管/恢复和运行状态提示。

@@ -81,7 +81,7 @@ xray_agent_default_install_profile_steps() {
             echo "install_tools,init_tls_nginx,stop_xray,install_tls,install_xray,install_service,random_path,custom_port_vision,update_nginx_vision,render_tls_bundle,install_cron_tls,reload_core,update_geodata,check_gfw,show_accounts"
             ;;
         xrayCoreInstall_Reality)
-            echo "install_tools,stop_xray,install_xray,install_service,init_reality,warning_reality_target,random_path,custom_port_reality,warning_xhttp_port,update_nginx_reality,render_reality_bundle,reload_core,update_geodata,check_gfw,show_accounts"
+            echo "install_tools,stop_xray,install_xray,install_service,init_reality,warning_reality_target,random_path,custom_port_reality,warning_xhttp_port,update_nginx_reality,optional_hysteria2,render_reality_bundle,reload_core,update_geodata,check_gfw,show_accounts"
             ;;
     esac
 }
@@ -91,7 +91,7 @@ xray_agent_set_install_profile_defaults() {
     case "${entry_name}" in
         xrayCoreInstall)
             XRAY_AGENT_INSTALL_PROFILE_NAME="${XRAY_AGENT_INSTALL_PROFILE_NAME:-tls_vision_xhttp}"
-            XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS="${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS:-vless_tcp_tls,vless_ws_tls,vmess_ws_tls,vless_xhttp}"
+            XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS="${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS:-vless_tcp_tls,vless_ws_tls,vmess_ws_tls,vless_xhttp,hysteria2}"
             XRAY_AGENT_INSTALL_PROFILE_ENTRY="xrayCoreInstall"
             XRAY_AGENT_INSTALL_PROFILE_STEPS="${XRAY_AGENT_INSTALL_PROFILE_STEPS:-$(xray_agent_default_install_profile_steps "xrayCoreInstall")}"
             ;;
@@ -176,6 +176,7 @@ xray_agent_dispatch_install_profile_step() {
         warning_xhttp_port) xray_agent_tls_warning_for_xhttp_port "${RealityPort}" ;;
         update_nginx_vision) updateRedirectNginxConf "Vision" "${progress_index}" ;;
         update_nginx_reality) updateRedirectNginxConf "Reality" "${progress_index}" ;;
+        optional_hysteria2) xray_agent_offer_optional_hysteria2 "${progress_index}" ;;
         render_tls_bundle) xray_agent_render_tls_bundle ;;
         render_reality_bundle) xray_agent_render_reality_bundle ;;
         install_cron_tls) installCronTLS "${progress_index}" ;;
@@ -188,6 +189,33 @@ xray_agent_dispatch_install_profile_step() {
             return 1
             ;;
     esac
+}
+
+xray_agent_install_profile_append_protocol() {
+    local protocol_name="$1"
+    case ",${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS}," in
+        *",${protocol_name},"*) ;;
+        *) XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS="${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS},${protocol_name}" ;;
+    esac
+}
+
+xray_agent_offer_optional_hysteria2() {
+    local progress_index="$1"
+    local default_answer="n"
+    local answer prompt
+    xray_agent_blank
+    echoContent skyBlue "进度 ${progress_index}/${totalProgress} : Hysteria2可选安装"
+    if [[ -f "${configPath}09_Hysteria2_inbounds.json" ]]; then
+        default_answer="y"
+        prompt="检测到已有 Hysteria2 配置，是否保留并重配到本次 Reality 套餐？[Y/n]:"
+    else
+        prompt="是否同时安装 Hysteria2？[y/N]:"
+    fi
+    read -r -p "${prompt}" answer
+    answer="${answer:-${default_answer}}"
+    if [[ "${answer}" == "y" || "${answer}" == "Y" ]]; then
+        xray_agent_install_profile_append_protocol "hysteria2"
+    fi
 }
 
 xray_agent_run_install_profile_steps() {
@@ -266,6 +294,11 @@ xray_agent_render_install_profile_protocol() {
             xray_agent_render_vless_xhttp_inbound "${clients_json}" "31305" "${sniffing_json}"
             rendered_path="${configPath}08_VLESS_XHTTP_inbounds.json"
             ;;
+        hysteria2)
+            clients_json="$(xray_agent_clients_json_for_protocol_profile "${protocol_name}")" || return 1
+            xray_agent_render_hysteria2_inbound "${clients_json}" "${sniffing_json}"
+            rendered_path="${configPath}09_Hysteria2_inbounds.json"
+            ;;
         *)
             echoContent red " ---> 未知协议 profile: ${protocol_name}"
             return 1
@@ -332,6 +365,9 @@ xray_agent_render_install_bundle() {
     sniffing_json="$(xray_agent_default_sniffing_json)"
     IFS=',' read -r -a XRAY_AGENT_INSTALL_PROFILE_PROTOCOL_LIST <<<"${XRAY_AGENT_INSTALL_PROFILE_PROTOCOLS}"
     for protocol_name in "${XRAY_AGENT_INSTALL_PROFILE_PROTOCOL_LIST[@]}"; do
+        if [[ "${protocol_name}" == "hysteria2" ]]; then
+            xray_agent_hysteria2_prepare_runtime || return 1
+        fi
         rendered_path="$(xray_agent_render_install_profile_protocol "${protocol_name}" "${accept_proxy_protocol}" "${sniffing_json}")" || return 1
         [[ -n "${rendered_path}" ]] || continue
         rendered_paths+=("${rendered_path}")
