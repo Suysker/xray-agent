@@ -89,6 +89,106 @@ generate_clients() {
     xray_agent_generate_clients_json "$1" "$2"
 }
 
+xray_agent_generate_vless_decryption() {
+    local vlessenc_output
+    if ! xray_agent_xray_supports_command vlessenc; then
+        return 1
+    fi
+    vlessenc_output="$("${ctlPath}" vlessenc 2>/dev/null)" || return 1
+    awk '
+        /Authentication: ML-KEM-768/ {pq = 1; next}
+        pq && /"decryption"/ {
+            split($0, part, "\"")
+            print part[4]
+            exit
+        }
+    ' <<<"${vlessenc_output}"
+}
+
+xray_agent_vless_decryption_key_material() {
+    local decryption="$1"
+    printf '%s\n' "${decryption}" | awk -F '.' '{print $NF}'
+}
+
+xray_agent_vless_encryption_from_decryption() {
+    local decryption="$1"
+    local key_material generated_output client_key
+    [[ -n "${decryption}" && "${decryption}" != "none" ]] || {
+        printf 'none\n'
+        return 0
+    }
+    key_material="$(xray_agent_vless_decryption_key_material "${decryption}")"
+    case "${#key_material}" in
+        43)
+            generated_output="$("${ctlPath}" x25519 -i "${key_material}" 2>/dev/null)" || return 1
+            client_key="$(xray_agent_parse_x25519_field "${generated_output}" "Public key")"
+            ;;
+        86)
+            generated_output="$("${ctlPath}" mlkem768 -i "${key_material}" 2>/dev/null)" || return 1
+            client_key="$(xray_agent_parse_x25519_field "${generated_output}" "Client")"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    [[ -n "${client_key}" ]] || return 1
+    printf 'mlkem768x25519plus.native.0rtt.%s\n' "${client_key}"
+}
+
+xray_agent_prepare_vless_encryption() {
+    if [[ -n "${VLESSDecryption:-}" && "${VLESSDecryption}" != "none" ]]; then
+        VLESSEncryption="$(xray_agent_vless_encryption_from_decryption "${VLESSDecryption}" || true)"
+        [[ -n "${VLESSEncryption}" ]] && return 0
+    fi
+    VLESSDecryption="$(xray_agent_generate_vless_decryption || true)"
+    if [[ -n "${VLESSDecryption}" ]]; then
+        VLESSEncryption="$(xray_agent_vless_encryption_from_decryption "${VLESSDecryption}" || true)"
+        [[ -n "${VLESSEncryption}" ]] && return 0
+    fi
+    VLESSDecryption="none"
+    VLESSEncryption="none"
+    echoContent yellow " ---> 当前 Xray-core 不支持或无法生成 VLESS Encryption，VLESS WS/XHTTP 将使用 encryption=none。"
+}
+
+xray_agent_generate_ech_material() {
+    local ech_domain="$1"
+    local ech_output
+    if ! xray_agent_xray_supports_tls_ech; then
+        return 1
+    fi
+    ech_output="$("${ctlPath}" tls ech --serverName "${ech_domain}" 2>/dev/null)" || return 1
+    ECHConfigList="$(awk '/^ECH config list:/ {getline; gsub(/\r/, "", $0); print; exit}' <<<"${ech_output}")"
+    ECHServerKeys="$(awk '/^ECH server keys:/ {getline; gsub(/\r/, "", $0); print; exit}' <<<"${ech_output}")"
+    [[ -n "${ECHConfigList}" && -n "${ECHServerKeys}" ]]
+}
+
+xray_agent_prepare_tls_ech() {
+    local ech_domain="${TLSDomain:-${domain:-}}"
+    if [[ -n "${ECHServerKeys:-}" ]]; then
+        ECHConfigList="$(xray_agent_tls_ech_config_list_value || true)"
+        return 0
+    fi
+    [[ -n "${ech_domain}" ]] || return 0
+    if ! xray_agent_generate_ech_material "${ech_domain}"; then
+        ECHServerKeys=
+        ECHConfigList=
+        echoContent yellow " ---> 当前 Xray-core 不支持或无法生成 TLS ECH，TLS 分享不会输出 ech。"
+    fi
+}
+
+xray_agent_tls_ech_server_keys_json_entry() {
+    if [[ -n "${ECHServerKeys:-}" ]]; then
+        printf ',\n          "echServerKeys": %s' "$(xray_agent_json_string "${ECHServerKeys}")"
+    fi
+}
+
+xray_agent_vless_decryption_for_inbound() {
+    case "$1" in
+        direct) printf '%s\n' "${VLESSDecryption:-none}" ;;
+        *) printf 'none\n' ;;
+    esac
+}
+
 xray_agent_protocol_variant() {
     local requested_variant="${1:-}"
     if [[ -n "${requested_variant}" ]]; then
@@ -252,6 +352,57 @@ xray_agent_short_ids_json_array() {
       | if $ids == [] then [""] else $ids end'
 }
 
+xray_agent_generate_mldsa65_material() {
+    local mldsa_output
+    if ! xray_agent_xray_supports_command mldsa65; then
+        return 1
+    fi
+    mldsa_output="$("${ctlPath}" mldsa65 2>/dev/null)" || return 1
+    RealityMldsa65Seed="$(xray_agent_parse_x25519_field "${mldsa_output}" "Seed")"
+    RealityMldsa65Verify="$(xray_agent_parse_x25519_field "${mldsa_output}" "Verify")"
+    [[ -n "${RealityMldsa65Seed}" && -n "${RealityMldsa65Verify}" ]]
+}
+
+xray_agent_reality_target_certificate_length() {
+    local target="$1"
+    local tls_ping_output
+    [[ -n "${target}" && -x "${ctlPath:-}" ]] || return 1
+    tls_ping_output="$("${ctlPath}" tls ping "${target}" 2>/dev/null)" || return 1
+    awk -F '[:(]' '/Certificate chain.*total length/ {gsub(/[^0-9]/, "", $2); print $2; exit}' <<<"${tls_ping_output}"
+}
+
+xray_agent_reality_target_allows_mldsa65() {
+    local target="$1"
+    local cert_length
+    cert_length="$(xray_agent_reality_target_certificate_length "${target}" || true)"
+    [[ -n "${cert_length}" ]] || return 1
+    [[ "${cert_length}" -le 3500 ]]
+}
+
+xray_agent_prepare_reality_mldsa65() {
+    if [[ -n "${RealityMldsa65Seed:-}" ]]; then
+        RealityMldsa65Verify="$(xray_agent_reality_mldsa65_verify_value || true)"
+        return 0
+    fi
+    if ! xray_agent_reality_target_allows_mldsa65 "${RealityDestDomain}"; then
+        RealityMldsa65Seed=
+        RealityMldsa65Verify=
+        echoContent yellow " ---> Reality 目标 TLS 预检不适合启用 ML-DSA-65，已跳过 pqv。建议更换证书链更短且行为稳定的 target。"
+        return 0
+    fi
+    if ! xray_agent_generate_mldsa65_material; then
+        RealityMldsa65Seed=
+        RealityMldsa65Verify=
+        echoContent yellow " ---> 当前 Xray-core 不支持或无法生成 ML-DSA-65，Reality 分享不会输出 pqv。"
+    fi
+}
+
+xray_agent_reality_mldsa65_seed_json_entry() {
+    if [[ -n "${RealityMldsa65Seed:-}" ]]; then
+        printf ',\n          "mldsa65Seed": %s' "$(xray_agent_json_string "${RealityMldsa65Seed}")"
+    fi
+}
+
 xray_agent_render_vless_tcp_tls_inbound() {
     local clients_json="$1"
     local accept_proxy_protocol="$2"
@@ -268,8 +419,12 @@ xray_agent_render_vless_tcp_tls_inbound() {
     export XRAY_INBOUND_TAG="VLESSTCP"
     export XRAY_ACCEPT_PROXY_PROTOCOL="${accept_proxy_protocol}"
     export XRAY_TLS_DOMAIN="${TLSDomain}"
+    export XRAY_VLESS_DECRYPTION
+    export XRAY_TLS_ECH_SERVER_KEYS_JSON_ENTRY
     XRAY_FALLBACKS_JSON="$(xray_agent_tls_fallbacks_json)"
     XRAY_SOCKOPT_JSON="$(xray_agent_sockopt_with_proxy_protocol "${accept_proxy_protocol}")"
+    XRAY_VLESS_DECRYPTION="$(xray_agent_vless_decryption_for_inbound fallback)"
+    XRAY_TLS_ECH_SERVER_KEYS_JSON_ENTRY="$(xray_agent_tls_ech_server_keys_json_entry)"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/inbounds/${XRAY_AGENT_PROTOCOL_INBOUND_TEMPLATE}" "${configPath}${XRAY_AGENT_PROTOCOL_CONFIG_FILE}"
 }
 
@@ -279,6 +434,8 @@ xray_agent_render_vless_ws_legacy_config() {
     export XRAY_CLIENTS_JSON="$1"
     export XRAY_SNIFFING_JSON="$2"
     export XRAY_WS_PATH="/${path}ws"
+    export XRAY_VLESS_DECRYPTION
+    XRAY_VLESS_DECRYPTION="$(xray_agent_vless_decryption_for_inbound direct)"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/inbounds/${XRAY_AGENT_PROTOCOL_INBOUND_TEMPLATE}" "${configPath}${XRAY_AGENT_PROTOCOL_CONFIG_FILE}"
 }
 
@@ -308,10 +465,14 @@ xray_agent_render_vless_reality_tcp_inbound() {
     export XRAY_REALITY_SERVER_NAMES_JSON
     export XRAY_REALITY_PRIVATE_KEY="${RealityPrivateKey}"
     export XRAY_REALITY_SHORT_IDS_JSON
+    export XRAY_REALITY_MLDSA65_SEED_JSON_ENTRY
+    export XRAY_VLESS_DECRYPTION
     XRAY_FALLBACKS_JSON="$(xray_agent_reality_fallbacks_json)"
     XRAY_SOCKOPT_JSON="$(xray_agent_sockopt_with_proxy_protocol "${accept_proxy_protocol}")"
     XRAY_REALITY_SERVER_NAMES_JSON="$(xray_agent_csv_json_array "${RealityServerNames}")"
     XRAY_REALITY_SHORT_IDS_JSON="$(xray_agent_short_ids_json_array "${RealityShortID}")"
+    XRAY_REALITY_MLDSA65_SEED_JSON_ENTRY="$(xray_agent_reality_mldsa65_seed_json_entry)"
+    XRAY_VLESS_DECRYPTION="$(xray_agent_vless_decryption_for_inbound fallback)"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/inbounds/${XRAY_AGENT_PROTOCOL_INBOUND_TEMPLATE}" "${configPath}${XRAY_AGENT_PROTOCOL_CONFIG_FILE}"
 }
 
@@ -327,7 +488,9 @@ xray_agent_render_vless_xhttp_inbound() {
     export XRAY_XHTTP_PATH="/${path}"
     export XRAY_SOCKOPT_JSON
     export XRAY_SNIFFING_JSON="${sniffing_json}"
+    export XRAY_VLESS_DECRYPTION
     XRAY_SOCKOPT_JSON="$(xray_agent_sockopt_with_proxy_protocol "false")"
+    XRAY_VLESS_DECRYPTION="$(xray_agent_vless_decryption_for_inbound direct)"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/inbounds/${XRAY_AGENT_PROTOCOL_INBOUND_TEMPLATE}" "${configPath}${XRAY_AGENT_PROTOCOL_CONFIG_FILE}"
 }
 
@@ -426,6 +589,10 @@ xray_agent_hysteria2_prepare_runtime() {
     local default_masquerade_url input_masquerade_url
     xray_agent_hysteria2_prepare_tls_domain
     echoContent yellow " ---> Hysteria2 需要当前 Xray-core 支持 protocol=hysteria；旧内核请先用菜单12升级"
+    if ! xray_agent_xray_supports_hysteria2; then
+        echoContent red " ---> 当前 Xray-core 不支持内置 Hysteria2，请先通过菜单12升级到正式版 v26.3.27 或更新版本。"
+        return 1
+    fi
     if [[ "$(xray_agent_public_ip_total_count)" -gt 1 ]]; then
         echoContent yellow " ---> 检测到多个公网 IP。Hysteria2/UDP 在多出口场景可能需要你确认系统路由和云防火墙，避免 UDP 回复源地址不一致。"
     fi
@@ -463,6 +630,11 @@ xray_agent_hysteria2_finalmask_suffix() {
         printf ''
         return 0
     fi
+    if ! xray_agent_xray_supports_finalmask; then
+        echoContent yellow " ---> 当前 Xray-core 不支持 finalmask.quicParams，Hysteria2 Brutal 参数已跳过。"
+        printf ''
+        return 0
+    fi
 
     quic_params="$(jq -nc \
         --arg up "${up_mbps} mbps" \
@@ -488,8 +660,10 @@ xray_agent_render_hysteria2_inbound() {
     export XRAY_HYSTERIA2_FINALMASK_SUFFIX
     export XRAY_SNIFFING_JSON="${sniffing_json}"
     export XRAY_TLS_DOMAIN="${TLSDomain}"
+    export XRAY_TLS_ECH_SERVER_KEYS_JSON_ENTRY
     XRAY_HYSTERIA2_MASQUERADE_URL_JSON="$(xray_agent_json_string "${Hysteria2MasqueradeURL:-$(xray_agent_hysteria2_default_masquerade_url)}")"
     XRAY_HYSTERIA2_FINALMASK_SUFFIX="$(xray_agent_hysteria2_finalmask_suffix)"
+    XRAY_TLS_ECH_SERVER_KEYS_JSON_ENTRY="$(xray_agent_tls_ech_server_keys_json_entry)"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/inbounds/${XRAY_AGENT_PROTOCOL_INBOUND_TEMPLATE}" "${configPath}${XRAY_AGENT_PROTOCOL_CONFIG_FILE}"
 }
 

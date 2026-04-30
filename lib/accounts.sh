@@ -307,17 +307,62 @@ xray_agent_render_share_template_text() {
 }
 
 xray_agent_reality_share_params() {
-    local public_key sid spider_x
+    local public_key sid spider_x pqv
     public_key="$(xray_agent_reality_public_key_value || true)"
     [[ -n "${public_key}" ]] || return 1
     spider_x="${RealitySpiderX:-/}"
     printf '&pbk=%s' "$(xray_agent_urlencode "${public_key}")"
+    pqv="$(xray_agent_reality_mldsa65_verify_value || true)"
+    if [[ -n "${pqv}" ]]; then
+        printf '&pqv=%s' "$(xray_agent_urlencode "${pqv}")"
+    fi
     if [[ -n "${RealityShortID}" ]]; then
         sid="${RealityShortID//\"/}"
         sid="${sid%%,*}"
         printf '&sid=%s' "$(xray_agent_urlencode "${sid}")"
     fi
     printf '&spx=%s' "$(xray_agent_urlencode "${spider_x}")"
+}
+
+xray_agent_share_encryption_for_profile() {
+    local profile_name="$1"
+    case "${profile_name}" in
+        vless_ws_tls | vless_xhttp)
+            if [[ -z "${VLESSEncryption:-}" && -n "${VLESSDecryption:-}" && "${VLESSDecryption}" != "none" ]]; then
+                VLESSEncryption="$(xray_agent_vless_encryption_from_decryption "${VLESSDecryption}" || true)"
+            fi
+            printf '%s\n' "${VLESSEncryption:-none}"
+            ;;
+        *)
+            printf 'none\n'
+            ;;
+    esac
+}
+
+xray_agent_tls_share_params() {
+    local sni="$1"
+    local ech_config_list cert_hash params=""
+    ech_config_list="$(xray_agent_tls_ech_config_list_value || true)"
+    if [[ -n "${ech_config_list}" ]]; then
+        params="${params}&ech=$(xray_agent_urlencode "${ech_config_list}")"
+    fi
+    cert_hash="$(xray_agent_tls_leaf_sha256 "${TLSDomain:-${domain:-}}" || true)"
+    if [[ -n "${cert_hash}" ]]; then
+        params="${params}&pcs=$(xray_agent_urlencode "${cert_hash}")"
+        params="${params}&vcn=$(xray_agent_urlencode "${sni}")"
+    fi
+    printf '%s\n' "${params}"
+}
+
+xray_agent_share_finalmask_param() {
+    local profile_name="$1"
+    case "${profile_name}" in
+        vless_xhttp)
+            if [[ -n "${XHTTPFinalmaskURI:-}" ]] && xray_agent_xray_supports_finalmask; then
+                printf '&fm=%s\n' "$(xray_agent_urlencode "${XHTTPFinalmaskURI}")"
+            fi
+            ;;
+    esac
 }
 
 xray_agent_vless_profile_share_uri() {
@@ -327,6 +372,7 @@ xray_agent_vless_profile_share_uri() {
     xray_agent_load_protocol_profile "${profile_name}" || return 1
 
     local address port sni share_path security mode reality_params
+    local encryption tls_params finalmask_params
     address="$(xray_agent_protocol_address_value "${variant}")" || return 1
     [[ -n "${address}" ]] || return 1
     port="$(xray_agent_protocol_port_value "${variant}")"
@@ -335,6 +381,7 @@ xray_agent_vless_profile_share_uri() {
     security="$(xray_agent_protocol_security_value "${variant}")"
     mode="${XHTTPMode:-${XRAY_AGENT_PROTOCOL_MODE:-auto}}"
     [[ -n "${mode}" ]] || mode="auto"
+    encryption="$(xray_agent_share_encryption_for_profile "${profile_name}")"
 
     local XRAY_SHARE_UUID
     local XRAY_SHARE_ADDRESS
@@ -348,6 +395,9 @@ xray_agent_vless_profile_share_uri() {
     local XRAY_SHARE_MODE
     local XRAY_SHARE_SECURITY
     local XRAY_SHARE_REALITY_PARAMS=""
+    local XRAY_SHARE_TLS_PARAMS=""
+    local XRAY_SHARE_ENCRYPTION
+    local XRAY_SHARE_FM_PARAM=""
     local XRAY_SHARE_NAME
 
     XRAY_SHARE_UUID="$(xray_agent_urlencode "${id}")"
@@ -360,6 +410,7 @@ xray_agent_vless_profile_share_uri() {
     XRAY_SHARE_PATH="$(xray_agent_urlencode "${share_path}")"
     XRAY_SHARE_MODE="$(xray_agent_urlencode "${mode}")"
     XRAY_SHARE_SECURITY="$(xray_agent_urlencode "${security}")"
+    XRAY_SHARE_ENCRYPTION="$(xray_agent_urlencode "${encryption}")"
     XRAY_SHARE_NAME="$(xray_agent_urlencode "${id}")"
 
     if [[ "${security}" == "tls" && "${XRAY_AGENT_PROTOCOL_TRANSPORT}" == "xhttp" && -n "${XRAY_AGENT_PROTOCOL_ALPN}" ]]; then
@@ -368,6 +419,13 @@ xray_agent_vless_profile_share_uri() {
     if [[ "${security}" == "reality" ]]; then
         reality_params="$(xray_agent_reality_share_params)" || return 1
         XRAY_SHARE_REALITY_PARAMS="${reality_params}"
+    elif [[ "${security}" == "tls" ]]; then
+        tls_params="$(xray_agent_tls_share_params "${sni}")"
+        XRAY_SHARE_TLS_PARAMS="${tls_params}"
+    fi
+    finalmask_params="$(xray_agent_share_finalmask_param "${profile_name}")"
+    if [[ -n "${finalmask_params}" ]]; then
+        XRAY_SHARE_FM_PARAM="${finalmask_params}"
     fi
 
     xray_agent_render_share_template_text "${XRAY_AGENT_PROTOCOL_SHARE_TEMPLATE}"
@@ -407,7 +465,7 @@ defaultBase64Code() {
             echoContent yellow " ---> 通用格式 (VLESS+WS+TLS)"
             xray_agent_print_vless_profile_share "vless_ws_tls" "${id}"
             echoContent yellow " ---> 格式化明文 (VLESS+WS+TLS)"
-            echoContent green "协议类型: VLESS，地址: ${domain}，伪装域名/SNI: ${domain}，端口: $(xray_agent_share_port_for_profile vless_ws_tls)，用户ID: ${id}，安全: tls，传输方式: ws，路径: /${path}ws，账户名: ${id}"
+            echoContent green "协议类型: VLESS，地址: ${domain}，伪装域名/SNI: ${domain}，端口: $(xray_agent_share_port_for_profile vless_ws_tls)，用户ID: ${id}，安全: tls，传输方式: ws，路径: /${path}ws，encryption: $(xray_agent_share_encryption_for_profile vless_ws_tls)，账户名: ${id}"
             ;;
         vmessws)
             xray_agent_print_vmess_share "${id}"
@@ -418,7 +476,7 @@ defaultBase64Code() {
                 local reality_address
                 reality_address="$(xray_agent_select_public_ip_for_reality)" || return 1
                 echoContent yellow " ---> 格式化明文 (VLESS+TCP+Reality)"
-                echoContent green "协议类型: VLESS Reality，地址: ${reality_address}，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_reality_tcp)，用户ID: ${id}，传输方式: tcp，账户名: ${id}"
+                echoContent green "协议类型: VLESS Reality，地址: ${reality_address}，publicKey: ${RealityPublicKey}，pqv: ${RealityMldsa65Verify:-无}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_reality_tcp)，用户ID: ${id}，传输方式: tcp，账户名: ${id}"
             fi
             ;;
         vlessxhttp)
@@ -426,7 +484,7 @@ defaultBase64Code() {
                 echoContent yellow " ---> 通用格式 (VLESS+XHTTP+TLS)"
                 xray_agent_print_vless_profile_share "vless_xhttp" "${id}" "tls"
                 echoContent yellow " ---> 格式化明文 (VLESS+XHTTP+TLS)"
-                echoContent green "协议类型: VLESS，地址: ${domain}，端口: $(xray_agent_share_port_for_profile vless_xhttp tls)，用户ID: ${id}，安全: tls，传输方式: XHTTP，账户名: ${id}"
+                echoContent green "协议类型: VLESS，地址: ${domain}，端口: $(xray_agent_share_port_for_profile vless_xhttp tls)，用户ID: ${id}，安全: tls，传输方式: XHTTP，encryption: $(xray_agent_share_encryption_for_profile vless_xhttp)，账户名: ${id}"
             fi
             if [[ "${coreInstallType}" == "2" || "${coreInstallType}" == "3" ]]; then
                 echoContent yellow " ---> 通用格式 (VLESS+XHTTP+Reality)"
@@ -434,7 +492,7 @@ defaultBase64Code() {
                     local reality_address
                     reality_address="$(xray_agent_select_public_ip_for_reality)" || return 1
                     echoContent yellow " ---> 格式化明文 (VLESS+XHTTP+Reality)"
-                    echoContent green "协议类型: VLESS XHTTP，地址: ${reality_address}，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_xhttp reality)，用户ID: ${id}，传输方式: XHTTP，client-fingerprint: chrome，账户名: ${id}"
+                    echoContent green "协议类型: VLESS XHTTP，地址: ${reality_address}，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_xhttp reality)，用户ID: ${id}，传输方式: XHTTP，client-fingerprint: chrome，encryption: $(xray_agent_share_encryption_for_profile vless_xhttp)，账户名: ${id}"
                 fi
             fi
             ;;

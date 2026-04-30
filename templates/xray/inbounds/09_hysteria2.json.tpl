@@ -19,7 +19,7 @@
             "ocspStapling": 3600,
             "certificateFile": "/etc/xray-agent/tls/${XRAY_TLS_DOMAIN}.crt",
             "keyFile": "/etc/xray-agent/tls/${XRAY_TLS_DOMAIN}.key"
-          }]
+          }]${XRAY_TLS_ECH_SERVER_KEYS_JSON_ENTRY}
         },
         "hysteriaSettings": {
           "version": 2,

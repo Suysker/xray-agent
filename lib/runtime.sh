@@ -111,7 +111,7 @@ xray_agent_parse_x25519_field() {
         {
             key = tolower($1)
             gsub(/[[:space:]_-]/, "", key)
-            if (key == wanted) {
+            if (key == wanted || index(key, wanted) > 0) {
                 value = $0
                 sub(/^[^:]*:[[:space:]]*/, "", value)
                 print value
@@ -155,6 +155,54 @@ xray_agent_reality_public_key_value() {
     fi
 }
 
+xray_agent_mldsa65_verify_from_seed() {
+    local seed="$1"
+    local mldsa_output
+    [[ -n "${seed}" && -x "${ctlPath:-}" ]] || return 1
+    mldsa_output="$("${ctlPath}" mldsa65 -i "${seed}" 2>/dev/null)" || return 1
+    xray_agent_parse_x25519_field "${mldsa_output}" "Verify"
+}
+
+xray_agent_reality_mldsa65_verify_value() {
+    if [[ -n "${RealityMldsa65Verify:-}" ]]; then
+        printf '%s\n' "${RealityMldsa65Verify}"
+        return 0
+    fi
+    if [[ -n "${RealityMldsa65Seed:-}" ]]; then
+        RealityMldsa65Verify="$(xray_agent_mldsa65_verify_from_seed "${RealityMldsa65Seed}" || true)"
+        [[ -n "${RealityMldsa65Verify}" ]] && printf '%s\n' "${RealityMldsa65Verify}"
+    fi
+}
+
+xray_agent_tls_ech_config_list_from_server_keys() {
+    local server_keys="$1"
+    local ech_output
+    [[ -n "${server_keys}" && -x "${ctlPath:-}" ]] || return 1
+    ech_output="$("${ctlPath}" tls ech -i "${server_keys}" 2>/dev/null)" || return 1
+    awk -F ': ' '
+        /^ECH config list:/ {getline; gsub(/\r/, "", $0); print; exit}
+    ' <<<"${ech_output}"
+}
+
+xray_agent_tls_ech_config_list_value() {
+    if [[ -n "${ECHConfigList:-}" ]]; then
+        printf '%s\n' "${ECHConfigList}"
+        return 0
+    fi
+    if [[ -n "${ECHServerKeys:-}" ]]; then
+        ECHConfigList="$(xray_agent_tls_ech_config_list_from_server_keys "${ECHServerKeys}" || true)"
+        [[ -n "${ECHConfigList}" ]] && printf '%s\n' "${ECHConfigList}"
+    fi
+}
+
+xray_agent_tls_leaf_sha256() {
+    local cert_domain="${1:-${TLSDomain:-${domain:-}}}"
+    local cert_file="${XRAY_AGENT_TLS_DIR}/${cert_domain}.crt"
+    [[ -f "${cert_file}" ]] || return 1
+    command -v openssl >/dev/null 2>&1 || return 1
+    openssl x509 -in "${cert_file}" -outform DER 2>/dev/null | sha256sum | awk '{print $1}'
+}
+
 xray_agent_xhttp_path_from_inbound() {
     local inbound_file="$1"
     [[ -f "${inbound_file}" ]] || return 0
@@ -196,7 +244,14 @@ initVar() {
     RealityDestDomain=
     RealityPort=
     RealityShortID=
+    RealityMldsa65Seed=
+    RealityMldsa65Verify=
     XHTTPMode=auto
+    VLESSDecryption=
+    VLESSEncryption=
+    ECHServerKeys=
+    ECHConfigList=
+    XHTTPFinalmaskURI=
     reuse443=
     osID=
     osVersionID=
@@ -365,6 +420,8 @@ readConfigHostPathUUID() {
         RealityDestDomain="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.target // .inbounds[0].streamSettings.realitySettings.dest // empty')"
         RealityPrivateKey="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.privateKey')"
         RealityShortID="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.shortIds[0] // empty')"
+        RealityMldsa65Seed="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.mldsa65Seed // empty')"
+        RealityMldsa65Verify="$(xray_agent_reality_mldsa65_verify_value || true)"
         xray_agent_ensure_reality_public_key || true
         if [[ -z "${path}" && -f "${xhttp_inbound_file}" ]]; then
             path="$(xray_agent_xhttp_path_from_inbound "${xhttp_inbound_file}")"
@@ -373,6 +430,18 @@ readConfigHostPathUUID() {
 
     if [[ -f "${xhttp_inbound_file}" ]]; then
         XHTTPMode="$(xray_agent_xhttp_mode_from_inbound "${xhttp_inbound_file}")"
+        VLESSDecryption="$(jq -r '.inbounds[0].settings.decryption // "none"' "${xhttp_inbound_file}" | tr -d '\r')"
+    elif [[ -f "${configPath}03_VLESS_WS_inbounds.json" ]]; then
+        VLESSDecryption="$(jq -r '.inbounds[0].settings.decryption // "none"' "${configPath}03_VLESS_WS_inbounds.json" | tr -d '\r')"
+    fi
+
+    if [[ -n "${VLESSDecryption:-}" && "${VLESSDecryption}" != "none" ]]; then
+        VLESSEncryption="$(xray_agent_vless_encryption_from_decryption "${VLESSDecryption}" || true)"
+    fi
+
+    if [[ -n "${tls_inbound_file}" && -f "${tls_inbound_file}" ]]; then
+        ECHServerKeys="$(jq -r '.inbounds[0].streamSettings.tlsSettings.echServerKeys // empty' "${tls_inbound_file}" | tr -d '\r')"
+        ECHConfigList="$(xray_agent_tls_ech_config_list_value || true)"
     fi
 
     if [[ -f "${hysteria2_inbound_file}" ]]; then

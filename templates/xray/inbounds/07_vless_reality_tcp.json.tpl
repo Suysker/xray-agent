@@ -7,7 +7,7 @@
       "tag": "${XRAY_INBOUND_TAG}",
       "settings": {
         "clients": ${XRAY_CLIENTS_JSON},
-        "decryption": "none",
+        "decryption": "${XRAY_VLESS_DECRYPTION}",
         "fallbacks": ${XRAY_FALLBACKS_JSON}
       },
       "streamSettings": {
@@ -22,7 +22,7 @@
           "xver": 0,
           "serverNames": ${XRAY_REALITY_SERVER_NAMES_JSON},
           "privateKey": "${XRAY_REALITY_PRIVATE_KEY}",
-          "shortIds": ${XRAY_REALITY_SHORT_IDS_JSON}
+          "shortIds": ${XRAY_REALITY_SHORT_IDS_JSON}${XRAY_REALITY_MLDSA65_SEED_JSON_ENTRY}
         },
         "sockopt": ${XRAY_SOCKOPT_JSON}
       },

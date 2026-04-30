@@ -8,12 +8,14 @@ xray-agent 已从单文件安装脚本收口为一套模块化的 Xray profile b
 - 运行时只加载领域级 `lib/*.sh` 模块，不再保留旧碎片化 `lib/<domain>/*.sh`、旧 `profiles/*.env`、旧平铺模板。
 - CLI、安装编排、协议渲染已经分层：`cli.sh` 管菜单和参数路由，`installer.sh` 管 install profile 和安装流水线，`protocols.sh` 只管协议 profile 与配置渲染。
 - 协议渲染、安装组合、分享链接导出统一从 `profiles/*.profile` 和重要配置模板读取；一行默认值、小 JSON 片段、cron 行和包源行由领域代码生成。
-- Xray 配置与分享链接按 Xray-core 源码优先审计：Reality 服务端配置不写客户端 `publicKey`，XHTTP 默认只写必要 `path`，Hysteria2 使用 Xray-core `hysteria` inbound 和 `finalmask.quicParams`，分享 URI 按官方约定编码。
+- Xray 配置与分享链接按 Xray-core 正式 release 源码优先审计：Reality 服务端配置不写客户端 `publicKey`，XHTTP 默认只写必要 `path`，Hysteria2 使用 Xray-core `hysteria` inbound 和 `finalmask.quicParams`，分享 URI 按官方约定编码。
+- 正式 release 已支持的强化能力会按内核能力启用：VLESS WS/XHTTP 使用 VLESS Encryption，Reality 支持 ML-DSA-65 `pqv`，TLS 支持 ECH/`pcs`/`vcn` 分享参数；如果当前 Xray-core 不支持，脚本会提示升级，不生成不可运行配置。
 - install profile 的 `protocols=` 直接决定 TLS/Reality 套餐渲染哪些 inbound；TLS 套餐默认包含 `VLESS-TCP / VLESS-WS / VMess-WS / XHTTP / Hysteria2`；Reality 套餐安装时可选择同时启用 Hysteria2，默认不强制开启；`steps=` 进一步决定安装流水线顺序。
 - Hysteria2 的连接域名/SNI/证书域名默认复用当前 `domain`/`TLSDomain`，不使用 Reality 目标域名签证书；masquerade 默认优先复用已有 Hy2 配置，其次复用 Nginx 伪装站 upstream，Reality-only 场景再把 Reality 目标域名作为内容源候选。
 - 网络栈按运行时动态探测：默认不自动启用 IPv6/WARP 分流；IPv6-only 场景会生成 IPv6 可用基线；菜单只显示当前网络栈可执行动作；内部 Nginx/Xray 回环、AdGuard DNS、WARP outbound 和 Reality 公网地址选择都按 IPv4/IPv6/WARP 能力派生。
 - 菜单 3-12 是核心控制台：进入账号、伪装站、证书、IPv4/IPv6、黑名单、WARP、新端口、嗅探、sockopt、Hysteria2 前都会展示安装状态、协议、证书、网络栈和关键端口占用；高风险写入会先预览影响再确认。
 - 证书管理已改成智能向导：先读取 `/etc/xray-agent/tls` 和 acme 记录，再做域名解析、公网 IP、80/443 端口和网络栈预检，按条件推荐 HTTP-01 standalone 或 DNS-01，并能解释常见 acme 失败原因。
+- Nginx 模板区分 XHTTP/gRPC 长连接和普通镜像 proxy 超时，不再使用异常超长 timeout，也不默认写入 HSTS preload；渲染后先执行 `nginx -t`，失败不继续重启。
 - 不引入 upstream/v2ray-agent 的 sing-box、订阅、anytls 等非本仓库 master 主线能力。
 
 ## 目录

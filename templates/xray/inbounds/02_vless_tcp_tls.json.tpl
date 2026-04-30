@@ -7,7 +7,7 @@
       "tag": "${XRAY_INBOUND_TAG}",
       "settings": {
         "clients": ${XRAY_CLIENTS_JSON},
-        "decryption": "none",
+        "decryption": "${XRAY_VLESS_DECRYPTION}",
         "fallbacks": ${XRAY_FALLBACKS_JSON}
       },
       "streamSettings": {
@@ -24,7 +24,7 @@
             "ocspStapling": 3600,
             "certificateFile": "/etc/xray-agent/tls/${XRAY_TLS_DOMAIN}.crt",
             "keyFile": "/etc/xray-agent/tls/${XRAY_TLS_DOMAIN}.key"
-          }]
+          }]${XRAY_TLS_ECH_SERVER_KEYS_JSON_ENTRY}
         },
         "sockopt": ${XRAY_SOCKOPT_JSON}
       },

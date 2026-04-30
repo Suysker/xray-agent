@@ -11,3 +11,5 @@
 - 续签默认只处理到期或 14 天内临期证书；强制续签全部证书需要二次确认，避免触发 CA 限流。
 - `xray_agent_cert_explain_failure` 会按 acme 日志提示邮箱错误、解析/端口验证失败、TXT 未生效、CA 限流、EAB/API 错误等常见原因。
 - Reality 目标域名与 serverNames 仍在 `lib/tls.sh` 管理。
+- 证书预检会展示当前 Xray-core 是否支持 TLS ECH；支持时安装渲染会生成 `echServerKeys`，分享链接会输出 `ech`，本地证书可读时会同步输出 `pcs`/`vcn`。
+- Reality target 会在生成 ML-DSA-65 前用 `xray tls ping` 做证书链长度预检；不适合时跳过 `pqv` 并提示更换 target，避免为了追新字段生成异常指纹。

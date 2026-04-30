@@ -14,6 +14,8 @@
 - `profiles/install/*.profile` 的 `protocols=` 直接驱动 `lib/installer.sh` 的 inbound 渲染顺序；`steps=` 负责安装流水线调度；`entry=` 只保留旧命令兼容。
 - TLS profile 默认渲染 Hysteria2；Reality profile 通过 `optional_hysteria2` step 在安装时询问是否同时启用，默认不强制申请 TLS 证书或占用 UDP/443。
 - Xray 配置和分享协议以 `Xray-core` 当前源码为硬约束，官方 discussion/issue 用于判断推荐实践；旧 `install.sh` 只作为用户可见兼容基线，不作为配置正确性的唯一依据。
+- Release 级 hardening 由现有 `lib/core.sh`/`lib/protocols.sh` 能力检测驱动：只启用当前正式版 Xray-core 支持的 `vlessenc`、`mldsa65`、`mlkem768`、`tls ech`、`finalmask` 字段；不支持时提示升级并退回可运行配置。
+- VLESS Encryption 不能与 VLESS fallback 共用，因此只默认用于 VLESS WS/XHTTP 这类无 fallback 的 inbound；承担 TLS/Reality 分流的 TCP 入口继续使用 `encryption=none`。
 - Hysteria2 的 443 共用模型是 TCP/443 给 Nginx/Xray TLS/Reality 分流，UDP/443 给 Xray-core Hysteria2 inbound；账号 auth 跟随现有 UUID 用户体系。Hy2 连接域名/SNI/证书域名使用用户控制的 `domain`/`TLSDomain`，Reality 目标域名只可作为 masquerade 内容源 fallback。
 - 核心菜单不再是固定命令清单：账号、路由、伪装站、端口、嗅探、sockopt、Hysteria2 都先读取当前配置并动态显示可执行动作；删除用户、改伪装站、改路由、开新端口、卸载 Hy2 等写入动作需要二次确认。
 - 仓库不保留 `verify/` 或 `scripts/check.sh`；验证通过 README 中的手工命令和临时模板渲染完成。

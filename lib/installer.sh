@@ -62,8 +62,12 @@ xray_agent_prepare_reality_keys() {
     if [[ -z "${RealityShortID}" ]]; then
         RealityShortID=$(openssl rand -hex 4 2>/dev/null)
     fi
+    xray_agent_prepare_reality_mldsa65
     echoContent green " privateKey:${RealityPrivateKey}"
     echoContent green " publicKey:${RealityPublicKey}"
+    if [[ -n "${RealityMldsa65Verify:-}" ]]; then
+        echoContent green " mldsa65Verify:${RealityMldsa65Verify}"
+    fi
     echoContent skyBlue "========================== 生成UUID =========================="
 }
 
@@ -358,6 +362,9 @@ xray_agent_render_install_bundle() {
         "${key_prepare_fn}"
     fi
     xray_agent_prepare_uuid
+    xray_agent_warn_release_hardening_status
+    xray_agent_prepare_vless_encryption
+    xray_agent_prepare_tls_ech
     xray_agent_render_common_xray_configs
 
     if [[ "${reuse443}" == "y" ]]; then
@@ -369,6 +376,7 @@ xray_agent_render_install_bundle() {
     for protocol_name in "${XRAY_AGENT_INSTALL_PROFILE_PROTOCOL_LIST[@]}"; do
         if [[ "${protocol_name}" == "hysteria2" ]]; then
             xray_agent_hysteria2_prepare_runtime || return 1
+            xray_agent_prepare_tls_ech
         fi
         rendered_path="$(xray_agent_render_install_profile_protocol "${protocol_name}" "${accept_proxy_protocol}" "${sniffing_json}")" || return 1
         [[ -n "${rendered_path}" ]] || continue

@@ -2,8 +2,9 @@ server {
     listen ${NGINX_HTTP_PORT};
     server_name ${SERVER_NAME};
 
-    client_header_timeout 1071906480m;
-    keepalive_timeout 1071906480m;
+    client_header_timeout ${NGINX_CLIENT_HEADER_TIMEOUT};
+    client_body_timeout ${NGINX_CLIENT_BODY_TIMEOUT};
+    keepalive_timeout ${NGINX_KEEPALIVE_TIMEOUT};
 
     location ${NGINX_XHTTP_PATH} {
         grpc_pass grpc://${NGINX_XHTTP_GRPC_TARGET};
@@ -13,15 +14,13 @@ server {
         grpc_set_header X-Forwarded-Proto ${XRAY_DOLLAR}scheme;
         grpc_set_header X-Forwarded-Host ${XRAY_DOLLAR}host;
         grpc_set_header X-Forwarded-Port ${XRAY_DOLLAR}server_port;
-        grpc_read_timeout 1071906480m;
-        grpc_send_timeout 1071906480m;
+        grpc_read_timeout ${NGINX_GRPC_TIMEOUT};
+        grpc_send_timeout ${NGINX_GRPC_TIMEOUT};
         grpc_socket_keepalive on;
-        client_body_timeout 1071906480m;
         client_max_body_size 0;
     }
 
     location / {
-        add_header Strict-Transport-Security "max-age=15552000; preload" always;
         sub_filter ${XRAY_DOLLAR}proxy_host ${XRAY_DOLLAR}host;
         sub_filter_once off;
         proxy_pass ${UPSTREAM_URL};
@@ -37,8 +36,8 @@ server {
         proxy_set_header X-Forwarded-Proto ${XRAY_DOLLAR}scheme;
         proxy_set_header X-Forwarded-Host ${XRAY_DOLLAR}host;
         proxy_set_header X-Forwarded-Port ${XRAY_DOLLAR}server_port;
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        proxy_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
+        proxy_send_timeout ${NGINX_PROXY_TIMEOUT};
+        proxy_read_timeout ${NGINX_PROXY_TIMEOUT};
     }
 }

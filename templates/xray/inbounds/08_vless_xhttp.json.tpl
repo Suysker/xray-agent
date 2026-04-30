@@ -7,7 +7,7 @@
       "tag": "${XRAY_INBOUND_TAG}",
       "settings": {
         "clients": ${XRAY_CLIENTS_JSON},
-        "decryption": "none"
+        "decryption": "${XRAY_VLESS_DECRYPTION}"
       },
       "streamSettings": {
         "network": "xhttp",

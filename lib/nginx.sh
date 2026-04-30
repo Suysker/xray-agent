@@ -12,8 +12,29 @@ xray_agent_render_nginx_alone_conf() {
     export SERVER_NAME="${domain}"
     export UPSTREAM_URL="${upstream_url}"
     export NGINX_XHTTP_PATH="/${path}"
+    export NGINX_CLIENT_HEADER_TIMEOUT="30s"
+    export NGINX_CLIENT_BODY_TIMEOUT="1h"
+    export NGINX_KEEPALIVE_TIMEOUT="75s"
+    export NGINX_GRPC_TIMEOUT="1h"
+    export NGINX_PROXY_CONNECT_TIMEOUT="10s"
+    export NGINX_PROXY_TIMEOUT="60s"
     export XRAY_DOLLAR='$'
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/nginx/alone.conf.tpl" "${nginxConfigPath}alone.conf"
+}
+
+xray_agent_nginx_capability_summary() {
+    command -v nginx >/dev/null 2>&1 || return 0
+    local nginx_build
+    nginx_build="$(nginx -V 2>&1 || true)"
+    if [[ "${nginx_build}" != *"--with-http_v2_module"* ]]; then
+        echoContent yellow " ---> Nginx 未显式编译 http_v2_module，XHTTP/gRPC 转发可能不可用。"
+    fi
+    if [[ "${nginx_build}" != *"--with-stream"* ]]; then
+        echoContent yellow " ---> Nginx 未显式编译 stream 模块，443 共用分流可能不可用。"
+    fi
+    if [[ "${nginx_build}" != *"--with-stream_ssl_preread_module"* ]]; then
+        echoContent yellow " ---> Nginx 未显式编译 stream_ssl_preread_module，Reality/TLS SNI 分流可能不可用。"
+    fi
 }
 
 updateRedirectNginxConf() {
@@ -42,6 +63,12 @@ updateRedirectNginxConf() {
         fi
     fi
     xray_agent_render_nginx_stream_conf "${reuse443}"
+    xray_agent_nginx_capability_summary
+    if ! xray_agent_nginx_test_config; then
+        echoContent red " ---> nginx -t 失败，请检查 Nginx 是否支持 http_v2/grpc/stream/ssl_preread。"
+        [[ -f /tmp/xray-agent-nginx-test.log ]] && tail -n 20 /tmp/xray-agent-nginx-test.log
+        return 1
+    fi
     handleNginx stop
     handleNginx start
 }

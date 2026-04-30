@@ -199,6 +199,11 @@ xray_agent_cert_preflight() {
     echoContent yellow "DNS A: ${a_records:-未解析到}"
     echoContent yellow "DNS AAAA: ${aaaa_records:-未解析到}"
     echoContent yellow "端口: TCP/80=${port80_owner} TCP/443=${port443_owner}"
+    if xray_agent_xray_supports_tls_ech; then
+        echoContent green "TLS ECH: 当前 Xray-core 支持，证书安装后可生成 echServerKeys 和分享 ech。"
+    else
+        echoContent yellow "TLS ECH: 当前 Xray-core 不支持，升级正式版后才会启用。"
+    fi
     if [[ "${warpDefaultIPv4}" == "true" || "${warpDefaultIPv6}" == "true" ]]; then
         echoContent yellow "提示: 系统默认路由存在 WARP 接管，公网探测结果可能是 WARP 出口。"
     fi

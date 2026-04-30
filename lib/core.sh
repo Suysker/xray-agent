@@ -16,6 +16,101 @@ getPublicIP() {
     xray_agent_get_public_ip
 }
 
+xray_agent_xray_binary_ready() {
+    [[ -x "${ctlPath:-}" ]]
+}
+
+xray_agent_xray_help_text() {
+    xray_agent_xray_binary_ready || return 1
+    "${ctlPath}" help 2>&1 || true
+}
+
+xray_agent_xray_supports_command() {
+    local command_name="$1"
+    xray_agent_xray_help_text | awk -v command_name="${command_name}" '
+        $1 == command_name {found = 1}
+        END {exit found ? 0 : 1}
+    '
+}
+
+xray_agent_xray_supports_tls_ech() {
+    xray_agent_xray_binary_ready || return 1
+    "${ctlPath}" tls help 2>&1 | awk '$1 == "ech" {found = 1} END {exit found ? 0 : 1}'
+}
+
+xray_agent_xray_version_number() {
+    xray_agent_xray_binary_ready || return 1
+    "${ctlPath}" version 2>/dev/null | awk 'NR == 1 {print $2; exit}' | sed 's/^v//; s/[^0-9.].*$//'
+}
+
+xray_agent_version_ge() {
+    local current="$1"
+    local required="$2"
+    awk -v current="${current}" -v required="${required}" '
+        BEGIN {
+            split(current, c, ".")
+            split(required, r, ".")
+            for (i = 1; i <= 3; i++) {
+                cv = c[i] + 0
+                rv = r[i] + 0
+                if (cv > rv) {
+                    exit 0
+                }
+                if (cv < rv) {
+                    exit 1
+                }
+            }
+            exit 0
+        }'
+}
+
+xray_agent_xray_version_at_least() {
+    local required="$1"
+    local current
+    current="$(xray_agent_xray_version_number || true)"
+    [[ -n "${current}" ]] || return 1
+    xray_agent_version_ge "${current}" "${required}"
+}
+
+xray_agent_xray_supports_hysteria2() {
+    xray_agent_xray_version_at_least "26.3.27"
+}
+
+xray_agent_xray_supports_finalmask() {
+    xray_agent_xray_version_at_least "26.3.27"
+}
+
+xray_agent_xray_supports_release_hardening() {
+    xray_agent_xray_supports_command vlessenc &&
+        xray_agent_xray_supports_command mldsa65 &&
+        xray_agent_xray_supports_command mlkem768 &&
+        xray_agent_xray_supports_tls_ech &&
+        xray_agent_xray_supports_hysteria2 &&
+        xray_agent_xray_supports_finalmask
+}
+
+xray_agent_warn_release_hardening_status() {
+    xray_agent_xray_binary_ready || return 0
+    local missing=()
+    xray_agent_xray_supports_command vlessenc || missing+=("vlessenc")
+    xray_agent_xray_supports_command mldsa65 || missing+=("mldsa65")
+    xray_agent_xray_supports_command mlkem768 || missing+=("mlkem768")
+    xray_agent_xray_supports_tls_ech || missing+=("tls ech")
+    xray_agent_xray_supports_hysteria2 || missing+=("hysteria2")
+    xray_agent_xray_supports_finalmask || missing+=("finalmask")
+    if [[ "${#missing[@]}" -gt 0 ]]; then
+        echoContent yellow " ---> 当前 Xray-core 缺少 release hardening 能力: $(xray_agent_join_by ', ' "${missing[@]}")"
+        echoContent yellow " ---> 请通过菜单13升级正式版；脚本不会生成当前内核不支持的强化配置。"
+    fi
+}
+
+xray_agent_xray_config_test() {
+    xray_agent_xray_binary_ready || return 0
+    [[ -d "${configPath:-}" ]] || return 0
+    find "${configPath}" -maxdepth 1 -type f -name "*.json" | grep -q . || return 0
+    "${ctlPath}" run -test -confdir "${configPath}" >/tmp/xray-agent-xray-test.log 2>&1
+}
+
 checkGFWStatue() {
     readInstallType
     xray_agent_blank
@@ -119,6 +214,11 @@ installXray() {
 }
 
 reloadCore() {
+    if ! xray_agent_xray_config_test; then
+        echoContent red " ---> Xray 配置测试失败，已停止 reload。"
+        [[ -f /tmp/xray-agent-xray-test.log ]] && tail -n 30 /tmp/xray-agent-xray-test.log
+        return 1
+    fi
     handleXray stop
     handleXray start
 }
