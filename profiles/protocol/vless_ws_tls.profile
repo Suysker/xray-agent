@@ -1,0 +1,16 @@
+name=vless_ws_tls
+inbound_template=03_vless_ws_tls.json.tpl
+share_template=vless_ws.tpl
+protocol=vless
+transport=ws
+security=tls
+flow=
+address_source=domain
+port_source=Port
+sni_source=domain
+path_source=path_ws
+mode=
+alpn=h2,http/1.1
+fp=chrome
+client_kind=VLESS_WS
+config_file=03_VLESS_WS_inbounds.json

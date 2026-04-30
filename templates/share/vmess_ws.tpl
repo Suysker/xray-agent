@@ -1,0 +1,1 @@
+{"port":${XRAY_SHARE_PORT},"tls":"tls","id":"${XRAY_SHARE_UUID}","aid":0,"v":2,"host":"${XRAY_SHARE_SNI}","type":"none","path":"/${XRAY_SHARE_PATH}","net":"ws","allowInsecure":0,"method":"none","peer":"${XRAY_SHARE_SNI}","sni":"${XRAY_SHARE_SNI}","alpn":"h2,http/1.1","fp":"chrome"}

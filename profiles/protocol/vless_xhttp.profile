@@ -1,0 +1,16 @@
+name=vless_xhttp
+inbound_template=08_vless_xhttp.json.tpl
+share_template=vless_xhttp.tpl
+protocol=vless
+transport=xhttp
+security=auto
+flow=
+address_source=auto
+port_source=auto
+sni_source=auto
+path_source=path
+mode=auto
+alpn=h2,http/1.1
+fp=chrome
+client_kind=VLESS_XHTTP
+config_file=08_VLESS_XHTTP_inbounds.json

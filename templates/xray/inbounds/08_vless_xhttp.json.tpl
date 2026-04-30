@@ -1,0 +1,22 @@
+{
+  "inbounds": [
+    {
+      "listen": "${XRAY_INTERNAL_LISTEN_ADDRESS}",
+      "port": ${XRAY_INBOUND_PORT},
+      "protocol": "vless",
+      "tag": "${XRAY_INBOUND_TAG}",
+      "settings": {
+        "clients": ${XRAY_CLIENTS_JSON},
+        "decryption": "${XRAY_VLESS_DECRYPTION}"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "xhttpSettings": {
+          "path": "${XRAY_XHTTP_PATH}"
+        },
+        "sockopt": ${XRAY_SOCKOPT_JSON}
+      },
+      "sniffing": ${XRAY_SNIFFING_JSON}
+    }
+  ]
+}

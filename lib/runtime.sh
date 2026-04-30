@@ -1,0 +1,594 @@
+#!/usr/bin/env bash
+
+if [[ -z "${XRAY_AGENT_PROJECT_ROOT:-}" ]]; then
+    XRAY_AGENT_PROJECT_ROOT="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+
+XRAY_AGENT_LIB_DIR="${XRAY_AGENT_PROJECT_ROOT}/lib"
+XRAY_AGENT_TEMPLATE_DIR="${XRAY_AGENT_PROJECT_ROOT}/templates"
+XRAY_AGENT_PROFILE_DIR="${XRAY_AGENT_PROJECT_ROOT}/profiles"
+XRAY_AGENT_DOCS_DIR="${XRAY_AGENT_PROJECT_ROOT}/docs"
+XRAY_AGENT_PACKAGING_DIR="${XRAY_AGENT_PROJECT_ROOT}/packaging"
+
+XRAY_AGENT_ETC_DIR="/etc/xray-agent"
+XRAY_AGENT_TLS_DIR="${XRAY_AGENT_ETC_DIR}/tls"
+XRAY_AGENT_XRAY_DIR="${XRAY_AGENT_ETC_DIR}/xray"
+XRAY_AGENT_XRAY_CONF_DIR="${XRAY_AGENT_XRAY_DIR}/conf"
+XRAY_AGENT_XRAY_BINARY="${XRAY_AGENT_XRAY_DIR}/xray"
+
+xray_agent_etc_path() {
+    printf '%s/%s\n' "${XRAY_AGENT_ETC_DIR}" "$1"
+}
+
+xray_agent_xray_conf_file() {
+    printf '%s/%s\n' "${XRAY_AGENT_XRAY_CONF_DIR}" "$1"
+}
+
+xray_agent_nginx_conf_file() {
+    printf '%s%s\n' "${nginxConfigPath}" "$1"
+}
+
+xray_agent_tls_inbound_file() {
+    [[ -n "${frontingType:-}" ]] || return 1
+    xray_agent_xray_conf_file "${frontingType}.json"
+}
+
+xray_agent_reality_inbound_file() {
+    [[ -n "${RealityfrontingType:-}" ]] || return 1
+    xray_agent_xray_conf_file "${RealityfrontingType}.json"
+}
+
+xray_agent_xhttp_inbound_file() {
+    xray_agent_xray_conf_file "08_VLESS_XHTTP_inbounds.json"
+}
+
+xray_agent_hysteria2_inbound_file() {
+    xray_agent_xray_conf_file "09_Hysteria2_inbounds.json"
+}
+
+xray_agent_inbound_clients_csv() {
+    local inbound_file="$1"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r '.inbounds[0].settings.clients[]?.id' "${inbound_file}" | tr -d '\r' | paste -sd, -
+}
+
+xray_agent_hysteria2_clients_csv() {
+    local inbound_file="$1"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r '.inbounds[0].settings.clients[]?.auth' "${inbound_file}" | tr -d '\r' | paste -sd, -
+}
+
+xray_agent_inbound_port() {
+    local inbound_file="$1"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r '.inbounds[0].port // empty' "${inbound_file}" | tr -d '\r'
+}
+
+xray_agent_tls_base_path_from_inbound() {
+    local inbound_file="$1"
+    local fallback_path base_path
+    [[ -f "${inbound_file}" ]] || return 0
+    fallback_path="$(jq -r '.inbounds[0].settings.fallbacks[]? | select(.path) | .path' "${inbound_file}" | tr -d '\r' | head -1)"
+    base_path="${fallback_path#/}"
+    case "${base_path}" in
+        *vws) base_path="${base_path%vws}" ;;
+        *ws) base_path="${base_path%ws}" ;;
+    esac
+    printf '%s\n' "${base_path}"
+}
+
+xray_agent_tls_domain_from_inbound() {
+    local inbound_file="$1"
+    local cert_path cert_file
+    [[ -f "${inbound_file}" ]] || return 0
+    cert_path="$(jq -r '.inbounds[0].streamSettings.tlsSettings.certificates[0].certificateFile // empty' "${inbound_file}" | tr -d '\r')"
+    cert_file="${cert_path##*/}"
+    printf '%s\n' "${cert_file%.crt}"
+}
+
+xray_agent_nginx_server_name() {
+    local nginx_file
+    nginx_file="$(xray_agent_nginx_conf_file "alone.conf")"
+    [[ -f "${nginx_file}" ]] || return 0
+    awk '$1 == "server_name" && $2 ~ /\./ {gsub(";","",$2); print $2; exit}' "${nginx_file}"
+}
+
+xray_agent_reality_value() {
+    local inbound_file="$1"
+    local jq_filter="$2"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r "${jq_filter}" "${inbound_file}" | tr -d '\r'
+}
+
+xray_agent_parse_x25519_field() {
+    local output="$1"
+    local field="$2"
+    awk -F ':' -v field="${field}" '
+        BEGIN {
+            wanted = tolower(field)
+            gsub(/[[:space:]_-]/, "", wanted)
+        }
+        {
+            key = tolower($1)
+            gsub(/[[:space:]_-]/, "", key)
+            if (key == wanted || index(key, wanted) > 0) {
+                value = $0
+                sub(/^[^:]*:[[:space:]]*/, "", value)
+                print value
+                exit
+            }
+        }
+    ' <<<"${output}"
+}
+
+xray_agent_generate_reality_keypair() {
+    local reality_keypair
+    [[ -x "${ctlPath:-}" ]] || return 1
+    reality_keypair="$("${ctlPath}" x25519 2>/dev/null)" || return 1
+    RealityPrivateKey="$(xray_agent_parse_x25519_field "${reality_keypair}" "Private key")"
+    RealityPublicKey="$(xray_agent_parse_x25519_field "${reality_keypair}" "Public key")"
+    [[ -n "${RealityPrivateKey}" && -n "${RealityPublicKey}" ]]
+}
+
+xray_agent_reality_public_key_from_private() {
+    local private_key="$1"
+    local reality_keypair
+    [[ -n "${private_key}" && -x "${ctlPath:-}" ]] || return 1
+    reality_keypair="$("${ctlPath}" x25519 -i "${private_key}" 2>/dev/null)" || return 1
+    xray_agent_parse_x25519_field "${reality_keypair}" "Public key"
+}
+
+xray_agent_ensure_reality_public_key() {
+    local derived_public_key
+    if [[ -n "${RealityPrivateKey:-}" ]]; then
+        derived_public_key="$(xray_agent_reality_public_key_from_private "${RealityPrivateKey}" || true)"
+        if [[ -n "${derived_public_key}" ]]; then
+            RealityPublicKey="${derived_public_key}"
+        fi
+    fi
+    [[ -n "${RealityPublicKey:-}" ]]
+}
+
+xray_agent_reality_public_key_value() {
+    if xray_agent_ensure_reality_public_key; then
+        printf '%s\n' "${RealityPublicKey}"
+    fi
+}
+
+xray_agent_mldsa65_verify_from_seed() {
+    local seed="$1"
+    local mldsa_output
+    [[ -n "${seed}" && -x "${ctlPath:-}" ]] || return 1
+    mldsa_output="$("${ctlPath}" mldsa65 -i "${seed}" 2>/dev/null)" || return 1
+    xray_agent_parse_x25519_field "${mldsa_output}" "Verify"
+}
+
+xray_agent_reality_mldsa65_verify_value() {
+    if [[ -n "${RealityMldsa65Verify:-}" ]]; then
+        printf '%s\n' "${RealityMldsa65Verify}"
+        return 0
+    fi
+    if [[ -n "${RealityMldsa65Seed:-}" ]]; then
+        RealityMldsa65Verify="$(xray_agent_mldsa65_verify_from_seed "${RealityMldsa65Seed}" || true)"
+        [[ -n "${RealityMldsa65Verify}" ]] && printf '%s\n' "${RealityMldsa65Verify}"
+    fi
+}
+
+xray_agent_tls_ech_config_list_from_server_keys() {
+    local server_keys="$1"
+    local ech_output
+    [[ -n "${server_keys}" && -x "${ctlPath:-}" ]] || return 1
+    ech_output="$("${ctlPath}" tls ech -i "${server_keys}" 2>/dev/null)" || return 1
+    awk -F ': ' '
+        /^ECH config list:/ {getline; gsub(/\r/, "", $0); print; exit}
+    ' <<<"${ech_output}"
+}
+
+xray_agent_tls_ech_config_list_value() {
+    if [[ -n "${ECHConfigList:-}" ]]; then
+        printf '%s\n' "${ECHConfigList}"
+        return 0
+    fi
+    if [[ -n "${ECHServerKeys:-}" ]]; then
+        ECHConfigList="$(xray_agent_tls_ech_config_list_from_server_keys "${ECHServerKeys}" || true)"
+        [[ -n "${ECHConfigList}" ]] && printf '%s\n' "${ECHConfigList}"
+    fi
+}
+
+xray_agent_tls_leaf_sha256() {
+    local cert_domain="${1:-${TLSDomain:-${domain:-}}}"
+    local cert_file="${XRAY_AGENT_TLS_DIR}/${cert_domain}.crt"
+    [[ -f "${cert_file}" ]] || return 1
+    command -v openssl >/dev/null 2>&1 || return 1
+    openssl x509 -in "${cert_file}" -outform DER 2>/dev/null | sha256sum | awk '{print $1}'
+}
+
+xray_agent_xhttp_path_from_inbound() {
+    local inbound_file="$1"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r '.inbounds[0].streamSettings.xhttpSettings.path // empty' "${inbound_file}" | tr -d '\r' | awk -F "[/]" '{print $2}'
+}
+
+xray_agent_xhttp_mode_from_inbound() {
+    local inbound_file="$1"
+    [[ -f "${inbound_file}" ]] || return 0
+    jq -r '.inbounds[0].streamSettings.xhttpSettings.mode // "auto"' "${inbound_file}" | tr -d '\r'
+}
+
+initVar() {
+    installType='yum -y install'
+    removeType='yum -y remove'
+    upgrade="yum -y update"
+    xrayCoreCPUVendor=""
+    domain=
+    path=
+    UUID=
+    Port=
+    totalProgress=1
+    coreInstallType=
+    currentInstallProtocolType=
+    frontingType=
+    centosVersion=
+    release=
+    updateReleaseInfoChange=
+    nginxConfigPath=/etc/nginx/conf.d/
+    configPath="${XRAY_AGENT_XRAY_CONF_DIR}/"
+    ctlPath="${XRAY_AGENT_XRAY_BINARY}"
+    prereleaseStatus=false
+    sslType=
+    TLSDomain=
+    RealityfrontingType=
+    RealityPrivateKey=
+    RealityPublicKey=
+    RealityServerNames=
+    RealityDestDomain=
+    RealityPort=
+    RealityShortID=
+    RealityMldsa65Seed=
+    RealityMldsa65Verify=
+    XHTTPMode=auto
+    VLESSDecryption=
+    VLESSEncryption=
+    ECHServerKeys=
+    ECHConfigList=
+    XHTTPFinalmaskURI=
+    reuse443=
+    osID=
+    osVersionID=
+    defaultIPv4Interface=
+    defaultIPv6Interface=
+    publicIPv4CSV=
+    publicIPv6CSV=
+    publicIPv4=false
+    publicIPv6=false
+    routeIPv4=false
+    routeIPv6=false
+    loopbackIPv4=false
+    loopbackIPv6=false
+    loopbackIPv4Address=
+    loopbackIPv6Address=
+    hasIPv4=
+    hasIPv6=
+    warpInterface=
+    warpIPv4CSV=
+    warpIPv6CSV=
+    hasWarp=
+    warpHasIPv4=
+    warpHasIPv6=
+    warpDefaultIPv4=false
+    warpDefaultIPv6=false
+    warpMode=none
+    networkJSON=
+    networkDetected=false
+    selectedRealityPublicIP=
+}
+
+checkBTPanel() {
+    if pgrep -f "BT-Panel" >/dev/null 2>&1; then
+        nginxConfigPath=/www/server/panel/vhost/nginx/
+    fi
+}
+
+checkSystem() {
+    xray_agent_detect_system
+
+    if [[ -z ${release} ]]; then
+        xray_agent_blank
+        echoContent red "本脚本不支持此系统，请将下方日志反馈给开发者"
+        xray_agent_blank
+        echoContent yellow "$(cat /etc/issue)"
+        echoContent yellow "$(cat /proc/version)"
+        exit 0
+    fi
+}
+
+checkCPUVendor() {
+    if [[ -n $(which uname) ]]; then
+        if [[ "$(uname)" == "Linux" ]]; then
+            case "$(uname -m)" in
+                amd64 | x86_64)
+                    xrayCoreCPUVendor="Xray-linux-64"
+                    ;;
+                armv8 | aarch64)
+                    xrayCoreCPUVendor="Xray-linux-arm64-v8a"
+                    ;;
+                *)
+                    echoContent red "不支持此CPU架构"
+                    exit 1
+                    ;;
+            esac
+        fi
+    else
+        echoContent red "无法识别此CPU架构，默认amd64、x86_64"
+        xrayCoreCPUVendor="Xray-linux-64"
+    fi
+}
+
+xray_agent_run_legacy_migrations() {
+    mkdir -p "${XRAY_AGENT_TLS_DIR}" "${XRAY_AGENT_XRAY_CONF_DIR}"
+    if [[ -f "$(xray_agent_xray_conf_file "10_outbounds.json")" ]] && [[ ! -f "$(xray_agent_xray_conf_file "10_ipv4_outbounds.json")" ]]; then
+        mv "$(xray_agent_xray_conf_file "10_outbounds.json")" "$(xray_agent_xray_conf_file "10_ipv4_outbounds.json")"
+    fi
+}
+
+readInstallType() {
+    coreInstallType=
+    reuse443=
+    if [[ -d "${XRAY_AGENT_ETC_DIR}" ]]; then
+        if [[ -d "/etc/xray-agent/xray" && -f "${ctlPath}" ]]; then
+            if [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}02_VLESS_TCP_inbounds.json" ]] && [[ -f "${configPath}07_VLESS_Reality_TCP_inbounds.json" ]]; then
+                coreInstallType=3
+            elif [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}02_VLESS_TCP_inbounds.json" ]]; then
+                coreInstallType=1
+            elif [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}07_VLESS_Reality_TCP_inbounds.json" ]]; then
+                coreInstallType=2
+            fi
+            if [[ -f "${nginxConfigPath}alone.stream" ]]; then
+                reuse443="y"
+            fi
+        fi
+    fi
+}
+
+readInstallProtocolType() {
+    currentInstallProtocolType=
+    frontingType=
+    RealityfrontingType=
+
+    while read -r row; do
+        if echo "${row}" | grep -q VLESS_TCP_inbounds; then
+            currentInstallProtocolType=${currentInstallProtocolType}'0'
+            frontingType=02_VLESS_TCP_inbounds
+        fi
+        if echo "${row}" | grep -q VLESS_WS_inbounds; then
+            currentInstallProtocolType=${currentInstallProtocolType}'1'
+        fi
+        if echo "${row}" | grep -q VMess_WS_inbounds; then
+            currentInstallProtocolType=${currentInstallProtocolType}'2'
+        fi
+        if echo "${row}" | grep -q VLESS_Reality_TCP_inbounds; then
+            currentInstallProtocolType=${currentInstallProtocolType}'7'
+            RealityfrontingType=07_VLESS_Reality_TCP_inbounds
+        fi
+        if echo "${row}" | grep -q VLESS_XHTTP_inbounds; then
+            currentInstallProtocolType=${currentInstallProtocolType}'8'
+        fi
+        if echo "${row}" | grep -q Hysteria2_inbounds; then
+            currentInstallProtocolType=${currentInstallProtocolType}'9'
+        fi
+    done < <(find "${configPath}" -name "*inbounds.json" 2>/dev/null | awk -F "[.]" '{print $1}')
+}
+
+readConfigHostPathUUID() {
+    path=
+    Port=
+    UUID=
+    domain=
+    TLSDomain=
+    RealityPort=
+    RealityPublicKey=
+    RealityServerNames=
+    RealityDestDomain=
+    RealityShortID=
+    XHTTPMode=auto
+    Hysteria2Port=
+    Hysteria2MasqueradeURL=
+    Hysteria2BrutalUpMbps=
+    Hysteria2BrutalDownMbps=
+
+    local tls_inbound_file reality_inbound_file xhttp_inbound_file hysteria2_inbound_file
+    tls_inbound_file="$(xray_agent_tls_inbound_file 2>/dev/null || true)"
+    reality_inbound_file="$(xray_agent_reality_inbound_file 2>/dev/null || true)"
+    xhttp_inbound_file="$(xray_agent_xhttp_inbound_file)"
+    hysteria2_inbound_file="$(xray_agent_hysteria2_inbound_file)"
+
+    if [[ -n "${tls_inbound_file}" && -f "${tls_inbound_file}" ]]; then
+        path="$(xray_agent_tls_base_path_from_inbound "${tls_inbound_file}")"
+        Port="$(xray_agent_inbound_port "${tls_inbound_file}")"
+        domain="$(xray_agent_nginx_server_name)"
+        UUID="$(xray_agent_inbound_clients_csv "${tls_inbound_file}")"
+        TLSDomain="$(xray_agent_tls_domain_from_inbound "${tls_inbound_file}")"
+    fi
+
+    if [[ -n "${reality_inbound_file}" && -f "${reality_inbound_file}" ]]; then
+        if [[ -z "${path}" ]]; then
+            UUID="$(xray_agent_inbound_clients_csv "${reality_inbound_file}")"
+        fi
+        RealityServerNames="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.serverNames | join(",")')"
+        RealityPublicKey="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.publicKey // .inbounds[0].streamSettings.realitySettings.password // empty')"
+        RealityPort="$(xray_agent_inbound_port "${reality_inbound_file}")"
+        RealityDestDomain="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.target // .inbounds[0].streamSettings.realitySettings.dest // empty')"
+        RealityPrivateKey="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.privateKey')"
+        RealityShortID="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.shortIds[0] // empty')"
+        RealityMldsa65Seed="$(xray_agent_reality_value "${reality_inbound_file}" '.inbounds[0].streamSettings.realitySettings.mldsa65Seed // empty')"
+        RealityMldsa65Verify="$(xray_agent_reality_mldsa65_verify_value || true)"
+        xray_agent_ensure_reality_public_key || true
+        if [[ -z "${path}" && -f "${xhttp_inbound_file}" ]]; then
+            path="$(xray_agent_xhttp_path_from_inbound "${xhttp_inbound_file}")"
+        fi
+    fi
+
+    if [[ -f "${xhttp_inbound_file}" ]]; then
+        XHTTPMode="$(xray_agent_xhttp_mode_from_inbound "${xhttp_inbound_file}")"
+        VLESSDecryption="$(jq -r '.inbounds[0].settings.decryption // "none"' "${xhttp_inbound_file}" | tr -d '\r')"
+    elif [[ -f "${configPath}03_VLESS_WS_inbounds.json" ]]; then
+        VLESSDecryption="$(jq -r '.inbounds[0].settings.decryption // "none"' "${configPath}03_VLESS_WS_inbounds.json" | tr -d '\r')"
+    fi
+
+    if [[ -n "${VLESSDecryption:-}" && "${VLESSDecryption}" != "none" ]]; then
+        VLESSEncryption="$(xray_agent_vless_encryption_from_decryption "${VLESSDecryption}" || true)"
+    fi
+
+    if [[ -n "${tls_inbound_file}" && -f "${tls_inbound_file}" ]]; then
+        ECHServerKeys="$(jq -r '.inbounds[0].streamSettings.tlsSettings.echServerKeys // empty' "${tls_inbound_file}" | tr -d '\r')"
+        ECHConfigList="$(xray_agent_tls_ech_config_list_value || true)"
+    fi
+
+    if [[ -f "${hysteria2_inbound_file}" ]]; then
+        Hysteria2Port="$(xray_agent_inbound_port "${hysteria2_inbound_file}")"
+        Hysteria2MasqueradeURL="$(jq -r '.inbounds[0].streamSettings.hysteriaSettings.masquerade.url // empty' "${hysteria2_inbound_file}" | tr -d '\r')"
+        Hysteria2BrutalUpMbps="$(jq -r '.inbounds[0].streamSettings.finalmask.quicParams.brutalUp // empty' "${hysteria2_inbound_file}" | tr -d '\r' | awk '{print $1}')"
+        Hysteria2BrutalDownMbps="$(jq -r '.inbounds[0].streamSettings.finalmask.quicParams.brutalDown // empty' "${hysteria2_inbound_file}" | tr -d '\r' | awk '{print $1}')"
+        if [[ -z "${TLSDomain}" ]]; then
+            TLSDomain="$(xray_agent_tls_domain_from_inbound "${hysteria2_inbound_file}")"
+        fi
+        if [[ -z "${domain}" ]]; then
+            domain="${TLSDomain}"
+        fi
+        if [[ -z "${UUID}" ]]; then
+            UUID="$(xray_agent_hysteria2_clients_csv "${hysteria2_inbound_file}")"
+        fi
+    fi
+}
+
+showInstallStatus() {
+    if [[ -n "${coreInstallType}" ]]; then
+        if [[ -n $(pgrep -f xray/xray) ]]; then
+            xray_agent_blank
+            echoContent yellow "核心: Xray-core[运行中]"
+        else
+            xray_agent_blank
+            echoContent yellow "核心: Xray-core[未运行]"
+        fi
+
+        readInstallProtocolType
+
+        if [[ -n ${currentInstallProtocolType} ]]; then
+            xray_agent_print_inline yellow "已安装协议: "
+        fi
+        if echo "${currentInstallProtocolType}" | grep -q 0; then
+            xray_agent_print_inline yellow "VLESS+TCP[TLS] "
+        fi
+        if echo "${currentInstallProtocolType}" | grep -q 1; then
+            xray_agent_print_inline yellow "VLESS+WS[TLS] "
+        fi
+        if echo "${currentInstallProtocolType}" | grep -q 2; then
+            xray_agent_print_inline yellow "VMess+WS[TLS] "
+        fi
+        if echo "${currentInstallProtocolType}" | grep -q 7; then
+            xray_agent_print_inline yellow "VLESS+TCP[Reality] "
+        fi
+        if echo "${currentInstallProtocolType}" | grep -q 8; then
+            xray_agent_print_inline yellow "VLESS+XHTTP "
+        fi
+        if echo "${currentInstallProtocolType}" | grep -q 9; then
+            xray_agent_print_inline yellow "Hysteria2 "
+        fi
+    fi
+}
+
+xray_agent_install_type_label() {
+    case "${coreInstallType:-}" in
+        1) printf 'TLS套餐\n' ;;
+        2) printf 'Reality套餐\n' ;;
+        3) printf 'TLS+Reality套餐\n' ;;
+        *) printf '未安装\n' ;;
+    esac
+}
+
+xray_agent_protocol_summary() {
+    local summary=()
+    if echo "${currentInstallProtocolType:-}" | grep -q 0; then
+        summary+=("VLESS-TCP-TLS")
+    fi
+    if echo "${currentInstallProtocolType:-}" | grep -q 1; then
+        summary+=("VLESS-WS-TLS")
+    fi
+    if echo "${currentInstallProtocolType:-}" | grep -q 2; then
+        summary+=("VMess-WS-TLS")
+    fi
+    if echo "${currentInstallProtocolType:-}" | grep -q 7; then
+        summary+=("VLESS-TCP-Reality")
+    fi
+    if echo "${currentInstallProtocolType:-}" | grep -q 8; then
+        summary+=("XHTTP")
+    fi
+    if echo "${currentInstallProtocolType:-}" | grep -q 9; then
+        summary+=("Hysteria2")
+    fi
+
+    if [[ "${#summary[@]}" -eq 0 ]]; then
+        printf '无\n'
+    else
+        xray_agent_join_by ', ' "${summary[@]}"
+        printf '\n'
+    fi
+}
+
+xray_agent_port_owner() {
+    local protocol="$1"
+    local port="$2"
+    if ! command -v lsof >/dev/null 2>&1; then
+        printf '未检测(lsof缺失)\n'
+        return 0
+    fi
+
+    local owner
+    if [[ "${protocol}" == "UDP" ]]; then
+        owner="$(lsof -nP -iUDP:"${port}" 2>/dev/null | awk 'NR == 2 {print $1"/"$2; exit}')"
+    else
+        owner="$(lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 {print $1"/"$2; exit}')"
+    fi
+    printf '%s\n' "${owner:-空闲}"
+}
+
+xray_agent_tool_status_header() {
+    local title="$1"
+    local cert_status="未检测"
+
+    readInstallType
+    readInstallProtocolType
+    readConfigHostPathUUID
+    xray_agent_detect_network_capabilities
+    if declare -F xray_agent_cert_primary_status >/dev/null 2>&1; then
+        cert_status="$(xray_agent_cert_primary_status)"
+    fi
+
+    xray_agent_blank
+    echoContent skyBlue "-------------------------${title}-----------------------------"
+    echoContent yellow "安装类型: $(xray_agent_install_type_label)"
+    echoContent yellow "已启用协议: $(xray_agent_protocol_summary)"
+    echoContent yellow "域名: ${domain:-无}  TLS证书域名: ${TLSDomain:-无}"
+    if [[ -n "${RealityDestDomain:-}" ]]; then
+        echoContent yellow "Reality目标: ${RealityDestDomain}  端口: ${RealityPort:-未检测}"
+    fi
+    if [[ -f "$(xray_agent_hysteria2_inbound_file)" ]]; then
+        echoContent yellow "Hysteria2: 已启用 UDP/${Hysteria2Port:-443}  伪装: ${Hysteria2MasqueradeURL:-未检测}"
+    else
+        echoContent yellow "Hysteria2: 未启用"
+    fi
+    echoContent yellow "证书: ${cert_status}"
+    echoContent yellow "网络栈: $(xray_agent_route_mode_label)  WARP: $(xray_agent_warp_mode_label)"
+    echoContent yellow "端口占用: TCP/80=$(xray_agent_port_owner TCP 80) TCP/443=$(xray_agent_port_owner TCP 443) UDP/443=$(xray_agent_port_owner UDP 443)"
+    echoContent red "=============================================================="
+}
+
+xray_agent_bootstrap_state() {
+    checkBTPanel
+    if declare -F xray_agent_run_legacy_migrations >/dev/null 2>&1; then
+        xray_agent_run_legacy_migrations
+    fi
+    readInstallType
+    readInstallProtocolType
+    readConfigHostPathUUID
+}
