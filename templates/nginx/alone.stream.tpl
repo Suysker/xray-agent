@@ -12,10 +12,12 @@ ${NGINX_STREAM_SERVER_NAME_MAP}
         server ${NGINX_STREAM_REALITY_TARGET};
     }
 
+${NGINX_STREAM_EXTRA_UPSTREAMS}
+
     server {
 ${NGINX_STREAM_LISTEN_DIRECTIVES}
         ssl_preread on;
-        proxy_protocol on;
+${NGINX_STREAM_PROXY_PROTOCOL_DIRECTIVE}
         proxy_pass ${XRAY_DOLLAR}backend_name;
     }
 }

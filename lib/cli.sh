@@ -33,7 +33,7 @@ xray_agent_print_install_menu_items() {
 xray_agent_print_management_menu_items() {
     echoContent skyBlue "-------------------------工具管理-----------------------------"
     echoContent yellow "3.账号管理"
-    echoContent yellow "4.更换伪装站"
+    echoContent yellow "4.网站/反代管理"
     echoContent yellow "5.证书管理"
     echoContent yellow "6.IPv4/IPv6出站策略"
     echoContent yellow "7.阻止访问黑名单及中国大陆IP"
@@ -53,19 +53,20 @@ xray_agent_print_version_menu_items() {
 
 xray_agent_print_script_menu_items() {
     echoContent skyBlue "-------------------------脚本管理-----------------------------"
-    echoContent yellow "16.查看日志"
-    echoContent yellow "17.卸载脚本"
+    echoContent yellow "16.备份与恢复管理"
+    echoContent yellow "17.查看日志"
+    echoContent yellow "18.卸载脚本"
 }
 
 xray_agent_print_external_menu_items() {
     echoContent skyBlue "-------------------------其他功能-----------------------------"
-    echoContent yellow "18.Adguardhome"
-    echoContent yellow "19.WARP"
-    echoContent yellow "20.内核管理及BBR优化"
-    echoContent yellow "21.五网测速+IPV6"
-    echoContent yellow "22.三网回程路由测试"
-    echoContent yellow "23.流媒体解锁检测"
-    echoContent yellow "24.VPS基本信息"
+    echoContent yellow "19.Adguardhome"
+    echoContent yellow "20.WARP"
+    echoContent yellow "21.内核管理及BBR优化"
+    echoContent yellow "22.五网测速+IPV6"
+    echoContent yellow "23.三网回程路由测试"
+    echoContent yellow "24.流媒体解锁检测"
+    echoContent yellow "25.VPS基本信息"
     echoContent red "=============================================================="
 }
 
@@ -96,15 +97,16 @@ xray_agent_dispatch_menu_selection() {
         13) xray_agent_subscription_menu ;;
         14) xrayVersionManageMenu 1 ;;
         15) updateXRayAgent 1 ;;
-        16) checkLog 1 ;;
-        17) unInstall 1 ;;
-        18) AdguardManageMenu 1 ;;
-        19) xray_agent_external_warp_menu ;;
-        20) xray_agent_external_kernel_bbr ;;
-        21) xray_agent_external_hyperspeed ;;
-        22) xray_agent_external_backtrace ;;
-        23) xray_agent_external_unlock_media ;;
-        24) xray_agent_external_vps_info ;;
+        16) xray_agent_backup_menu ;;
+        17) checkLog 1 ;;
+        18) unInstall 1 ;;
+        19) AdguardManageMenu 1 ;;
+        20) xray_agent_external_warp_menu ;;
+        21) xray_agent_external_kernel_bbr ;;
+        22) xray_agent_external_hyperspeed ;;
+        23) xray_agent_external_backtrace ;;
+        24) xray_agent_external_unlock_media ;;
+        25) xray_agent_external_vps_info ;;
     esac
 }
 

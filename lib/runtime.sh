@@ -578,6 +578,9 @@ xray_agent_tool_status_header() {
         echoContent yellow "Hysteria2: 未启用"
     fi
     echoContent yellow "证书: ${cert_status}"
+    if declare -F xray_agent_nginx_status_line >/dev/null 2>&1; then
+        echoContent yellow "$(xray_agent_nginx_status_line)"
+    fi
     echoContent yellow "网络栈: $(xray_agent_route_mode_label)  WARP: $(xray_agent_warp_mode_label)"
     echoContent yellow "端口占用: TCP/80=$(xray_agent_port_owner TCP 80) TCP/443=$(xray_agent_port_owner TCP 443) UDP/443=$(xray_agent_port_owner UDP 443)"
     echoContent red "=============================================================="

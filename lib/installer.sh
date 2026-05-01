@@ -368,7 +368,13 @@ xray_agent_render_install_bundle() {
     xray_agent_render_common_xray_configs
 
     if [[ "${reuse443}" == "y" ]]; then
-        accept_proxy_protocol="true"
+        if [[ -n "${XRAY_AGENT_FRONTDOOR_PROXY_PROTOCOL:-}" ]]; then
+            accept_proxy_protocol="${XRAY_AGENT_FRONTDOOR_PROXY_PROTOCOL}"
+        elif declare -F xray_agent_nginx_resolved_proxy_protocol_bool >/dev/null 2>&1; then
+            accept_proxy_protocol="$(xray_agent_nginx_resolved_proxy_protocol_bool)"
+        else
+            accept_proxy_protocol="false"
+        fi
     fi
 
     sniffing_json="$(xray_agent_default_sniffing_json)"

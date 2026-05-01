@@ -234,10 +234,18 @@ xray_agent_allow_port_safe() {
 
 checkPort() {
     local port="$1"
-    local port_progress
+    local port_progress port_owner
     port_progress=$(lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $1; exit}')
     if [[ -n "${port_progress}" && "${port_progress}" != "xray" ]]; then
         xray_agent_blank
+        if [[ "${port}" == "443" ]]; then
+            port_owner="$(xray_agent_port_owner TCP 443 2>/dev/null || printf '%s\n' "${port_progress}")"
+            echoContent red " ---> TCP/443 当前由 ${port_owner} 占用，不会静默覆盖现有前端/网站。"
+            echoContent yellow " ---> 请先迁移现有网站到本机 upstream 后注册到网站/反代管理，或为 Xray 选择非 443 后端端口。"
+            if declare -F xray_agent_nginx_print_proxy_protocol_preflight >/dev/null 2>&1; then
+                xray_agent_nginx_print_proxy_protocol_preflight
+            fi
+        fi
         xray_agent_error " ---> ${port}端口被占用，请手动关闭后安装"
     fi
 }

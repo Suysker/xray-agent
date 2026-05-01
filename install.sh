@@ -70,9 +70,13 @@ xray_agent_runtime_layout_complete() {
         "${SCRIPT_DIR}/lib/system.sh" \
         "${SCRIPT_DIR}/lib/tls.sh" \
         "${SCRIPT_DIR}/lib/core.sh" \
+        "${SCRIPT_DIR}/lib/nginx_state.sh" \
+        "${SCRIPT_DIR}/lib/nginx_preflight.sh" \
+        "${SCRIPT_DIR}/lib/nginx_render.sh" \
         "${SCRIPT_DIR}/lib/nginx.sh" \
         "${SCRIPT_DIR}/lib/protocols.sh" \
         "${SCRIPT_DIR}/lib/accounts.sh" \
+        "${SCRIPT_DIR}/lib/backup.sh" \
         "${SCRIPT_DIR}/lib/subscription.sh" \
         "${SCRIPT_DIR}/lib/routing.sh" \
         "${SCRIPT_DIR}/lib/features.sh" \
@@ -156,6 +160,9 @@ for module_file in \
     "${SCRIPT_DIR}/lib/system.sh" \
     "${SCRIPT_DIR}/lib/tls.sh" \
     "${SCRIPT_DIR}/lib/core.sh" \
+    "${SCRIPT_DIR}/lib/nginx_state.sh" \
+    "${SCRIPT_DIR}/lib/nginx_preflight.sh" \
+    "${SCRIPT_DIR}/lib/nginx_render.sh" \
     "${SCRIPT_DIR}/lib/nginx.sh" \
     "${SCRIPT_DIR}/lib/features.sh" \
     "${SCRIPT_DIR}/lib/apps.sh" \
@@ -163,6 +170,7 @@ for module_file in \
     "${SCRIPT_DIR}/lib/routing.sh" \
     "${SCRIPT_DIR}/lib/protocols.sh" \
     "${SCRIPT_DIR}/lib/accounts.sh" \
+    "${SCRIPT_DIR}/lib/backup.sh" \
     "${SCRIPT_DIR}/lib/subscription.sh" \
     "${SCRIPT_DIR}/lib/installer.sh" \
     "${SCRIPT_DIR}/lib/cli.sh"; do

@@ -18,7 +18,7 @@ xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的
 - **证书流程更稳**：证书管理会先展示证书库存、解析结果、端口占用和网络栈状态，再推荐 HTTP-01 或 DNS-01，减少因为 DNS、防火墙或端口冲突导致的反复失败。
 - **面向真实网络环境**：安装和路由逻辑会考虑 IPv4-only、IPv6-only、双栈、多公网 IP、WARP 默认路由和 WARP 专用接口等常见 VPS 场景。
 - **内置 Hysteria2，不额外拉服务**：使用 Xray-core 内置 Hysteria2，占用 UDP/443，与 TCP/443 上的 Nginx/Xray 分流共存，账号跟随现有用户体系。
-- **失败前先检查**：涉及 Nginx、Xray、证书、端口、防火墙的关键操作会尽量先做状态检查或配置测试，避免无提示写坏运行环境。
+- **失败前先检查**：涉及 Nginx、Xray、证书、端口、防火墙、备份恢复的关键操作会尽量先做状态检查或配置测试，避免无提示写坏运行环境。
 
 ## 功能特性
 
@@ -26,10 +26,12 @@ xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的
 - TLS 套餐默认包含 `VLESS-TCP`、`VLESS-WS`、`VMess-WS`、`XHTTP` 和 Xray-core 内置 `Hysteria2`。
 - Reality 套餐包含 `VLESS-TCP Reality Vision` 和 `XHTTP Reality`，安装时可选择同时启用 Hysteria2。
 - 支持多用户管理、分享链接生成、自定义 UUID、端口管理、日志查看、卸载与脚本更新。
+- 支持一键备份/恢复，备份包包含配置、证书、托管 Nginx 配置和 manifest，恢复前会先校验。
 - 支持 ACME 证书申请与续签，包含 HTTP-01、DNS-01、Cloudflare、DNSPod、Aliyun 和手动 TXT。
 - 支持 IPv4-only、IPv6-only、双栈、多公网 IP、WARP 专用接口与 WARP 默认路由场景。
 - 支持黑名单、CN IP/域名策略、WARP 分流、IPv4/IPv6 出站策略。
-- 支持 Nginx 伪装站管理，配置写入前会执行配置测试，失败时不继续重启。
+- 支持 Nginx 网站/反代管理，可把已有本机网站注册为 fallback upstream；配置写入前会执行配置测试，失败时回滚。
+- 443 前门会自动判定 PROXY protocol：纯净机或已确认后端默认开启，检测到未知 HTTPS 后端时默认关闭，并保持 Nginx stream 与 Xray inbound 一致。
 - 按当前 Xray-core 正式能力启用 VLESS Encryption、REALITY ML-DSA-65、TLS ECH、Hysteria2 `finalmask.quicParams` 等增强字段；内核不支持时会提示升级，不生成不可运行配置。
 
 ## 支持协议
@@ -81,7 +83,7 @@ vasma
 1. 安装TLS套餐
 2. 安装Reality套餐
 3. 账号管理
-4. 更换伪装站
+4. 网站/反代管理
 5. 证书管理
 6. IPv4/IPv6出站策略
 7. 阻止访问黑名单及中国大陆IP
@@ -93,9 +95,10 @@ vasma
 13. 订阅管理
 14. core管理
 15. 更新脚本
-16. 查看日志
-17. 卸载脚本
-18-24. AdGuardHome、WARP、BBR、测速、回程、流媒体、VPS信息
+16. 备份与恢复管理
+17. 查看日志
+18. 卸载脚本
+19-25. AdGuardHome、WARP、BBR、测速、回程、流媒体、VPS信息
 ```
 
 完整说明见 [菜单参考](docs/menu-reference.md)。

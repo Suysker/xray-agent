@@ -24,11 +24,11 @@ server {
         sub_filter ${XRAY_DOLLAR}proxy_host ${XRAY_DOLLAR}host;
         sub_filter_once off;
         proxy_pass ${UPSTREAM_URL};
-        proxy_set_header Host ${XRAY_DOLLAR}proxy_host;
+        proxy_set_header Host ${UPSTREAM_HOST_HEADER};
         proxy_http_version 1.1;
         proxy_cache_bypass ${XRAY_DOLLAR}http_upgrade;
         proxy_ssl_server_name on;
-        proxy_ssl_name ${XRAY_DOLLAR}proxy_host;
+        proxy_ssl_name ${UPSTREAM_TLS_NAME};
         proxy_ssl_protocols TLSv1.2 TLSv1.3;
         proxy_set_header Upgrade ${XRAY_DOLLAR}http_upgrade;
         proxy_set_header X-Real-IP ${XRAY_DOLLAR}proxy_protocol_addr;
