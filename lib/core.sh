@@ -30,19 +30,19 @@ xray_agent_github_fetch_releases() {
         local http_code
         [[ -n "${github_token}" ]] && curl_args+=(-H "Authorization: Bearer ${github_token}")
         if ! http_code="$(curl "${curl_args[@]}" "${api_url}" -o "${response_file}" -w "%{http_code}" 2>"${error_file}")"; then
-            echoContent red " ---> 访问 GitHub Release API 失败: ${repo}"
+            echoContent red " ---> 访问 GitHub Release API 失败: ${repo}" >&2
             [[ -s "${error_file}" ]] && sed 's/^/     /' "${error_file}" >&2
             rm -f "${error_file}"
             return 1
         fi
         if [[ "${http_code}" != "200" ]]; then
-            echoContent red " ---> GitHub Release API 返回 HTTP ${http_code}: ${repo}"
+            echoContent red " ---> GitHub Release API 返回 HTTP ${http_code}: ${repo}" >&2
             local message
             message="$(xray_agent_github_api_error_message "${response_file}")"
             if [[ -n "${message}" ]]; then
-                echoContent yellow " ---> 返回信息: ${message}"
+                echoContent yellow " ---> 返回信息: ${message}" >&2
                 if printf '%s\n' "${message}" | grep -qi "rate limit"; then
-                    echoContent yellow " ---> 这通常是 GitHub API 限流。请稍后重试，或先配置可访问 GitHub 的网络后再升级。"
+                    echoContent yellow " ---> 这通常是 GitHub API 限流。请稍后重试，或先配置可访问 GitHub 的网络后再升级。" >&2
                 fi
             fi
             rm -f "${error_file}"
@@ -52,13 +52,13 @@ xray_agent_github_fetch_releases() {
         local wget_args=(-q -O "${response_file}")
         [[ -n "${github_token}" ]] && wget_args+=(--header "Authorization: Bearer ${github_token}")
         if ! wget "${wget_args[@]}" "${api_url}" 2>"${error_file}"; then
-            echoContent red " ---> 访问 GitHub Release API 失败: ${repo}"
+            echoContent red " ---> 访问 GitHub Release API 失败: ${repo}" >&2
             [[ -s "${error_file}" ]] && sed 's/^/     /' "${error_file}" >&2
             rm -f "${error_file}"
             return 1
         fi
     else
-        echoContent red " ---> curl 或 wget 不存在，无法访问 GitHub Release API"
+        echoContent red " ---> curl 或 wget 不存在，无法访问 GitHub Release API" >&2
         return 1
     fi
     rm -f "${error_file}"
@@ -66,11 +66,11 @@ xray_agent_github_fetch_releases() {
     if ! jq -e 'type == "array"' "${response_file}" >/dev/null 2>&1; then
         local message
         message="$(xray_agent_github_api_error_message "${response_file}")"
-        echoContent red " ---> GitHub Release API 返回异常，已停止操作"
+        echoContent red " ---> GitHub Release API 返回异常，已停止操作" >&2
         if [[ -n "${message}" ]]; then
-            echoContent yellow " ---> 返回信息: ${message}"
+            echoContent yellow " ---> 返回信息: ${message}" >&2
             if printf '%s\n' "${message}" | grep -qi "rate limit"; then
-                echoContent yellow " ---> 这通常是 GitHub API 限流。请稍后重试，或先配置可访问 GitHub 的网络后再升级。"
+                echoContent yellow " ---> 这通常是 GitHub API 限流。请稍后重试，或先配置可访问 GitHub 的网络后再升级。" >&2
             fi
         fi
         return 1
@@ -334,11 +334,11 @@ xrayVersionManageMenu() {
     read -r -p "请选择:" selectXrayType
     case "${selectXrayType}" in
         1)
-            updateXray
+            updateXray || echoContent red " ---> Xray-core 升级未完成"
             ;;
         2)
             prereleaseStatus=true
-            updateXray
+            updateXray || echoContent red " ---> Xray-core 预览版升级未完成"
             ;;
         3)
             local rollback_versions=()
@@ -362,7 +362,7 @@ xrayVersionManageMenu() {
                 version="${rollback_versions[$((selectXrayVersionType - 1))]}"
             fi
             if [[ -n "${version}" ]]; then
-                updateXray "${version}"
+                updateXray "${version}" || echoContent red " ---> Xray-core 回退未完成"
             else
                 echoContent red " ---> 输入有误，请重新输入"
                 xrayVersionManageMenu 1
