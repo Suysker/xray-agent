@@ -125,7 +125,7 @@ xray_agent_bootstrap_full_layout() {
     archive_path="${temp_dir}/xray-agent.tar.gz"
 
     xray_agent_download_bootstrap_archive "${archive_path}" || return 1
-    tar -xzf "${archive_path}" -C "${temp_dir}"
+    tar -m -xzf "${archive_path}" -C "${temp_dir}"
 
     layout_script="$(find "${temp_dir}" -mindepth 3 -maxdepth 4 -path "*/packaging/install-layout.sh" -print -quit)"
     if [[ -z "${layout_script}" ]]; then

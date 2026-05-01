@@ -420,7 +420,7 @@ updateXRayAgent() {
         wget -c -q -O "${archive_path}" --no-check-certificate "${XRAY_AGENT_PROJECT_ARCHIVE_URL}"
     fi
 
-    tar -xzf "${archive_path}" -C "${temp_dir}"
+    tar -m -xzf "${archive_path}" -C "${temp_dir}"
     layout_script="$(find "${temp_dir}" -mindepth 3 -maxdepth 4 -path "*/packaging/install-layout.sh" -print -quit)"
     if [[ -z "${layout_script}" ]]; then
         xray_agent_error " ---> 更新包缺少 packaging/install-layout.sh"
