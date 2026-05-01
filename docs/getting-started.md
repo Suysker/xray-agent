@@ -5,7 +5,7 @@
 - 使用 root 用户登录服务器。
 - 推荐系统：Debian 11/12、Ubuntu 20.04/22.04/24.04。
 - 准备一个已经解析到服务器的域名。
-- 确认云厂商安全组放行 TCP/80、TCP/443；启用 Hysteria2 时还需要放行 UDP/443。
+- 确认云厂商安全组放行 TCP/80、TCP/443；启用 Hysteria2 时还需要放行 UDP/443，开启端口跳跃时还要放行对应 UDP 范围。
 - 建议使用纯净系统，避免已有 Nginx、证书脚本或代理脚本占用端口和配置。
 
 ## 一键安装
@@ -50,5 +50,5 @@ TLS 套餐适合希望使用同域名证书、Nginx 伪装站、XHTTP、Hysteria
 
 - Cloudflare CDN 场景请确认 SSL/TLS 模式为 Full 或 Full(strict)。
 - Oracle Cloud 需要同时检查系统防火墙和云控制台安全列表。
-- Hysteria2 使用 UDP/443，TCP/443 仍由 Nginx/Xray 分流使用。
+- Hysteria2 默认使用 UDP/443，TCP/443 仍由 Nginx/Xray 分流使用；端口跳跃是可选项，需要额外放行所选 UDP 范围。
 - IPv6-only 或 WARP 默认路由环境中，脚本会按当前网络能力调整可用动作，但域名解析和云防火墙仍需要手动确认。

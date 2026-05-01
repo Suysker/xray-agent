@@ -470,12 +470,17 @@ xray_agent_subscription_vless_xhttp_proxy_yaml() {
 
 xray_agent_subscription_hysteria2_proxy_yaml() {
     local user_id="$1"
-    local name
+    local name ports
     name="$(xray_agent_subscription_proxy_name "${user_id}" "Hysteria2")"
+    ports="$(xray_agent_hysteria2_hop_ports_value)"
     printf '  - name: %s\n' "$(xray_agent_yaml_quote "${name}")"
     printf '    type: hysteria2\n'
     printf '    server: %s\n' "$(xray_agent_yaml_quote "${domain}")"
     printf '    port: 443\n'
+    if [[ -n "${ports}" ]]; then
+        printf '    ports: %s\n' "$(xray_agent_yaml_quote "${ports}")"
+        printf '    hop-interval: %s\n' "${Hysteria2HopInterval:-30}"
+    fi
     printf '    password: %s\n' "$(xray_agent_yaml_quote "${user_id}")"
     printf '    sni: %s\n' "$(xray_agent_yaml_quote "${domain}")"
     printf '    skip-cert-verify: false\n'

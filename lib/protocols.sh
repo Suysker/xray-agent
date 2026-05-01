@@ -40,6 +40,7 @@ xray_agent_load_protocol_profile() {
 
     xray_agent_reset_protocol_profile
     while IFS= read -r line || [[ -n "${line}" ]]; do
+        line="${line%$'\r'}"
         [[ -z "${line}" || "${line}" == \#* ]] && continue
         key="${line%%=*}"
         value="${line#*=}"
@@ -258,7 +259,11 @@ xray_agent_protocol_port_value() {
             echo "${RealityPort}"
             ;;
         hysteria2)
-            echo "443"
+            if declare -F xray_agent_hysteria2_listen_port_value >/dev/null 2>&1; then
+                xray_agent_hysteria2_listen_port_value
+            else
+                echo "443"
+            fi
             ;;
         auto)
             if [[ "${variant}" == "reality" ]]; then
@@ -677,6 +682,151 @@ xray_agent_hysteria2_prompt_mbps() {
     done
 }
 
+xray_agent_hysteria2_port_spec_valid() {
+    local port_spec="$1"
+    local item start end start_num end_num
+    local -a items
+    [[ -n "${port_spec}" && "${port_spec}" != *[[:space:]]* ]] || return 1
+    [[ "${port_spec}" =~ ^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$ ]] || return 1
+
+    IFS=',' read -r -a items <<<"${port_spec}"
+    for item in "${items[@]}"; do
+        if [[ "${item}" == *-* ]]; then
+            start="${item%-*}"
+            end="${item#*-}"
+        else
+            start="${item}"
+            end="${item}"
+        fi
+        [[ "${start}" =~ ^[0-9]+$ && "${end}" =~ ^[0-9]+$ ]] || return 1
+        start_num=$((10#${start}))
+        end_num=$((10#${end}))
+        ((start_num >= 1 && start_num <= 65535 && end_num >= 1 && end_num <= 65535 && start_num <= end_num)) || return 1
+    done
+}
+
+xray_agent_hysteria2_prompt_hop_interval() {
+    local default_value="${1:-30}"
+    local input_value
+    while true; do
+        read -r -p "端口跳跃间隔[秒，回车默认${default_value}]:" input_value
+        input_value="${input_value:-${default_value}}"
+        if [[ "${input_value}" =~ ^[0-9]+$ ]] && ((input_value >= 5 && input_value <= 3600)); then
+            printf '%s\n' "${input_value}"
+            return 0
+        fi
+        echoContent red " ---> 请输入 5-3600 之间的整数秒" >&2
+    done
+}
+
+xray_agent_hysteria2_prompt_hop_ports() {
+    local default_ports="${1:-20000-50000}"
+    local input_ports
+    while true; do
+        read -r -p "端口跳跃范围[例 20000-50000 或 20000-20010,30000，回车默认${default_ports}]:" input_ports
+        input_ports="${input_ports:-${default_ports}}"
+        if xray_agent_hysteria2_port_spec_valid "${input_ports}"; then
+            printf '%s\n' "${input_ports}"
+            return 0
+        fi
+        echoContent red " ---> 端口范围格式错误，请输入 1-65535 内的端口或端口段" >&2
+    done
+}
+
+xray_agent_hysteria2_prompt_port_hopping() {
+    local enable_hop default_ports
+    echoContent yellow " ---> Hysteria2 支持端口跳跃；启用后客户端会在多个 UDP 端口之间切换。"
+    echoContent yellow " ---> 这些 UDP 端口必须同时在云安全组和本机防火墙放行。未确认前建议先保持关闭。"
+    read -r -p "是否启用 Hysteria2 端口跳跃？[y/N]:" enable_hop
+    enable_hop="${enable_hop:-n}"
+    if [[ "${enable_hop}" != "y" ]]; then
+        Hysteria2HopPorts=
+        Hysteria2HopInterval=
+        return 0
+    fi
+
+    default_ports="${Hysteria2HopPorts:-20000-50000}"
+    Hysteria2HopPorts="$(xray_agent_hysteria2_prompt_hop_ports "${default_ports}")"
+    Hysteria2HopInterval="$(xray_agent_hysteria2_prompt_hop_interval "${Hysteria2HopInterval:-30}")"
+}
+
+xray_agent_hysteria2_allow_udp_port_item() {
+    local item="$1"
+    local firewall_item="${item}"
+    if [[ "${item}" == *-* ]]; then
+        firewall_item="${item/-/:}"
+    fi
+
+    if systemctl status netfilter-persistent 2>/dev/null | grep -q "active (exited)"; then
+        if command -v iptables >/dev/null 2>&1; then
+            iptables -C INPUT -p udp --dport "${firewall_item}" -m comment --comment "allow ${item}($(xray_agent_firewall_comment))" -j ACCEPT 2>/dev/null ||
+                iptables -I INPUT -p udp --dport "${firewall_item}" -m comment --comment "allow ${item}($(xray_agent_firewall_comment))" -j ACCEPT 2>/dev/null || true
+        fi
+        if command -v ip6tables >/dev/null 2>&1; then
+            ip6tables -C INPUT -p udp --dport "${firewall_item}" -m comment --comment "allow ${item}($(xray_agent_firewall_comment))" -j ACCEPT 2>/dev/null ||
+                ip6tables -I INPUT -p udp --dport "${firewall_item}" -m comment --comment "allow ${item}($(xray_agent_firewall_comment))" -j ACCEPT 2>/dev/null || true
+        fi
+        netfilter-persistent save >/dev/null 2>&1 || true
+    elif systemctl status ufw 2>/dev/null | grep -q "active (exited)"; then
+        if ufw status | grep -q "Status: active"; then
+            ufw status | grep -q "${firewall_item}/udp" || sudo ufw allow "${firewall_item}/udp" || true
+        else
+            echoContent yellow " ---> UFW未启用，跳过${item}/udp放行"
+        fi
+    elif systemctl status firewalld 2>/dev/null | grep -q "active (running)"; then
+        if ! firewall-cmd --list-ports --permanent | grep -qw "${item}/udp"; then
+            firewall-cmd --zone=public --add-port="${item}/udp" --permanent >/dev/null 2>&1 || true
+            firewall-cmd --reload >/dev/null 2>&1 || true
+        fi
+    else
+        echoContent yellow " ---> 未检测到已启用防火墙，跳过${item}/udp放行"
+    fi
+}
+
+xray_agent_hysteria2_allow_hop_ports() {
+    local port_spec="${Hysteria2HopPorts:-}"
+    local item
+    local -a hop_items
+    [[ -n "${port_spec}" ]] || return 0
+    if ! xray_agent_hysteria2_port_spec_valid "${port_spec}"; then
+        echoContent yellow " ---> Hysteria2 端口跳跃范围格式无效，已跳过本机防火墙放行: ${port_spec}"
+        return 0
+    fi
+    IFS=',' read -r -a hop_items <<<"${port_spec}"
+    for item in "${hop_items[@]}"; do
+        xray_agent_hysteria2_allow_udp_port_item "${item}"
+    done
+    echoContent yellow " ---> 请确认云厂商安全组也已放行 UDP/${port_spec}。脚本只能处理本机防火墙，不能自动修改云防火墙。"
+}
+
+xray_agent_hysteria2_listen_port_value() {
+    printf '%s\n' "${Hysteria2Port:-443}"
+}
+
+xray_agent_hysteria2_hop_ports_value() {
+    if [[ -n "${Hysteria2HopPorts:-}" ]] && xray_agent_hysteria2_port_spec_valid "${Hysteria2HopPorts}"; then
+        printf '%s\n' "${Hysteria2HopPorts}"
+    fi
+}
+
+xray_agent_hysteria2_share_mport_param() {
+    local hop_ports
+    hop_ports="$(xray_agent_hysteria2_hop_ports_value)"
+    [[ -n "${hop_ports}" ]] || return 0
+    printf '&mport=%s' "$(xray_agent_urlencode "${hop_ports}")"
+}
+
+xray_agent_hysteria2_display_ports() {
+    local listen_port hop_ports
+    listen_port="$(xray_agent_hysteria2_listen_port_value)"
+    hop_ports="$(xray_agent_hysteria2_hop_ports_value)"
+    if [[ -n "${hop_ports}" ]]; then
+        printf '%s/UDP，端口跳跃: %s/UDP\n' "${listen_port}" "${hop_ports}"
+    else
+        printf '%s/UDP\n' "${listen_port}"
+    fi
+}
+
 xray_agent_hysteria2_prepare_tls_domain() {
     local previous_domain="${domain:-}" previous_tls_domain="${TLSDomain:-}" selected_domain
     xray_agent_hysteria2_select_tls_domain || return 1
@@ -728,22 +878,39 @@ xray_agent_hysteria2_prepare_runtime() {
         echoContent yellow " ---> 填 0 或直接回车表示不写 Brutal 参数，不是自动测速；不确定就保持 0。"
         Hysteria2BrutalUpMbps="$(xray_agent_hysteria2_prompt_mbps "服务端上行带宽" "约等于客户端下载" "${Hysteria2BrutalUpMbps:-0}")"
         Hysteria2BrutalDownMbps="$(xray_agent_hysteria2_prompt_mbps "服务端下行带宽" "约等于客户端上传" "${Hysteria2BrutalDownMbps:-0}")"
+        xray_agent_hysteria2_prompt_port_hopping
     fi
 
     Hysteria2Port=443
+    xray_agent_hysteria2_allow_hop_ports
 }
 
 xray_agent_hysteria2_finalmask_suffix() {
     local up_mbps="${Hysteria2BrutalUpMbps:-0}"
     local down_mbps="${Hysteria2BrutalDownMbps:-0}"
+    local hop_ports="${Hysteria2HopPorts:-}"
+    local hop_interval="${Hysteria2HopInterval:-30}"
     local quic_params
+    local use_brutal=false use_up=false use_down=false use_hop=false
 
-    if [[ "${up_mbps}" == "0" && "${down_mbps}" == "0" ]]; then
+    [[ "${up_mbps}" != "0" || "${down_mbps}" != "0" ]] && use_brutal=true
+    [[ "${up_mbps}" != "0" ]] && use_up=true
+    [[ "${down_mbps}" != "0" ]] && use_down=true
+    if [[ -n "${hop_ports}" ]]; then
+        if xray_agent_hysteria2_port_spec_valid "${hop_ports}"; then
+            use_hop=true
+        else
+            echoContent yellow " ---> Hysteria2 端口跳跃范围格式无效，已跳过 udpHop: ${hop_ports}" >&2
+            hop_ports=
+        fi
+    fi
+
+    if [[ "${use_brutal}" != "true" && "${use_hop}" != "true" ]]; then
         printf ''
         return 0
     fi
     if ! xray_agent_xray_supports_finalmask; then
-        echoContent yellow " ---> 当前 Xray-core 不支持 finalmask.quicParams，Hysteria2 Brutal 参数已跳过。"
+        echoContent yellow " ---> 当前 Xray-core 不支持 finalmask.quicParams，Hysteria2 Brutal/端口跳跃参数已跳过。" >&2
         printf ''
         return 0
     fi
@@ -751,13 +918,18 @@ xray_agent_hysteria2_finalmask_suffix() {
     quic_params="$(jq -nc \
         --arg up "${up_mbps} mbps" \
         --arg down "${down_mbps} mbps" \
-        --argjson useUp "$([[ "${up_mbps}" == "0" ]] && echo false || echo true)" \
-        --argjson useDown "$([[ "${down_mbps}" == "0" ]] && echo false || echo true)" \
+        --arg ports "${hop_ports}" \
+        --argjson interval "${hop_interval}" \
+        --argjson useBrutal "${use_brutal}" \
+        --argjson useUp "${use_up}" \
+        --argjson useDown "${use_down}" \
+        --argjson useHop "${use_hop}" \
         '{
           quicParams:
-            ({congestion:"brutal"}
+            ((if $useBrutal then {congestion:"brutal"} else {} end)
             + (if $useUp then {brutalUp:$up} else {} end)
-            + (if $useDown then {brutalDown:$down} else {} end))
+            + (if $useDown then {brutalDown:$down} else {} end)
+            + (if $useHop then {udpHop:{ports:$ports, interval:$interval}} else {} end))
         }')"
     printf ',\n        "finalmask": %s' "${quic_params}"
 }
@@ -819,6 +991,127 @@ xray_agent_hysteria2_uninstall() {
     fi
 }
 
+xray_agent_hysteria2_apply_hop_config() {
+    local action="$1"
+    local ports="${2:-}"
+    local interval="${3:-30}"
+    local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
+    local backup_file="${hysteria2_file}.bak.$(date +%s)"
+
+    [[ -f "${hysteria2_file}" ]] || {
+        echoContent red " ---> Hysteria2 未安装"
+        return 1
+    }
+
+    cp "${hysteria2_file}" "${backup_file}" || return 1
+    case "${action}" in
+        enable)
+            if ! xray_agent_json_update_file "${hysteria2_file}" '
+              .inbounds[0].streamSettings.finalmask = (.inbounds[0].streamSettings.finalmask // {})
+              | .inbounds[0].streamSettings.finalmask.quicParams = (.inbounds[0].streamSettings.finalmask.quicParams // {})
+              | .inbounds[0].streamSettings.finalmask.quicParams.udpHop = {ports:$ports, interval:$interval}
+            ' --arg ports "${ports}" --argjson interval "${interval}"; then
+                mv "${backup_file}" "${hysteria2_file}"
+                echoContent red " ---> 写入 Hysteria2 端口跳跃配置失败"
+                return 1
+            fi
+            ;;
+        disable)
+            if ! xray_agent_json_update_file "${hysteria2_file}" '
+              del(.inbounds[0].streamSettings.finalmask.quicParams.udpHop)
+              | if ((.inbounds[0].streamSettings.finalmask.quicParams // {}) | length) == 0 then
+                  del(.inbounds[0].streamSettings.finalmask.quicParams)
+                else . end
+              | if ((.inbounds[0].streamSettings.finalmask // {}) | length) == 0 then
+                  del(.inbounds[0].streamSettings.finalmask)
+                else . end
+            '; then
+                mv "${backup_file}" "${hysteria2_file}"
+                echoContent red " ---> 关闭 Hysteria2 端口跳跃失败"
+                return 1
+            fi
+            ;;
+        *)
+            rm -f "${backup_file}"
+            return 1
+            ;;
+    esac
+
+    if ! xray_agent_xray_config_test; then
+        mv "${backup_file}" "${hysteria2_file}"
+        echoContent red " ---> Xray 配置测试失败，已回滚 Hysteria2 端口跳跃配置"
+        [[ -f /tmp/xray-agent-xray-test.log ]] && tail -n 30 /tmp/xray-agent-xray-test.log
+        return 1
+    fi
+
+    if ! reloadCore; then
+        mv "${backup_file}" "${hysteria2_file}"
+        reloadCore || true
+        echoContent red " ---> Xray reload 失败，已回滚 Hysteria2 端口跳跃配置"
+        return 1
+    fi
+
+    rm -f "${backup_file}"
+    if [[ "${action}" == "enable" ]]; then
+        Hysteria2HopPorts="${ports}"
+        Hysteria2HopInterval="${interval}"
+        xray_agent_hysteria2_allow_hop_ports
+        echoContent green " ---> Hysteria2 端口跳跃已启用: UDP/${ports}，间隔 ${interval} 秒"
+    else
+        Hysteria2HopPorts=
+        Hysteria2HopInterval=
+        echoContent green " ---> Hysteria2 端口跳跃已关闭"
+    fi
+    readConfigHostPathUUID
+}
+
+xray_agent_hysteria2_manage_port_hopping() {
+    local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
+    local selected_action default_ports selected_ports selected_interval
+
+    readConfigHostPathUUID
+    if [[ ! -f "${hysteria2_file}" ]]; then
+        echoContent yellow " ---> Hysteria2 未安装，请先启用 Hysteria2"
+        return 0
+    fi
+    if ! xray_agent_xray_supports_finalmask; then
+        echoContent red " ---> 当前 Xray-core 不支持 finalmask.quicParams，不能启用 Hysteria2 端口跳跃。请先升级 Xray-core。"
+        return 1
+    fi
+
+    xray_agent_hysteria2_status_summary
+    echoContent red "=============================================================="
+    echoContent yellow "1.开启或修改端口跳跃"
+    echoContent yellow "2.关闭端口跳跃"
+    echoContent red "=============================================================="
+    read -r -p "请选择[回车=1]:" selected_action
+    selected_action="${selected_action:-1}"
+
+    case "${selected_action}" in
+        1)
+            echoContent yellow " ---> 端口跳跃会改变 Hysteria2 分享链接和订阅里的 UDP 端口。"
+            echoContent yellow " ---> 云安全组必须放行这些 UDP 端口；脚本不会自动修改云厂商防火墙。"
+            default_ports="${Hysteria2HopPorts:-20000-50000}"
+            selected_ports="$(xray_agent_hysteria2_prompt_hop_ports "${default_ports}")"
+            selected_interval="$(xray_agent_hysteria2_prompt_hop_interval "${Hysteria2HopInterval:-30}")"
+            xray_agent_confirm "确认启用/修改为 UDP/${selected_ports}，间隔 ${selected_interval} 秒？[Y/n]:" "y" || return 0
+            xray_agent_hysteria2_apply_hop_config enable "${selected_ports}" "${selected_interval}"
+            ;;
+        2)
+            if [[ -z "${Hysteria2HopPorts:-}" ]]; then
+                echoContent yellow " ---> 当前未启用端口跳跃"
+                return 0
+            fi
+            xray_agent_confirm "确认关闭 Hysteria2 端口跳跃并恢复只使用 UDP/443？[y/N]:" "n" || return 0
+            xray_agent_hysteria2_apply_hop_config disable
+            ;;
+        *)
+            echoContent red " ---> 选择错误"
+            return 1
+            ;;
+    esac
+}
+
 xray_agent_hysteria2_client_count() {
     local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
     [[ -f "${hysteria2_file}" ]] || {
@@ -838,6 +1131,11 @@ xray_agent_hysteria2_status_summary() {
     fi
     echoContent yellow "状态: 已安装"
     echoContent yellow "监听: UDP/${Hysteria2Port:-443}"
+    if [[ -n "${Hysteria2HopPorts:-}" ]] && xray_agent_hysteria2_port_spec_valid "${Hysteria2HopPorts}"; then
+        echoContent yellow "端口跳跃: 已启用 UDP/${Hysteria2HopPorts}  间隔=${Hysteria2HopInterval:-30}秒"
+    else
+        echoContent yellow "端口跳跃: 未启用"
+    fi
     echoContent yellow "证书域名: ${TLSDomain:-未检测}"
     echoContent yellow "伪装站: ${Hysteria2MasqueradeURL:-未检测}"
     echoContent yellow "Brutal上行: ${Hysteria2BrutalUpMbps:-0} Mbps"
@@ -872,6 +1170,7 @@ xray_agent_hysteria2_manage_menu() {
     echoContent yellow "1.查看 Hysteria2 账号"
     echoContent yellow "2.启用或重配 Hysteria2"
     echoContent yellow "3.卸载 Hysteria2"
+    echoContent yellow "4.管理 Hysteria2 端口跳跃"
     echoContent red "=============================================================="
     read -r -p "请输入:" hysteria2_status
     case "${hysteria2_status}" in
@@ -881,5 +1180,6 @@ xray_agent_hysteria2_manage_menu() {
             xray_agent_confirm "确认继续？[Y/n]:" "y" && xray_agent_hysteria2_enable_or_reconfigure
             ;;
         3) xray_agent_hysteria2_uninstall ;;
+        4) xray_agent_hysteria2_manage_port_hopping ;;
     esac
 }

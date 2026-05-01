@@ -500,7 +500,7 @@ defaultBase64Code() {
             echoContent yellow " ---> 通用格式 (Hysteria2)"
             echoContent green "$(xray_agent_build_hysteria2_uri "${id}")"
             echoContent yellow " ---> 格式化明文 (Hysteria2)"
-            echoContent green "协议类型: Hysteria2，地址: ${domain}，端口: 443/UDP，SNI: ${domain}，auth: ${id}，账户名: ${id}"
+            echoContent green "协议类型: Hysteria2，地址: ${domain}，端口: $(xray_agent_hysteria2_display_ports)，SNI: ${domain}，auth: ${id}，账户名: ${id}"
             ;;
     esac
 }
@@ -558,7 +558,7 @@ xray_agent_build_vmess_ws_uri() {
 xray_agent_build_hysteria2_uri() {
     local auth="$1"
     xray_agent_load_protocol_profile "hysteria2" || return 1
-    local address port sni XRAY_SHARE_AUTH XRAY_SHARE_ADDRESS XRAY_SHARE_PORT XRAY_SHARE_SNI XRAY_SHARE_NAME
+    local address port sni XRAY_SHARE_AUTH XRAY_SHARE_ADDRESS XRAY_SHARE_PORT XRAY_SHARE_SNI XRAY_SHARE_MPORT_PARAM XRAY_SHARE_NAME
     address="$(xray_agent_protocol_address_value "tls")"
     port="$(xray_agent_protocol_port_value "tls")"
     sni="$(xray_agent_protocol_sni_value "tls")"
@@ -566,6 +566,7 @@ xray_agent_build_hysteria2_uri() {
     XRAY_SHARE_ADDRESS="$(xray_agent_uri_authority_host "${address}")"
     XRAY_SHARE_PORT="${port}"
     XRAY_SHARE_SNI="$(xray_agent_urlencode "${sni}")"
+    XRAY_SHARE_MPORT_PARAM="$(xray_agent_hysteria2_share_mport_param)"
     XRAY_SHARE_NAME="$(xray_agent_urlencode "${auth}")"
     xray_agent_render_share_template_text "${XRAY_AGENT_PROTOCOL_SHARE_TEMPLATE}"
 }

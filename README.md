@@ -17,7 +17,7 @@ xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的
 - **配置集中管理**：协议、证书、Nginx 和分享链接都由菜单统一处理，减少手动编辑多个配置文件带来的错误。
 - **证书流程更稳**：证书管理会先展示证书库存、解析结果、端口占用和网络栈状态，再推荐 HTTP-01 或 DNS-01，减少因为 DNS、防火墙或端口冲突导致的反复失败。
 - **面向真实网络环境**：安装和路由逻辑会考虑 IPv4-only、IPv6-only、双栈、多公网 IP、WARP 默认路由和 WARP 专用接口等常见 VPS 场景。
-- **内置 Hysteria2，不额外拉服务**：使用 Xray-core 内置 Hysteria2，占用 UDP/443，与 TCP/443 上的 Nginx/Xray 分流共存，账号跟随现有用户体系。
+- **内置 Hysteria2，不额外拉服务**：使用 Xray-core 内置 Hysteria2，默认占用 UDP/443，可选端口跳跃，与 TCP/443 上的 Nginx/Xray 分流共存，账号跟随现有用户体系。
 - **失败前先检查**：涉及 Nginx、Xray、证书、端口、防火墙、备份恢复的关键操作会尽量先做状态检查或配置测试，避免无提示写坏运行环境。
 
 ## 功能特性
@@ -42,7 +42,7 @@ xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的
 | TLS | VLESS WS TLS | 兼容 WebSocket 客户端和 CDN 场景 |
 | TLS | VMess WS TLS | 保留旧客户端兼容 |
 | TLS | VLESS XHTTP TLS | 默认经 Nginx 反代到本机 Xray |
-| TLS | Hysteria2 | Xray-core 内置协议，占用 UDP/443 |
+| TLS | Hysteria2 | Xray-core 内置协议，默认 UDP/443，可选端口跳跃 |
 | Reality | VLESS TCP Reality Vision | 默认推荐的 Reality 入口 |
 | Reality | VLESS XHTTP Reality | Reality 环境下的 XHTTP 入口 |
 | Reality 可选 | Hysteria2 | 复用或申请同域名 TLS 证书 |
@@ -54,7 +54,7 @@ xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的
 - 建议使用纯净系统：Debian 11/12 或 Ubuntu 20.04/22.04/24.04。
 - 需要 root 用户执行。
 - 需要一个已解析到服务器的域名；Reality 目标域名不是证书域名。
-- 服务器安全组/云防火墙需要放行 TCP/80、TCP/443；启用 Hysteria2 时还需要放行 UDP/443。
+- 服务器安全组/云防火墙需要放行 TCP/80、TCP/443；启用 Hysteria2 时还需要放行 UDP/443，若开启端口跳跃还要放行对应 UDP 范围。
 - CentOS 可尝试使用，但不作为首选环境；过旧系统不建议使用。
 
 ## 安装
@@ -118,7 +118,7 @@ vasma
 
 - 如果域名接入 Cloudflare，使用 TLS/WS/XHTTP/CDN 场景时请确认 SSL/TLS 模式为 Full 或 Full(strict)。
 - Oracle Cloud、GCP、部分云厂商有额外安全组或本机防火墙，请同时检查云控制台和系统防火墙。
-- Hysteria2 使用 UDP/443，不会占用 TCP/443；但云防火墙必须单独放行 UDP。
+- Hysteria2 默认使用 UDP/443，不会占用 TCP/443；但云防火墙必须单独放行 UDP。启用端口跳跃时，还要放行所选 UDP 端口范围。
 - Reality 的目标域名应选择真实、稳定、证书链合理的站点；不要把 Reality 目标域名当作自己的证书域名。
 - 修改证书、Nginx、端口和路由前，建议先确认当前菜单中的状态提示。
 

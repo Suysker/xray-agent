@@ -395,6 +395,8 @@ readConfigHostPathUUID() {
     Hysteria2MasqueradeURL=
     Hysteria2BrutalUpMbps=
     Hysteria2BrutalDownMbps=
+    Hysteria2HopPorts=
+    Hysteria2HopInterval=
 
     local tls_inbound_file reality_inbound_file xhttp_inbound_file hysteria2_inbound_file
     tls_inbound_file="$(xray_agent_tls_inbound_file 2>/dev/null || true)"
@@ -449,6 +451,8 @@ readConfigHostPathUUID() {
         Hysteria2MasqueradeURL="$(jq -r '.inbounds[0].streamSettings.hysteriaSettings.masquerade.url // empty' "${hysteria2_inbound_file}" | tr -d '\r')"
         Hysteria2BrutalUpMbps="$(jq -r '.inbounds[0].streamSettings.finalmask.quicParams.brutalUp // empty' "${hysteria2_inbound_file}" | tr -d '\r' | awk '{print $1}')"
         Hysteria2BrutalDownMbps="$(jq -r '.inbounds[0].streamSettings.finalmask.quicParams.brutalDown // empty' "${hysteria2_inbound_file}" | tr -d '\r' | awk '{print $1}')"
+        Hysteria2HopPorts="$(jq -r '.inbounds[0].streamSettings.finalmask.quicParams.udpHop.ports // empty' "${hysteria2_inbound_file}" | tr -d '\r')"
+        Hysteria2HopInterval="$(jq -r '.inbounds[0].streamSettings.finalmask.quicParams.udpHop.interval // empty' "${hysteria2_inbound_file}" | tr -d '\r')"
         if [[ -z "${TLSDomain}" ]]; then
             TLSDomain="$(xray_agent_tls_domain_from_inbound "${hysteria2_inbound_file}")"
         fi
@@ -573,7 +577,11 @@ xray_agent_tool_status_header() {
         echoContent yellow "Reality目标: ${RealityDestDomain}  端口: ${RealityPort:-未检测}"
     fi
     if [[ -f "$(xray_agent_hysteria2_inbound_file)" ]]; then
-        echoContent yellow "Hysteria2: 已启用 UDP/${Hysteria2Port:-443}  伪装: ${Hysteria2MasqueradeURL:-未检测}"
+        if [[ -n "${Hysteria2HopPorts:-}" ]] && declare -F xray_agent_hysteria2_port_spec_valid >/dev/null 2>&1 && xray_agent_hysteria2_port_spec_valid "${Hysteria2HopPorts}"; then
+            echoContent yellow "Hysteria2: 已启用 UDP/${Hysteria2Port:-443}  跳跃=${Hysteria2HopPorts}  伪装: ${Hysteria2MasqueradeURL:-未检测}"
+        else
+            echoContent yellow "Hysteria2: 已启用 UDP/${Hysteria2Port:-443}  伪装: ${Hysteria2MasqueradeURL:-未检测}"
+        fi
     else
         echoContent yellow "Hysteria2: 未启用"
     fi
