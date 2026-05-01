@@ -112,35 +112,31 @@ xray_agent_download_url_to_file() {
     local target_file="$2"
     local label="${3:-文件}"
     local temp_file="${target_file}.tmp.$$"
-    local error_file="${target_file}.err.$$"
-    rm -f "${temp_file}" "${error_file}"
+    rm -f "${temp_file}"
 
+    echoContent yellow " ---> 下载 ${label}"
     if command -v curl >/dev/null 2>&1; then
-        if ! curl -fL --retry 2 --connect-timeout 15 "${url}" -o "${temp_file}" 2>"${error_file}"; then
+        if ! curl -fL --retry 2 --connect-timeout 15 --progress-bar "${url}" -o "${temp_file}"; then
             echoContent red " ---> ${label} 下载失败"
-            [[ -s "${error_file}" ]] && sed 's/^/     /' "${error_file}" >&2
-            rm -f "${temp_file}" "${error_file}"
+            rm -f "${temp_file}"
             return 1
         fi
     elif command -v wget >/dev/null 2>&1; then
         if wget --help 2>&1 | grep -q show-progress; then
-            if ! wget -q --show-progress -O "${temp_file}" "${url}" 2>"${error_file}"; then
+            if ! wget -q --show-progress -O "${temp_file}" "${url}"; then
                 echoContent red " ---> ${label} 下载失败"
-                [[ -s "${error_file}" ]] && sed 's/^/     /' "${error_file}" >&2
-                rm -f "${temp_file}" "${error_file}"
+                rm -f "${temp_file}"
                 return 1
             fi
-        elif ! wget -q -O "${temp_file}" "${url}" 2>"${error_file}"; then
+        elif ! wget -O "${temp_file}" "${url}"; then
             echoContent red " ---> ${label} 下载失败"
-            [[ -s "${error_file}" ]] && sed 's/^/     /' "${error_file}" >&2
-            rm -f "${temp_file}" "${error_file}"
+            rm -f "${temp_file}"
             return 1
         fi
     else
         echoContent red " ---> curl 或 wget 不存在，无法下载 ${label}"
         return 1
     fi
-    rm -f "${error_file}"
 
     if [[ ! -s "${temp_file}" ]]; then
         echoContent red " ---> ${label} 下载结果为空"
@@ -148,6 +144,7 @@ xray_agent_download_url_to_file() {
         return 1
     fi
     mv "${temp_file}" "${target_file}"
+    echoContent green " ---> ${label} 下载完成"
 }
 
 xray_agent_install_xray_release() {
@@ -169,6 +166,7 @@ xray_agent_install_xray_release() {
     fi
 
     temp_dir="$(mktemp -d)"
+    echoContent yellow " ---> 解压并验证 Xray-core ${version}"
     if ! unzip -oq "${archive_path}" -d "${temp_dir}" || [[ ! -f "${temp_dir}/xray" ]]; then
         echoContent red "下载或解压新版本Xray失败，请重试"
         rm -rf "${temp_dir}" "${archive_path}"
@@ -179,6 +177,7 @@ xray_agent_install_xray_release() {
     find "${temp_dir}" -maxdepth 1 -type f -exec cp -f {} "${xray_dir}/" \;
     rm -rf "${temp_dir}" "${archive_path}"
     chmod 655 "${ctlPath:-${xray_dir}/xray}"
+    echoContent green " ---> Xray-core ${version} 已安装"
 }
 
 xray_agent_download_geodata() {
@@ -201,6 +200,7 @@ xray_agent_download_geodata() {
     }
     mv "${geosite_tmp}" "${xray_dir}/geosite.dat"
     mv "${geoip_tmp}" "${xray_dir}/geoip.dat"
+    echoContent green " ---> geosite/geoip 已更新到 ${version}"
 }
 
 getPublicIP() {
@@ -253,6 +253,28 @@ xray_agent_version_ge() {
             }
             exit 0
         }'
+}
+
+xray_agent_version_normalize() {
+    local version="$1"
+    version="${version#v}"
+    version="${version%%-*}"
+    version="${version%%+*}"
+    printf '%s\n' "${version}"
+}
+
+xray_agent_version_eq() {
+    local current required
+    current="$(xray_agent_version_normalize "$1")"
+    required="$(xray_agent_version_normalize "$2")"
+    [[ "${current}" == "${required}" ]]
+}
+
+xray_agent_version_gt() {
+    local current required
+    current="$(xray_agent_version_normalize "$1")"
+    required="$(xray_agent_version_normalize "$2")"
+    [[ "${current}" != "${required}" ]] && xray_agent_version_ge "${current}" "${required}"
 }
 
 xray_agent_xray_version_at_least() {
@@ -384,22 +406,27 @@ xrayVersionManageMenu() {
 }
 
 installXray() {
-    local version
+    local version current_version
     readInstallType
     xray_agent_blank
-    echoContent skyBlue "进度  $1/${totalProgress} : 安装Xray"
+    echoContent skyBlue "进度  $1/${totalProgress} : 检查/安装Xray"
     if [[ -z "${coreInstallType}" ]]; then
         version="$(xray_agent_xray_latest_version false)" || return 1
         echoContent green " ---> Xray-core版本:${version}"
         xray_agent_install_xray_release "${version}" || return 1
         xray_agent_download_geodata || echoContent yellow " ---> geosite/geoip 更新失败，可稍后在菜单14单独更新"
     else
-        read -r -p "是否更新、升级？[y/n]:" reInstallXrayStatus
-        if [[ "${reInstallXrayStatus}" == "y" ]]; then
-            version="$(xray_agent_xray_latest_version false)" || return 1
-            echoContent green " ---> Xray-core版本:${version}"
-            xray_agent_install_xray_release "${version}" || return 1
+        current_version="$(xray_agent_xray_version_number || true)"
+        if [[ -n "${current_version}" ]]; then
+            echoContent green " ---> 当前Xray-core版本:${current_version}"
+            echoContent yellow " ---> 重装配置将保留当前 Xray-core；升级或回退请使用菜单14。"
+            return 0
         fi
+
+        echoContent yellow " ---> 检测到安装记录，但 Xray-core 可执行文件缺失，尝试重新安装正式版。"
+        version="$(xray_agent_xray_latest_version false)" || return 1
+        echoContent green " ---> Xray-core版本:${version}"
+        xray_agent_install_xray_release "${version}" || return 1
     fi
 }
 
@@ -414,7 +441,7 @@ reloadCore() {
 }
 
 updateXray() {
-    local version current_version
+    local version current_version remote_version
     readInstallType
     prereleaseStatus=${prereleaseStatus:-false}
     if [[ -n "$1" ]]; then
@@ -433,28 +460,35 @@ updateXray() {
         handleXray start
     else
         current_version="$(${ctlPath} --version | awk '{print $2}' | head -1)"
+        remote_version="$(xray_agent_version_normalize "${version}")"
         echoContent green " ---> 当前Xray-core版本:${current_version}"
         if [[ -n "$1" ]]; then
             read -r -p "回退版本为${version}，是否继续？[y/n]:" rollbackXrayStatus
             if [[ "${rollbackXrayStatus}" == "y" ]]; then
                 xray_agent_install_xray_release "${version}" || return 1
                 reloadCore
+                echoContent green " ---> Xray-core 已切换到 ${version}"
             else
                 echoContent green " ---> 放弃回退版本"
             fi
-        elif [[ "${version}" == "v${current_version}" ]]; then
+        elif xray_agent_version_eq "${current_version}" "${remote_version}"; then
             read -r -p "当前版本与最新版相同，是否重新安装？[y/n]:" reInstallXrayStatus
             if [[ "${reInstallXrayStatus}" == "y" ]]; then
                 xray_agent_install_xray_release "${version}" || return 1
                 reloadCore
+                echoContent green " ---> Xray-core ${version} 已重新安装"
             else
                 echoContent green " ---> 放弃重新安装"
             fi
+        elif xray_agent_version_gt "${current_version}" "${remote_version}"; then
+            echoContent yellow " ---> 当前版本 ${current_version} 高于远端目标版本 ${version}，不会自动降级。"
+            echoContent yellow " ---> 如需回退，请使用菜单 3 并明确选择目标版本。"
         else
             read -r -p "最新版本为:${version}，是否更新？[y/n]:" installXrayStatus
             if [[ "${installXrayStatus}" == "y" ]]; then
                 xray_agent_install_xray_release "${version}" || return 1
                 reloadCore
+                echoContent green " ---> Xray-core 已更新到 ${version}"
             else
                 echoContent green " ---> 放弃更新"
             fi

@@ -412,21 +412,55 @@ updateXRayAgent() {
     temp_dir="$(mktemp -d)"
     archive_path="${temp_dir}/xray-agent.tar.gz"
 
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "${XRAY_AGENT_PROJECT_ARCHIVE_URL}" -o "${archive_path}"
+    if declare -F xray_agent_download_url_to_file >/dev/null 2>&1; then
+        if ! xray_agent_download_url_to_file "${XRAY_AGENT_PROJECT_ARCHIVE_URL}" "${archive_path}" "xray-agent 更新包"; then
+            rm -rf "${temp_dir}"
+            return 1
+        fi
+    elif command -v curl >/dev/null 2>&1; then
+        echoContent yellow " ---> 下载 xray-agent 更新包"
+        if ! curl -fL --progress-bar "${XRAY_AGENT_PROJECT_ARCHIVE_URL}" -o "${archive_path}"; then
+            echoContent red " ---> xray-agent 更新包下载失败"
+            rm -rf "${temp_dir}"
+            return 1
+        fi
     elif wget --help | grep -q show-progress; then
-        wget -c -q --show-progress -O "${archive_path}" --no-check-certificate "${XRAY_AGENT_PROJECT_ARCHIVE_URL}"
+        echoContent yellow " ---> 下载 xray-agent 更新包"
+        if ! wget -q --show-progress -O "${archive_path}" --no-check-certificate "${XRAY_AGENT_PROJECT_ARCHIVE_URL}"; then
+            echoContent red " ---> xray-agent 更新包下载失败"
+            rm -rf "${temp_dir}"
+            return 1
+        fi
     else
-        wget -c -q -O "${archive_path}" --no-check-certificate "${XRAY_AGENT_PROJECT_ARCHIVE_URL}"
+        echoContent yellow " ---> 下载 xray-agent 更新包"
+        if ! wget -O "${archive_path}" --no-check-certificate "${XRAY_AGENT_PROJECT_ARCHIVE_URL}"; then
+            echoContent red " ---> xray-agent 更新包下载失败"
+            rm -rf "${temp_dir}"
+            return 1
+        fi
     fi
 
-    tar -m -xzf "${archive_path}" -C "${temp_dir}"
+    echoContent yellow " ---> 解压 xray-agent 更新包"
+    if ! tar -m -xzf "${archive_path}" -C "${temp_dir}"; then
+        echoContent red " ---> xray-agent 更新包解压失败"
+        rm -rf "${temp_dir}"
+        return 1
+    fi
     layout_script="$(find "${temp_dir}" -mindepth 3 -maxdepth 4 -path "*/packaging/install-layout.sh" -print -quit)"
     if [[ -z "${layout_script}" ]]; then
-        xray_agent_error " ---> 更新包缺少 packaging/install-layout.sh"
+        echoContent red " ---> 更新包缺少 packaging/install-layout.sh"
+        rm -rf "${temp_dir}"
+        return 1
     fi
 
-    bash "${layout_script}" /etc/xray-agent
+    echoContent yellow " ---> 安装 xray-agent 脚本"
+    if ! bash "${layout_script}" /etc/xray-agent; then
+        echoContent red " ---> xray-agent 脚本安装失败"
+        rm -rf "${temp_dir}"
+        return 1
+    fi
     chmod 700 /etc/xray-agent/install.sh
     rm -rf "${temp_dir}"
+    echoContent green " ---> xray-agent 脚本更新完成"
+    echoContent yellow " ---> 请重新执行 vasma 以加载新版本"
 }
