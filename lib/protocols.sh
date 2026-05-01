@@ -498,6 +498,14 @@ xray_agent_hysteria2_default_masquerade_url() {
     local include_existing="${1:-true}"
     local candidate
 
+    if declare -F xray_agent_nginx_real_site_masquerade_url >/dev/null 2>&1; then
+        candidate="$(xray_agent_nginx_real_site_masquerade_url)"
+        if [[ -n "${candidate}" ]]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    fi
+
     if [[ "${include_existing}" == "true" && -n "${Hysteria2MasqueradeURL:-}" ]]; then
         printf '%s\n' "${Hysteria2MasqueradeURL}"
         return 0
@@ -513,6 +521,14 @@ xray_agent_hysteria2_default_masquerade_url() {
     if [[ -n "${candidate}" ]]; then
         printf '%s\n' "${candidate}"
         return 0
+    fi
+
+    if declare -F xray_agent_nginx_masquerade_context_json >/dev/null 2>&1; then
+        candidate="$(xray_agent_nginx_masquerade_context_json | jq -r 'select(.source != "real-site") | .masquerade_url // empty')"
+        if [[ -n "${candidate}" ]]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
     fi
 
     printf ''

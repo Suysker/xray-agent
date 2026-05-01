@@ -664,23 +664,38 @@ xray_agent_tls_warning_for_xhttp_port() {
 initTLSRealityConfig() {
     xray_agent_blank
     echoContent skyBlue "进度  $1/${totalProgress} : 初始化Reality证书配置"
+    local default_reality_target default_reality_server_name historyDestStatus tlsPingResult inputRealityDestDomain
+    if declare -F xray_agent_nginx_reality_default_target >/dev/null 2>&1; then
+        default_reality_target="$(xray_agent_nginx_reality_default_target)"
+        default_reality_server_name="$(xray_agent_nginx_reality_default_host)"
+    fi
     while true; do
         if [[ -n "${RealityDestDomain}" ]]; then
             read -r -p "读取到上次安装记录，是否使用上次安装时的域名 ？[y/n]:" historyDestStatus
             if [[ "${historyDestStatus}" != "y" ]]; then
                 xray_agent_blank
-                echoContent skyBlue " ---> 生成配置回落的域名 例如: addons.mozilla.org:443"
+                if [[ -n "${default_reality_target:-}" ]]; then
+                    echoContent skyBlue " ---> 检测到已注册真实网站，Reality target 默认使用 ${default_reality_target}"
+                else
+                    echoContent skyBlue " ---> 生成配置回落的域名 例如: addons.mozilla.org:443"
+                fi
                 xray_agent_blank
-                read -r -p '请输入:' RealityDestDomain
+                read -r -p '请输入:' inputRealityDestDomain
+                RealityDestDomain="${inputRealityDestDomain:-${default_reality_target:-}}"
             else
                 xray_agent_blank
                 echoContent green " ---> 使用成功"
             fi
         else
             xray_agent_blank
-            echoContent skyBlue " ---> 生成配置回落的域名 例如: addons.mozilla.org:443"
+            if [[ -n "${default_reality_target:-}" ]]; then
+                echoContent skyBlue " ---> 检测到已注册真实网站，Reality target 默认使用 ${default_reality_target}"
+            else
+                echoContent skyBlue " ---> 生成配置回落的域名 例如: addons.mozilla.org:443"
+            fi
             xray_agent_blank
-            read -r -p '请输入:' RealityDestDomain
+            read -r -p '请输入:' inputRealityDestDomain
+            RealityDestDomain="${inputRealityDestDomain:-${default_reality_target:-}}"
         fi
 
         if [[ -z "${RealityDestDomain}" ]]; then
@@ -702,10 +717,13 @@ initTLSRealityConfig() {
         tlsPingResult=$(${ctlPath} tls ping "${RealityDestDomain%%:*}")
         xray_agent_blank
         echoContent yellow " ---> 可以输入的域名: ${tlsPingResult}"
+        if [[ -n "${default_reality_server_name:-}" ]]; then
+            echoContent yellow " ---> 已注册真实网站默认 serverNames: ${default_reality_server_name}"
+        fi
         xray_agent_blank
         read -r -p "请输入:" RealityServerNames
         if [[ -z "${RealityServerNames}" ]]; then
-            RealityServerNames="\"${RealityDestDomain%%:*}\""
+            RealityServerNames="\"${default_reality_server_name:-${RealityDestDomain%%:*}}\""
         else
             RealityServerNames="\"${RealityServerNames//,/\",\"}\""
         fi

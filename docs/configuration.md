@@ -59,6 +59,8 @@ tar -czf /root/xray-agent-backup.tgz /etc/xray-agent /etc/nginx/conf.d
 
 推荐做法是把已有真实网站迁到本机 upstream，例如 `http://127.0.0.1:8080`，再在菜单中注册为本机/自有网站 fallback。脚本会把浏览器探测流量转发到该 upstream，并默认保留安装域名作为 Host。
 
+已注册的本机/自有网站会作为统一伪装目标优先使用：TLS 的浏览器 fallback 继续转发到该 upstream；Reality 新安装/重配时会把该站点 Host 建议为默认 `target` 和 `serverNames`；Hysteria2 默认伪装 URL 也优先使用同一个站点域名。已有 Reality 或 Hysteria2 历史配置会先询问是否保留，用户仍可手动覆盖。
+
 前门 PROXY protocol 使用 `auto/on/off` 三种模式。`auto` 会优先保留已有 `alone.stream` 的开关状态；没有历史配置时，纯净机、仅 HTTP fallback、或所有已注册 HTTPS 透传后端都声明 `proxy_protocol=supported` 才默认开启。检测到普通 HTTPS 后端、第三方面板站点或未知/不支持的 HTTPS 透传后端时，默认关闭。
 
 legacy HTTPS SNI 后端只适合高级场景。它们和 Xray 共用同一个 Nginx stream 前门，PROXY protocol 是全局开关，不能按单个后端混用；未知后端会按不安全处理，避免把已有网站打坏。

@@ -5,17 +5,18 @@ if [[ -z "${XRAY_AGENT_PROJECT_ROOT:-}" ]]; then
 fi
 
 xray_agent_nginx_status_line() {
-    local active_upstream host_header legacy_count site_mode proxy_mode
+    local active_upstream host_header legacy_count site_mode proxy_mode masquerade_source
     active_upstream="$(xray_agent_nginx_active_upstream_url "https://huggingface.co")"
     host_header="$(xray_agent_nginx_active_host_header "${active_upstream}")"
     legacy_count="$(xray_agent_nginx_legacy_backend_count)"
     proxy_mode="$(xray_agent_nginx_frontdoor_proxy_protocol 2>/dev/null || printf 'auto')"
+    masquerade_source="$(xray_agent_nginx_masquerade_source_label 2>/dev/null || printf '外部兜底')"
     if xray_agent_nginx_active_site_enabled; then
         site_mode="本机/自有站点"
     else
         site_mode="外部伪装站"
     fi
-    printf '网站fallback: %s  upstream=%s  Host=%s  HTTPS透传=%s  前门PROXY=%s\n' "${site_mode}" "${active_upstream}" "${host_header}" "${legacy_count}" "${proxy_mode}"
+    printf '网站fallback: %s  来源=%s  upstream=%s  Host=%s  HTTPS透传=%s  前门PROXY=%s\n' "${site_mode}" "${masquerade_source}" "${active_upstream}" "${host_header}" "${legacy_count}" "${proxy_mode}"
 }
 
 updateRedirectNginxConf() {

@@ -53,6 +53,8 @@
 
 网站/反代管理只维护脚本托管的 `alone.conf`、`alone.stream` 和反代注册文件。它可以注册本机 HTTP fallback、登记 legacy HTTPS SNI 后端、查看现有网站/面板接入建议，并切换前门 PROXY protocol 的 `auto/on/off` 模式。
 
+注册本机 HTTP fallback 后，状态页会标明 TLS 伪装来源为真实网站；后续 Reality 和 Hysteria2 的默认伪装目标也会优先建议该站点，避免不同协议默认暴露不一致的伪装域名。
+
 切换前门 PROXY protocol 前会展示受影响的 Xray TLS/Reality inbound 和所有 HTTPS 透传后端。确认后会同步重渲染 Nginx stream，并更新 Xray inbound 的 `acceptProxyProtocol`。
 
 备份与恢复管理会把 `/etc/xray-agent`、脚本托管的 Nginx 配置和 manifest 打包到 `/etc/xray-agent/backups`。恢复前会校验 manifest、文件校验和、JSON 和可用的 Xray/Nginx 配置；恢复前会自动再创建一份当前状态备份。

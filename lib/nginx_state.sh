@@ -178,6 +178,80 @@ xray_agent_nginx_active_tls_name() {
     printf '%s\n' "${host_header:-$(xray_agent_nginx_url_host "${upstream_url}")}"
 }
 
+xray_agent_nginx_public_masquerade_url_for_host() {
+    local host="$1"
+    [[ -n "${host}" && "${host}" != "\$proxy_host" ]] || return 0
+    printf 'https://%s/\n' "${host}"
+}
+
+xray_agent_nginx_normalize_display_url() {
+    local upstream_url="$1"
+    [[ -n "${upstream_url}" ]] || return 0
+    if [[ "${upstream_url}" != http://* && "${upstream_url}" != https://* ]]; then
+        upstream_url="https://${upstream_url}"
+    fi
+    if [[ "${upstream_url}" != */ ]]; then
+        upstream_url="${upstream_url}/"
+    fi
+    printf '%s\n' "${upstream_url}"
+}
+
+xray_agent_nginx_masquerade_context_json() {
+    local fallback_url="${1:-https://huggingface.co}"
+    local proxy_json active_site source upstream_url host_header tls_name masquerade_url
+    proxy_json="$(xray_agent_nginx_reverse_proxy_json)"
+    active_site="$(xray_agent_nginx_active_http_site_json)"
+    if [[ -n "${active_site}" ]]; then
+        source="real-site"
+        upstream_url="$(printf '%s\n' "${active_site}" | jq -r '.upstream')"
+        host_header="$(printf '%s\n' "${active_site}" | jq -r --arg domain "${domain:-}" '.host // $domain')"
+        tls_name="${host_header:-${domain:-$(xray_agent_nginx_url_host "${upstream_url}")}}"
+        masquerade_url="$(xray_agent_nginx_public_masquerade_url_for_host "${tls_name}")"
+        masquerade_url="${masquerade_url:-$(xray_agent_nginx_normalize_display_url "${upstream_url}")}"
+    else
+        source="external-default"
+        upstream_url="$(printf '%s\n' "${proxy_json}" | jq -r --arg fallback "${fallback_url}" '(.default_upstream.url // "") as $url | if ($url | length) > 0 then $url else $fallback end')"
+        host_header='$proxy_host'
+        tls_name="$(xray_agent_nginx_url_host "${upstream_url}")"
+        masquerade_url="$(xray_agent_nginx_normalize_display_url "${upstream_url}")"
+    fi
+    jq -nc \
+        --arg source "${source}" \
+        --arg fallback_upstream "${upstream_url}" \
+        --arg host "${host_header}" \
+        --arg sni "${tls_name}" \
+        --arg masquerade_url "${masquerade_url}" \
+        '{
+          source:$source,
+          fallback_upstream:$fallback_upstream,
+          host:$host,
+          sni:$sni,
+          masquerade_url:$masquerade_url
+        }'
+}
+
+xray_agent_nginx_masquerade_source_label() {
+    case "$(xray_agent_nginx_masquerade_context_json | jq -r '.source')" in
+        real-site) printf '真实网站\n' ;;
+        *) printf '外部兜底\n' ;;
+    esac
+}
+
+xray_agent_nginx_real_site_masquerade_url() {
+    xray_agent_nginx_masquerade_context_json | jq -r 'select(.source == "real-site") | .masquerade_url // empty'
+}
+
+xray_agent_nginx_reality_default_host() {
+    xray_agent_nginx_masquerade_context_json | jq -r 'select(.source == "real-site") | .sni // empty'
+}
+
+xray_agent_nginx_reality_default_target() {
+    local host
+    host="$(xray_agent_nginx_reality_default_host)"
+    [[ -n "${host}" && "${host}" != "\$proxy_host" ]] || return 0
+    printf '%s:443\n' "${host}"
+}
+
 xray_agent_nginx_legacy_backend_count() {
     xray_agent_nginx_reverse_proxy_json | jq -r '[.sites[]? | select(.enabled == true and .mode == "stream_tls")] | length'
 }
