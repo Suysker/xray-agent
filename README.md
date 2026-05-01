@@ -5,7 +5,7 @@
 [![Shell](https://img.shields.io/badge/Shell-Bash-4EAA25.svg)](https://www.gnu.org/software/bash/)
 [![Platform](https://img.shields.io/badge/Platform-Linux-lightgrey.svg)](#系统要求)
 
-xray-agent 是一个面向 Xray-core 的 N 合一安装与管理脚本，提供 TLS、Reality、XHTTP、Hysteria2、证书、账号、路由、WARP、Nginx 伪装站等常用能力。脚本保留简单的菜单体验，同时将 Xray、Nginx、systemd 和分享链接配置集中到模板与 profile 中，便于长期维护。
+xray-agent 是一个面向 Xray-core 的 N 合一安装与管理脚本，提供 TLS、Reality、XHTTP、Hysteria2、证书、账号、路由、WARP、Nginx 伪装站等常用能力。大多数操作都可以通过菜单完成，适合想统一管理协议、证书和站点伪装的服务器。
 
 > 本项目仅供学习、研究和合法的网络管理用途。网络环境和审查策略会持续变化，任何工具都不能保证绝对可用或不可识别。本项目的目标是减少常见配置错误，并按 Xray-core 正式版能力降低明显指纹风险。
 
@@ -14,7 +14,7 @@ xray-agent 是一个面向 Xray-core 的 N 合一安装与管理脚本，提供 
 xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的 Xray-core 能力做成一套可以长期维护的 N 合一控制台。你可以从同一个菜单完成安装、证书、账号、分享、伪装站、路由、WARP、Hysteria2、日志和内核管理，不需要在多个脚本、配置文件和外部项目之间来回切换。
 
 - **一套入口管理多协议**：TLS 套餐默认提供 VLESS TCP Vision、VLESS WS、VMess WS、XHTTP 和 Hysteria2；Reality 套餐提供 VLESS Reality 和 XHTTP Reality，并可按需启用 Hysteria2。
-- **配置可读、可维护**：Xray、Nginx、systemd 和分享链接采用模板与 profile 管理，脚本负责渲染和检查，重要配置不会散落在难以维护的 Bash 字符串里。
+- **配置集中管理**：协议、证书、Nginx 和分享链接都由菜单统一处理，减少手动编辑多个配置文件带来的错误。
 - **证书流程更稳**：证书管理会先展示证书库存、解析结果、端口占用和网络栈状态，再推荐 HTTP-01 或 DNS-01，减少因为 DNS、防火墙或端口冲突导致的反复失败。
 - **面向真实网络环境**：安装和路由逻辑会考虑 IPv4-only、IPv6-only、双栈、多公网 IP、WARP 默认路由和 WARP 专用接口等常见 VPS 场景。
 - **内置 Hysteria2，不额外拉服务**：使用 Xray-core 内置 Hysteria2，占用 UDP/443，与 TCP/443 上的 Nginx/Xray 分流共存，账号跟随现有用户体系。
@@ -26,13 +26,13 @@ xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的
 - TLS 套餐默认包含 `VLESS-TCP`、`VLESS-WS`、`VMess-WS`、`XHTTP` 和 Xray-core 内置 `Hysteria2`。
 - Reality 套餐包含 `VLESS-TCP Reality Vision` 和 `XHTTP Reality`，安装时可选择同时启用 Hysteria2。
 - 支持多用户管理、分享链接生成、自定义 UUID、端口管理、日志查看、卸载与脚本更新。
-- 支持一键备份/恢复，备份包包含配置、证书、托管 Nginx 配置和 manifest，恢复前会先校验。
+- 支持一键备份/恢复，备份包包含配置、证书和脚本管理的 Nginx 配置，恢复前会先校验。
 - 支持 ACME 证书申请与续签，包含 HTTP-01、DNS-01、Cloudflare、DNSPod、Aliyun 和手动 TXT。
 - 支持 IPv4-only、IPv6-only、双栈、多公网 IP、WARP 专用接口与 WARP 默认路由场景。
 - 支持黑名单、CN IP/域名策略、WARP 分流、IPv4/IPv6 出站策略。
-- 支持 Nginx 网站/反代管理，可把已有本机网站注册为 fallback upstream；配置写入前会执行配置测试，失败时回滚。
-- 443 前门会自动判定 PROXY protocol：纯净机或已确认后端默认开启，检测到未知 HTTPS 后端时默认关闭，并保持 Nginx stream 与 Xray inbound 一致。
-- 按当前 Xray-core 正式能力启用 VLESS Encryption、REALITY ML-DSA-65、TLS ECH、Hysteria2 `finalmask.quicParams` 等增强字段；内核不支持时会提示升级，不生成不可运行配置。
+- 支持 Nginx 网站/反代管理，可优先复用已有本机网站作为伪装站；配置写入前会执行检查，失败时回滚。
+- 443 入口会自动选择合适的 PROXY protocol 模式：确认安全时开启，检测到可能影响已有 HTTPS 网站时关闭，并在菜单中提示原因。
+- 按当前 Xray-core 正式能力启用 VLESS Encryption、REALITY ML-DSA-65、TLS ECH、Hysteria2 优化参数等增强能力；内核不支持时会提示升级，不生成不可运行配置。
 
 ## 支持协议
 
@@ -40,7 +40,7 @@ xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的
 | --- | --- | --- |
 | TLS | VLESS TCP Vision | TCP/443 入口，负责 TLS 分流与回落 |
 | TLS | VLESS WS TLS | 兼容 WebSocket 客户端和 CDN 场景 |
-| TLS | VMess WS TLS | 保留 legacy 客户端兼容 |
+| TLS | VMess WS TLS | 保留旧客户端兼容 |
 | TLS | VLESS XHTTP TLS | 默认经 Nginx 反代到本机 Xray |
 | TLS | Hysteria2 | Xray-core 内置协议，占用 UDP/443 |
 | Reality | VLESS TCP Reality Vision | 默认推荐的 Reality 入口 |

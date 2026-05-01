@@ -44,15 +44,15 @@
 
 ## Nginx 启动失败
 
-修改网站 fallback、切换前门 PROXY 或渲染 Nginx 配置后会执行 `nginx -t`。失败时检查：
+修改伪装站、切换 PROXY protocol 或更新 Nginx 配置后，脚本会先检查配置。失败时检查：
 
 - 是否安装了系统包管理器提供的 Nginx。
 - 是否已有其他站点配置占用 80/443。
 - 伪装站 URL 是否有效。
 - Nginx 是否支持当前配置需要的模块。
-- `alone.stream` 是否和 Xray inbound 的 `acceptProxyProtocol` 同步。
+- 菜单中显示的 PROXY protocol 状态是否符合当前后端能力。
 
-宝塔、1Panel、OpenResty、Caddy、Apache 等第三方前端只会被检测，不会被脚本自动改写。已有 HTTPS 站点如果不支持 PROXY protocol，应保持前门 PROXY 为 `off`，或先迁移到本机 HTTP upstream。
+宝塔、1Panel、OpenResty、Caddy、Apache 等第三方前端只会被检测，不会被脚本自动改写。已有 HTTPS 站点如果不支持 PROXY protocol，应保持该模式关闭，或先把真实网站迁到本机端口后在菜单中注册。
 
 ## 分享链接不可用
 
@@ -64,7 +64,7 @@
 4. Reality 链接是否包含 `pbk`，有 shortId 时是否包含 `sid`。
 5. Hysteria2 是否放行 UDP/443。
 6. 当前 Xray-core 是否为正式版且支持对应能力。
-7. 如果启用了 443 前门，确认菜单中的前门 PROXY 生效值和 Xray inbound 的 `acceptProxyProtocol` 一致。
+7. 如果启用了 443 入口分流，确认菜单中的 PROXY protocol 状态没有提示冲突。
 
 VMess WS TLS 主要用于旧客户端兼容。新客户端优先使用 VLESS、Reality、XHTTP 或 Hysteria2。
 
