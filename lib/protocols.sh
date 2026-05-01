@@ -663,10 +663,11 @@ xray_agent_hysteria2_select_tls_domain() {
 
 xray_agent_hysteria2_prompt_mbps() {
     local label="$1"
-    local default_value="${2:-0}"
+    local direction_hint="$2"
+    local default_value="${3:-0}"
     local input_value
     while true; do
-        read -r -p "${label}[Mbps，回车默认${default_value}，0表示不开Brutal]:" input_value
+        read -r -p "${label}[Mbps，${direction_hint}，回车默认${default_value}，0=不写Brutal参数]:" input_value
         input_value="${input_value:-${default_value}}"
         if [[ "${input_value}" =~ ^[0-9]+$ ]]; then
             printf '%s\n' "${input_value}"
@@ -723,8 +724,10 @@ xray_agent_hysteria2_prepare_runtime() {
         read -r -p "URL:" input_masquerade_url
         Hysteria2MasqueradeURL="${input_masquerade_url:-${default_masquerade_url}}"
         [[ -n "${Hysteria2MasqueradeURL}" ]] || xray_agent_error " ---> Hysteria2 伪装站 URL 不可为空"
-        Hysteria2BrutalUpMbps="$(xray_agent_hysteria2_prompt_mbps "上行带宽" "${Hysteria2BrutalUpMbps:-0}")"
-        Hysteria2BrutalDownMbps="$(xray_agent_hysteria2_prompt_mbps "下行带宽" "${Hysteria2BrutalDownMbps:-0}")"
+        echoContent yellow " ---> Hysteria2 Brutal 带宽按服务端视角填写：服务端上行≈客户端下载，服务端下行≈客户端上传。"
+        echoContent yellow " ---> 填 0 或直接回车表示不写 Brutal 参数，不是自动测速；不确定就保持 0。"
+        Hysteria2BrutalUpMbps="$(xray_agent_hysteria2_prompt_mbps "服务端上行带宽" "约等于客户端下载" "${Hysteria2BrutalUpMbps:-0}")"
+        Hysteria2BrutalDownMbps="$(xray_agent_hysteria2_prompt_mbps "服务端下行带宽" "约等于客户端上传" "${Hysteria2BrutalDownMbps:-0}")"
     fi
 
     Hysteria2Port=443
