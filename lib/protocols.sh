@@ -553,12 +553,112 @@ xray_agent_hysteria2_reality_masquerade_url() {
     printf 'https://%s/\n' "${target}"
 }
 
-xray_agent_hysteria2_default_domain() {
-    if [[ -n "${domain:-}" ]]; then
-        printf '%s\n' "${domain}"
-    elif [[ -n "${TLSDomain:-}" ]]; then
-        printf '%s\n' "${TLSDomain}"
+xray_agent_hysteria2_domain_candidates() {
+    {
+        if [[ -n "${domain:-}" ]]; then
+            xray_agent_cert_normalize_domain "${domain}"
+        fi
+        if [[ -n "${TLSDomain:-}" ]]; then
+            xray_agent_cert_normalize_domain "${TLSDomain}"
+        fi
+        if declare -F xray_agent_cert_inventory_domains >/dev/null 2>&1; then
+            xray_agent_cert_inventory_domains
+        elif [[ -d "${XRAY_AGENT_TLS_DIR:-/etc/xray-agent/tls}" ]]; then
+            local cert_file
+            for cert_file in "${XRAY_AGENT_TLS_DIR:-/etc/xray-agent/tls}"/*.crt; do
+                [[ -f "${cert_file}" ]] && basename "${cert_file}" .crt
+            done
+        fi
+    } | sed '/^\*$/d;/^$/d' | awk '!seen[$0]++'
+}
+
+xray_agent_hysteria2_domain_valid() {
+    local candidate="$1"
+    [[ -n "${candidate}" ]] || return 1
+    [[ "${candidate}" != *" "* && "${candidate}" != *"/"* && "${candidate}" != *":"* ]] || return 1
+    [[ "${candidate}" == *.* ]] || return 1
+    [[ "${candidate}" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]] || return 1
+    [[ "${candidate}" != *..* ]] || return 1
+}
+
+xray_agent_hysteria2_cert_pair_exists() {
+    local cert_domain="$1"
+    [[ -f "${XRAY_AGENT_TLS_DIR:-/etc/xray-agent/tls}/${cert_domain}.crt" &&
+        -f "${XRAY_AGENT_TLS_DIR:-/etc/xray-agent/tls}/${cert_domain}.key" ]]
+}
+
+xray_agent_hysteria2_domain_candidate_status() {
+    local candidate="$1"
+    local current_tls="${TLSDomain:-}"
+    local days_left match_status
+
+    if xray_agent_hysteria2_cert_pair_exists "${candidate}"; then
+        if days_left="$(xray_agent_cert_days_left "${XRAY_AGENT_TLS_DIR:-/etc/xray-agent/tls}/${candidate}.crt" 2>/dev/null)"; then
+            match_status="$(xray_agent_cert_key_match_status "${XRAY_AGENT_TLS_DIR:-/etc/xray-agent/tls}/${candidate}.crt" "${XRAY_AGENT_TLS_DIR:-/etc/xray-agent/tls}/${candidate}.key")"
+            printf '证书文件完整，到期剩余=%s天，私钥=%s\n' "${days_left}" "${match_status}"
+        else
+            printf '证书文件完整\n'
+        fi
+    elif [[ -n "${current_tls}" && "${candidate}" == "${domain:-}" ]] && xray_agent_hysteria2_cert_pair_exists "${current_tls}"; then
+        printf '使用当前 TLS 证书: %s\n' "${current_tls}"
+    elif [[ -n "$(xray_agent_cert_acme_dir "${candidate}")" ]]; then
+        printf 'acme 记录存在，可安装证书文件\n'
+    else
+        printf '需要申请或安装证书\n'
     fi
+}
+
+xray_agent_hysteria2_read_custom_domain() {
+    local input_domain normalized_domain
+    while true; do
+        echoContent yellow "请输入 Hysteria2 使用的域名[必须是自己控制且可签发证书的真实域名]:"
+        read -r -p "域名:" input_domain
+        normalized_domain="$(xray_agent_cert_normalize_domain "${input_domain}")"
+        if xray_agent_hysteria2_domain_valid "${normalized_domain}"; then
+            XRAY_AGENT_HYSTERIA2_SELECTED_DOMAIN="${normalized_domain}"
+            return 0
+        fi
+        echoContent red " ---> 域名不合法，请输入真实域名，例如 example.com"
+    done
+}
+
+xray_agent_hysteria2_select_tls_domain() {
+    local candidates=()
+    local selected_item candidate_index normalized_input
+    XRAY_AGENT_HYSTERIA2_SELECTED_DOMAIN=
+    mapfile -t candidates < <(xray_agent_hysteria2_domain_candidates)
+
+    if [[ "${#candidates[@]}" -eq 0 ]]; then
+        xray_agent_hysteria2_read_custom_domain
+        return $?
+    fi
+
+    echoContent skyBlue "-------------------------Hysteria2证书域名---------------------"
+    echoContent yellow "请选择 Hysteria2 使用的域名。回车使用推荐项，也可以输入 0 自定义。"
+    for candidate_index in "${!candidates[@]}"; do
+        echoContent yellow "$((candidate_index + 1)).${candidates[$candidate_index]} ($(xray_agent_hysteria2_domain_candidate_status "${candidates[$candidate_index]}"))"
+    done
+    echoContent yellow "0.自定义域名"
+    read -r -p "请选择[回车=1]:" selected_item
+    selected_item="${selected_item:-1}"
+
+    if [[ "${selected_item}" == "0" ]]; then
+        xray_agent_hysteria2_read_custom_domain
+        return $?
+    fi
+    if [[ "${selected_item}" =~ ^[0-9]+$ ]] && ((selected_item >= 1 && selected_item <= ${#candidates[@]})); then
+        XRAY_AGENT_HYSTERIA2_SELECTED_DOMAIN="${candidates[$((selected_item - 1))]}"
+        return 0
+    fi
+
+    normalized_input="$(xray_agent_cert_normalize_domain "${selected_item}")"
+    if xray_agent_hysteria2_domain_valid "${normalized_input}"; then
+        XRAY_AGENT_HYSTERIA2_SELECTED_DOMAIN="${normalized_input}"
+        return 0
+    fi
+
+    echoContent red " ---> 选择错误"
+    return 1
 }
 
 xray_agent_hysteria2_prompt_mbps() {
@@ -577,25 +677,18 @@ xray_agent_hysteria2_prompt_mbps() {
 }
 
 xray_agent_hysteria2_prepare_tls_domain() {
-    local default_domain input_domain
-    default_domain="$(xray_agent_hysteria2_default_domain)"
-    if [[ -n "${default_domain}" ]]; then
-        echoContent yellow "请输入 Hysteria2 使用的域名[回车使用 ${default_domain}]:"
-        read -r -p "域名:" input_domain
-        if [[ -n "${input_domain}" && "${input_domain}" != "${default_domain}" ]]; then
-            domain="${input_domain}"
-            TLSDomain=
-        else
-            domain="${default_domain}"
-        fi
+    local previous_domain="${domain:-}" previous_tls_domain="${TLSDomain:-}" selected_domain
+    xray_agent_hysteria2_select_tls_domain || return 1
+    selected_domain="${XRAY_AGENT_HYSTERIA2_SELECTED_DOMAIN}"
+    [[ -n "${selected_domain:-}" ]] || xray_agent_error " ---> Hysteria2 域名不可为空"
+    domain="${selected_domain}"
+    if [[ "${selected_domain}" == "${previous_domain}" && -n "${previous_tls_domain}" ]]; then
+        TLSDomain="${previous_tls_domain}"
     else
-        echoContent yellow "请输入 Hysteria2 使用的域名[必须是自己控制且可签发证书的真实域名]:"
-        read -r -p "域名:" domain
+        TLSDomain="${selected_domain}"
     fi
-    [[ -n "${domain:-}" ]] || xray_agent_error " ---> Hysteria2 域名不可为空"
-    TLSDomain="${TLSDomain:-${domain}}"
 
-    if [[ ! -f "/etc/xray-agent/tls/${TLSDomain}.crt" || ! -f "/etc/xray-agent/tls/${TLSDomain}.key" ]]; then
+    if [[ ! -f "${XRAY_AGENT_TLS_DIR}/${TLSDomain}.crt" || ! -f "${XRAY_AGENT_TLS_DIR}/${TLSDomain}.key" ]]; then
         installTLS 1 0
     fi
 }

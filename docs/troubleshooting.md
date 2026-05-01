@@ -40,7 +40,11 @@
 - 当前 Xray-core 版本是否支持配置中的字段。
 - 新端口是否被占用。
 
-可以通过菜单 `13.core管理` 升级 Xray-core 正式版。
+可以通过菜单 `14.Xray-core 管理` 升级 Xray-core 正式版。
+
+## Xray-core 升级失败
+
+如果 GitHub Release API 被限流或网络返回异常，脚本会停止升级并保留当前 Xray-core。稍后重试，或先确认服务器可以稳定访问 `api.github.com` 和 `github.com/XTLS/Xray-core/releases`。
 
 ## Nginx 启动失败
 

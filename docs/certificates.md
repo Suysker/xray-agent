@@ -20,7 +20,7 @@
 
 ## Hysteria2 证书
 
-Hysteria2 需要用户自己控制的真实域名和 TLS 证书，默认复用当前 Xray TLS 域名。Reality 目标域名通常不是用户控制的域名，不能作为 Hysteria2 证书域名。
+Hysteria2 需要用户自己控制的真实域名和 TLS 证书。安装或重配时，脚本会优先列出当前安装域名、当前 TLS 证书域名、本地证书和 acme 记录；你可以直接选择已有证书，也可以输入新的自定义域名。Reality 目标域名通常不是用户控制的域名，不能作为 Hysteria2 证书域名。
 
 ## TLS ECH
 

@@ -4,12 +4,203 @@ if [[ -z "${XRAY_AGENT_PROJECT_ROOT:-}" ]]; then
     XRAY_AGENT_PROJECT_ROOT="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 
-xray_agent_download_geodata() {
+xray_agent_github_api_error_message() {
+    local response_file="$1"
+    jq -r '
+        if type == "object" then
+            .message // empty
+        elif type == "string" then
+            .
+        else
+            empty
+        end
+    ' "${response_file}" 2>/dev/null | head -1 | tr -d '\r'
+}
+
+xray_agent_github_fetch_releases() {
+    local repo="$1"
+    local response_file="$2"
+    local api_url="https://api.github.com/repos/${repo}/releases"
+    local error_file="${response_file}.err"
+    local github_token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+    rm -f "${response_file}" "${error_file}"
+
+    if command -v curl >/dev/null 2>&1; then
+        local curl_args=(-sSL --retry 2 --connect-timeout 15 -H "Accept: application/vnd.github+json")
+        local http_code
+        [[ -n "${github_token}" ]] && curl_args+=(-H "Authorization: Bearer ${github_token}")
+        if ! http_code="$(curl "${curl_args[@]}" "${api_url}" -o "${response_file}" -w "%{http_code}" 2>"${error_file}")"; then
+            echoContent red " ---> 访问 GitHub Release API 失败: ${repo}"
+            [[ -s "${error_file}" ]] && sed 's/^/     /' "${error_file}" >&2
+            rm -f "${error_file}"
+            return 1
+        fi
+        if [[ "${http_code}" != "200" ]]; then
+            echoContent red " ---> GitHub Release API 返回 HTTP ${http_code}: ${repo}"
+            local message
+            message="$(xray_agent_github_api_error_message "${response_file}")"
+            if [[ -n "${message}" ]]; then
+                echoContent yellow " ---> 返回信息: ${message}"
+                if printf '%s\n' "${message}" | grep -qi "rate limit"; then
+                    echoContent yellow " ---> 这通常是 GitHub API 限流。请稍后重试，或先配置可访问 GitHub 的网络后再升级。"
+                fi
+            fi
+            rm -f "${error_file}"
+            return 1
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        local wget_args=(-q -O "${response_file}")
+        [[ -n "${github_token}" ]] && wget_args+=(--header "Authorization: Bearer ${github_token}")
+        if ! wget "${wget_args[@]}" "${api_url}" 2>"${error_file}"; then
+            echoContent red " ---> 访问 GitHub Release API 失败: ${repo}"
+            [[ -s "${error_file}" ]] && sed 's/^/     /' "${error_file}" >&2
+            rm -f "${error_file}"
+            return 1
+        fi
+    else
+        echoContent red " ---> curl 或 wget 不存在，无法访问 GitHub Release API"
+        return 1
+    fi
+    rm -f "${error_file}"
+
+    if ! jq -e 'type == "array"' "${response_file}" >/dev/null 2>&1; then
+        local message
+        message="$(xray_agent_github_api_error_message "${response_file}")"
+        echoContent red " ---> GitHub Release API 返回异常，已停止操作"
+        if [[ -n "${message}" ]]; then
+            echoContent yellow " ---> 返回信息: ${message}"
+            if printf '%s\n' "${message}" | grep -qi "rate limit"; then
+                echoContent yellow " ---> 这通常是 GitHub API 限流。请稍后重试，或先配置可访问 GitHub 的网络后再升级。"
+            fi
+        fi
+        return 1
+    fi
+}
+
+xray_agent_github_release_tags() {
+    local repo="$1"
+    local prerelease_filter="${2:-}"
+    local limit="${3:-1}"
+    local response_file
+    response_file="$(mktemp)"
+
+    if ! xray_agent_github_fetch_releases "${repo}" "${response_file}"; then
+        rm -f "${response_file}"
+        return 1
+    fi
+    if [[ -n "${prerelease_filter}" ]]; then
+        jq -r --arg prerelease "${prerelease_filter}" --argjson limit "${limit}" '
+            [ .[]? | select((.prerelease // false) == ($prerelease == "true")) | .tag_name // empty | select(length > 0) ][: $limit][]
+        ' "${response_file}" | tr -d '\r'
+    else
+        jq -r --argjson limit "${limit}" '
+            [ .[]? | .tag_name // empty | select(length > 0) ][: $limit][]
+        ' "${response_file}" | tr -d '\r'
+    fi
+    rm -f "${response_file}"
+}
+
+xray_agent_xray_latest_version() {
+    local prerelease_filter="${1:-false}"
     local version
-    version=$(curl -s https://api.github.com/repos/Loyalsoldier/v2ray-rules-dat/releases | jq -r '.[]|.tag_name' | head -1)
-    rm /etc/xray-agent/xray/geo* >/dev/null 2>&1
-    wget -c -q --show-progress -P /etc/xray-agent/xray/ "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${version}/geosite.dat"
-    wget -c -q --show-progress -P /etc/xray-agent/xray/ "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${version}/geoip.dat"
+    version="$(xray_agent_github_release_tags "XTLS/Xray-core" "${prerelease_filter}" 1)" || return 1
+    printf '%s\n' "${version}" | head -1
+}
+
+xray_agent_download_url_to_file() {
+    local url="$1"
+    local target_file="$2"
+    local label="${3:-文件}"
+    local temp_file="${target_file}.tmp.$$"
+    local error_file="${target_file}.err.$$"
+    rm -f "${temp_file}" "${error_file}"
+
+    if command -v curl >/dev/null 2>&1; then
+        if ! curl -fL --retry 2 --connect-timeout 15 "${url}" -o "${temp_file}" 2>"${error_file}"; then
+            echoContent red " ---> ${label} 下载失败"
+            [[ -s "${error_file}" ]] && sed 's/^/     /' "${error_file}" >&2
+            rm -f "${temp_file}" "${error_file}"
+            return 1
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if wget --help 2>&1 | grep -q show-progress; then
+            if ! wget -q --show-progress -O "${temp_file}" "${url}" 2>"${error_file}"; then
+                echoContent red " ---> ${label} 下载失败"
+                [[ -s "${error_file}" ]] && sed 's/^/     /' "${error_file}" >&2
+                rm -f "${temp_file}" "${error_file}"
+                return 1
+            fi
+        elif ! wget -q -O "${temp_file}" "${url}" 2>"${error_file}"; then
+            echoContent red " ---> ${label} 下载失败"
+            [[ -s "${error_file}" ]] && sed 's/^/     /' "${error_file}" >&2
+            rm -f "${temp_file}" "${error_file}"
+            return 1
+        fi
+    else
+        echoContent red " ---> curl 或 wget 不存在，无法下载 ${label}"
+        return 1
+    fi
+    rm -f "${error_file}"
+
+    if [[ ! -s "${temp_file}" ]]; then
+        echoContent red " ---> ${label} 下载结果为空"
+        rm -f "${temp_file}"
+        return 1
+    fi
+    mv "${temp_file}" "${target_file}"
+}
+
+xray_agent_install_xray_release() {
+    local version="$1"
+    local xray_dir="/etc/xray-agent/xray"
+    local archive_path="${xray_dir}/${xrayCoreCPUVendor}.zip"
+    local temp_dir
+    local release_url="https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip"
+
+    [[ -n "${version}" ]] || {
+        echoContent red " ---> 未获取到可用的 Xray-core 版本，已停止操作"
+        return 1
+    }
+
+    mkdir -p "${xray_dir}"
+    if ! xray_agent_download_url_to_file "${release_url}" "${archive_path}" "Xray-core ${version}"; then
+        echoContent yellow " ---> 已保留当前 Xray-core，不会继续解压或覆盖"
+        return 1
+    fi
+
+    temp_dir="$(mktemp -d)"
+    if ! unzip -oq "${archive_path}" -d "${temp_dir}" || [[ ! -f "${temp_dir}/xray" ]]; then
+        echoContent red "下载或解压新版本Xray失败，请重试"
+        rm -rf "${temp_dir}" "${archive_path}"
+        echoContent yellow " ---> 已保留当前 Xray-core"
+        return 1
+    fi
+
+    find "${temp_dir}" -maxdepth 1 -type f -exec cp -f {} "${xray_dir}/" \;
+    rm -rf "${temp_dir}" "${archive_path}"
+    chmod 655 "${ctlPath:-${xray_dir}/xray}"
+}
+
+xray_agent_download_geodata() {
+    local version xray_dir geosite_tmp geoip_tmp
+    xray_dir="/etc/xray-agent/xray"
+    version="$(xray_agent_github_release_tags "Loyalsoldier/v2ray-rules-dat" "" 1)" || return 1
+    version="$(printf '%s\n' "${version}" | head -1)"
+    if [[ -z "${version}" ]]; then
+        echoContent red " ---> 未获取到可用的 geosite/geoip 版本，已停止操作"
+        return 1
+    fi
+
+    mkdir -p "${xray_dir}"
+    geosite_tmp="${xray_dir}/geosite.dat.download"
+    geoip_tmp="${xray_dir}/geoip.dat.download"
+    xray_agent_download_url_to_file "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${version}/geosite.dat" "${geosite_tmp}" "geosite.dat" || return 1
+    xray_agent_download_url_to_file "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${version}/geoip.dat" "${geoip_tmp}" "geoip.dat" || {
+        rm -f "${geosite_tmp}"
+        return 1
+    }
+    mv "${geosite_tmp}" "${xray_dir}/geosite.dat"
+    mv "${geoip_tmp}" "${xray_dir}/geoip.dat"
 }
 
 getPublicIP() {
@@ -100,7 +291,7 @@ xray_agent_warn_release_hardening_status() {
     xray_agent_xray_supports_finalmask || missing+=("finalmask")
     if [[ "${#missing[@]}" -gt 0 ]]; then
         echoContent yellow " ---> 当前 Xray-core 缺少 release hardening 能力: $(xray_agent_join_by ', ' "${missing[@]}")"
-        echoContent yellow " ---> 请通过菜单13升级正式版；脚本不会生成当前内核不支持的强化配置。"
+        echoContent yellow " ---> 请通过菜单14升级正式版；脚本不会生成当前内核不支持的强化配置。"
     fi
 }
 
@@ -150,14 +341,26 @@ xrayVersionManageMenu() {
             updateXray
             ;;
         3)
+            local rollback_versions=()
+            local version_index
             echoContent yellow "1.只可以回退最近的五个版本"
             echoContent yellow "2.不保证回退后一定可以正常使用"
             echoContent yellow "3.如果回退的版本不支持当前的config，则会无法连接，谨慎操作"
             echoContent skyBlue "------------------------Version-------------------------------"
-            curl -s https://api.github.com/repos/XTLS/Xray-core/releases | jq -r '.[]|select (.prerelease==false)|.tag_name' | head -5 | awk '{print ""NR""":"$0}'
+            mapfile -t rollback_versions < <(xray_agent_github_release_tags "XTLS/Xray-core" "false" 5)
+            if [[ "${#rollback_versions[@]}" -eq 0 ]]; then
+                echoContent red " ---> 未获取到可回退版本，请稍后重试"
+                return 1
+            fi
+            for version_index in "${!rollback_versions[@]}"; do
+                echoContent yellow "$((version_index + 1)):${rollback_versions[$version_index]}"
+            done
             echoContent skyBlue "--------------------------------------------------------------"
             read -r -p "请输入要回退的版本:" selectXrayVersionType
-            version=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | jq -r '.[]|select (.prerelease==false)|.tag_name' | head -5 | awk '{print ""NR""":"$0}' | grep "${selectXrayVersionType}:" | awk -F "[:]" '{print $2}')
+            version=""
+            if [[ "${selectXrayVersionType}" =~ ^[0-9]+$ ]] && ((selectXrayVersionType >= 1 && selectXrayVersionType <= ${#rollback_versions[@]})); then
+                version="${rollback_versions[$((selectXrayVersionType - 1))]}"
+            fi
             if [[ -n "${version}" ]]; then
                 updateXray "${version}"
             else
@@ -181,34 +384,21 @@ xrayVersionManageMenu() {
 }
 
 installXray() {
+    local version
     readInstallType
     xray_agent_blank
     echoContent skyBlue "进度  $1/${totalProgress} : 安装Xray"
     if [[ -z "${coreInstallType}" ]]; then
-        version=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | jq -r '.[]|select (.prerelease==false)|.tag_name' | head -1)
+        version="$(xray_agent_xray_latest_version false)" || return 1
         echoContent green " ---> Xray-core版本:${version}"
-        if wget --help | grep -q show-progress; then
-            wget -c -q --show-progress -P /etc/xray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip"
-        else
-            wget -c -P /etc/xray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip" >/dev/null 2>&1
-        fi
-        if [[ ! -f "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip" ]]; then
-            echoContent red " ---> 核心下载失败，请重新尝试安装"
-            exit 0
-        fi
-        unzip -o "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip" -d /etc/xray-agent/xray >/dev/null
-        if [[ ! -f "/etc/xray-agent/xray/xray" ]]; then
-            echoContent red "下载或解压新版本Xray失败，请重试"
-            return 1
-        fi
-        rm -rf "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip"
-        xray_agent_download_geodata
-        chmod 655 "${ctlPath}"
+        xray_agent_install_xray_release "${version}" || return 1
+        xray_agent_download_geodata || echoContent yellow " ---> geosite/geoip 更新失败，可稍后在菜单14单独更新"
     else
         read -r -p "是否更新、升级？[y/n]:" reInstallXrayStatus
         if [[ "${reInstallXrayStatus}" == "y" ]]; then
-            rm -f "${ctlPath}"
-            installXray "$1"
+            version="$(xray_agent_xray_latest_version false)" || return 1
+            echoContent green " ---> Xray-core版本:${version}"
+            xray_agent_install_xray_release "${version}" || return 1
         fi
     fi
 }
@@ -224,55 +414,47 @@ reloadCore() {
 }
 
 updateXray() {
+    local version current_version
     readInstallType
     prereleaseStatus=${prereleaseStatus:-false}
     if [[ -n "$1" ]]; then
         version=$1
     else
-        version=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | jq -r ".[]|select (.prerelease==${prereleaseStatus})|.tag_name" | head -1)
+        version="$(xray_agent_xray_latest_version "${prereleaseStatus}")" || return 1
     fi
+    [[ -n "${version}" ]] || {
+        echoContent red " ---> 未获取到可用的 Xray-core 版本，已停止操作"
+        return 1
+    }
     if [[ -z "${coreInstallType}" ]]; then
         echoContent green " ---> Xray-core版本:${version}"
-        if wget --help | grep -q show-progress; then
-            wget -c -q --show-progress -P /etc/xray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip"
-        else
-            wget -c -P /etc/xray-agent/xray/ "https://github.com/XTLS/Xray-core/releases/download/${version}/${xrayCoreCPUVendor}.zip" >/dev/null 2>&1
-        fi
-        unzip -o "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip" -d /etc/xray-agent/xray >/dev/null
-        if [[ ! -f "/etc/xray-agent/xray/xray" ]]; then
-            echoContent red "下载或解压新版本Xray失败，请重试"
-            return 1
-        fi
-        rm -rf "/etc/xray-agent/xray/${xrayCoreCPUVendor}.zip"
-        chmod 655 "${ctlPath}"
+        xray_agent_install_xray_release "${version}" || return 1
         handleXray stop
         handleXray start
     else
-        echoContent green " ---> 当前Xray-core版本:$(${ctlPath} --version | awk '{print $2}' | head -1)"
+        current_version="$(${ctlPath} --version | awk '{print $2}' | head -1)"
+        echoContent green " ---> 当前Xray-core版本:${current_version}"
         if [[ -n "$1" ]]; then
             read -r -p "回退版本为${version}，是否继续？[y/n]:" rollbackXrayStatus
             if [[ "${rollbackXrayStatus}" == "y" ]]; then
-                echoContent green " ---> 当前Xray-core版本:$(${ctlPath} --version | awk '{print $2}' | head -1)"
-                handleXray stop
-                rm -f "${ctlPath}"
-                updateXray "${version}"
+                xray_agent_install_xray_release "${version}" || return 1
+                reloadCore
             else
                 echoContent green " ---> 放弃回退版本"
             fi
-        elif [[ "${version}" == "v$(${ctlPath} --version | awk '{print $2}' | head -1)" ]]; then
+        elif [[ "${version}" == "v${current_version}" ]]; then
             read -r -p "当前版本与最新版相同，是否重新安装？[y/n]:" reInstallXrayStatus
             if [[ "${reInstallXrayStatus}" == "y" ]]; then
-                handleXray stop
-                rm -f "${ctlPath}"
-                updateXray
+                xray_agent_install_xray_release "${version}" || return 1
+                reloadCore
             else
                 echoContent green " ---> 放弃重新安装"
             fi
         else
             read -r -p "最新版本为:${version}，是否更新？[y/n]:" installXrayStatus
             if [[ "${installXrayStatus}" == "y" ]]; then
-                rm -f "${ctlPath}"
-                updateXray
+                xray_agent_install_xray_release "${version}" || return 1
+                reloadCore
             else
                 echoContent green " ---> 放弃更新"
             fi
