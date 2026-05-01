@@ -28,21 +28,24 @@
 
 | 编号 | 功能 |
 | --- | --- |
-| 13 | Xray-core 管理：升级、预览版、回退、启停、重启、更新 geosite/geoip |
-| 14 | 更新脚本 |
-| 15 | 查看日志 |
-| 16 | 卸载脚本 |
+| 13 | 订阅管理：查看通用 URI/Base64、Clash/Mihomo YAML、当前协议支持状态和自定义规则源 |
+| 14 | Xray-core 管理：升级、预览版、回退、启停、重启、更新 geosite/geoip |
+| 15 | 更新脚本 |
+| 16 | 查看日志 |
+| 17 | 卸载脚本 |
 
 ## 其他功能
 
 | 编号 | 功能 |
 | --- | --- |
-| 17 | AdGuardHome 管理 |
-| 18 | WARP 外部工具 |
-| 19 | 内核管理和 BBR 优化 |
-| 20 | 五网测速和 IPv6 测试 |
-| 21 | 三网回程路由测试 |
-| 22 | 流媒体解锁检测 |
-| 23 | VPS 基本信息 |
+| 18 | AdGuardHome 管理 |
+| 19 | WARP 外部工具 |
+| 20 | 内核管理和 BBR 优化 |
+| 21 | 五网测速和 IPv6 测试 |
+| 22 | 三网回程路由测试 |
+| 23 | 流媒体解锁检测 |
+| 24 | VPS 基本信息 |
 
-菜单 3-12 会先展示当前安装状态、协议、证书、网络栈和关键端口，再显示当前环境可执行的动作。删除用户、修改伪装站、改路由、开新端口、卸载 Hysteria2 等操作会要求二次确认。
+菜单 3-13 会先展示当前安装状态、协议、证书、网络栈和关键端口，再显示当前环境可执行的动作。删除用户、修改伪装站、改路由、开新端口、卸载 Hysteria2 等操作会要求二次确认。
+
+订阅管理的 Clash/Mihomo YAML 覆盖 VLESS TCP TLS、VLESS WS TLS、VMess WS TLS、VLESS TCP Reality、VLESS XHTTP TLS/Reality 和 Hysteria2。内置规则源维护在 `profiles/subscription/rules.json`；菜单添加的自定义规则会保存到 `profiles/subscription/custom_rules.json`，升级脚本不会覆盖该文件。

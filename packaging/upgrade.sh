@@ -15,6 +15,7 @@ mkdir -p \
     "${TARGET_ROOT}/profiles/install" \
     "${TARGET_ROOT}/profiles/protocol" \
     "${TARGET_ROOT}/profiles/routing" \
+    "${TARGET_ROOT}/profiles/subscription" \
     "${TARGET_ROOT}/docs" \
     "${TARGET_ROOT}/packaging"
 

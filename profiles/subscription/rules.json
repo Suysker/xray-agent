@@ -1,0 +1,68 @@
+{
+  "default_ids": [1, 2, 3, 4],
+  "rules": [
+    {
+      "id": 1,
+      "label": "MetaCubeX 私有域名直连",
+      "name": "metacubex-private",
+      "behavior": "domain",
+      "format": "mrs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/private.mrs",
+      "target": "DIRECT"
+    },
+    {
+      "id": 2,
+      "label": "MetaCubeX 中国域名直连",
+      "name": "metacubex-cn-domain",
+      "behavior": "domain",
+      "format": "mrs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.mrs",
+      "target": "DIRECT"
+    },
+    {
+      "id": 3,
+      "label": "MetaCubeX 中国IP直连",
+      "name": "metacubex-cn-ip",
+      "behavior": "ipcidr",
+      "format": "mrs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/cn.mrs",
+      "target": "DIRECT"
+    },
+    {
+      "id": 4,
+      "label": "ACL4SSR 代理域名",
+      "name": "acl4ssr-proxy-gfw",
+      "behavior": "classical",
+      "format": "yaml",
+      "url": "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/Providers/ProxyGFWlist.yaml",
+      "target": "PROXY"
+    },
+    {
+      "id": 5,
+      "label": "blackmatrix7 OpenAI",
+      "name": "blackmatrix7-openai",
+      "behavior": "classical",
+      "format": "yaml",
+      "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/OpenAI/OpenAI.yaml",
+      "target": "PROXY"
+    },
+    {
+      "id": 6,
+      "label": "G4free ChatGPT",
+      "name": "g4free-chatgpt",
+      "behavior": "classical",
+      "format": "yaml",
+      "url": "https://raw.githubusercontent.com/G4free/clash-ruleset/main/ruleset/ChatGPT.yaml",
+      "target": "PROXY"
+    },
+    {
+      "id": 7,
+      "label": "blackmatrix7 广告拦截",
+      "name": "blackmatrix7-advertising",
+      "behavior": "classical",
+      "format": "yaml",
+      "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Advertising/Advertising.yaml",
+      "target": "REJECT"
+    }
+  ]
+}

@@ -90,11 +90,12 @@ vasma
 10. 流量嗅探管理
 11. sockopt进阶管理
 12. Hysteria2管理
-13. core管理
-14. 更新脚本
-15. 查看日志
-16. 卸载脚本
-17-23. AdGuardHome、WARP、BBR、测速、回程、流媒体、VPS信息
+13. 订阅管理
+14. core管理
+15. 更新脚本
+16. 查看日志
+17. 卸载脚本
+18-24. AdGuardHome、WARP、BBR、测速、回程、流媒体、VPS信息
 ```
 
 完整说明见 [菜单参考](docs/menu-reference.md)。

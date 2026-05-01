@@ -73,6 +73,7 @@ xray_agent_runtime_layout_complete() {
         "${SCRIPT_DIR}/lib/nginx.sh" \
         "${SCRIPT_DIR}/lib/protocols.sh" \
         "${SCRIPT_DIR}/lib/accounts.sh" \
+        "${SCRIPT_DIR}/lib/subscription.sh" \
         "${SCRIPT_DIR}/lib/routing.sh" \
         "${SCRIPT_DIR}/lib/features.sh" \
         "${SCRIPT_DIR}/lib/apps.sh" \
@@ -82,6 +83,7 @@ xray_agent_runtime_layout_complete() {
         "${SCRIPT_DIR}/profiles/install" \
         "${SCRIPT_DIR}/profiles/protocol" \
         "${SCRIPT_DIR}/profiles/routing" \
+        "${SCRIPT_DIR}/profiles/subscription/rules.json" \
         "${SCRIPT_DIR}/templates/xray/base" \
         "${SCRIPT_DIR}/templates/xray/inbounds" \
         "${SCRIPT_DIR}/templates/xray/outbounds" \
@@ -161,6 +163,7 @@ for module_file in \
     "${SCRIPT_DIR}/lib/routing.sh" \
     "${SCRIPT_DIR}/lib/protocols.sh" \
     "${SCRIPT_DIR}/lib/accounts.sh" \
+    "${SCRIPT_DIR}/lib/subscription.sh" \
     "${SCRIPT_DIR}/lib/installer.sh" \
     "${SCRIPT_DIR}/lib/cli.sh"; do
     source "${module_file}"
