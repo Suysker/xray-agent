@@ -20,7 +20,7 @@ xray_agent_subscription_custom_rules_file() {
 }
 
 xray_agent_yaml_quote() {
-    jq -Rn --arg value "$1" '$value | @json' | tr -d '\r'
+    jq -Rn --arg value "$1" '$value' | tr -d '\r'
 }
 
 xray_agent_subscription_prepare_state() {
@@ -425,7 +425,7 @@ xray_agent_subscription_vless_reality_proxy_yaml() {
 xray_agent_subscription_vless_xhttp_proxy_yaml() {
     local user_id="$1"
     local variant="$2"
-    local suffix security address port sni encryption name
+    local suffix security address port sni encryption name flow_value
     if [[ "${variant}" == "reality" ]]; then
         xray_agent_subscription_prepare_reality_address || return 1
         suffix="VLESS-XHTTP-Reality"
@@ -451,6 +451,10 @@ xray_agent_subscription_vless_xhttp_proxy_yaml() {
     printf '    servername: %s\n' "$(xray_agent_yaml_quote "${sni}")"
     printf '    client-fingerprint: chrome\n'
     printf '    encryption: %s\n' "$(xray_agent_yaml_quote "${encryption}")"
+    if declare -F xray_agent_xhttp_vision_flow_for_share >/dev/null 2>&1; then
+        flow_value="$(xray_agent_xhttp_vision_flow_for_share)"
+        [[ -n "${flow_value}" ]] && printf '    flow: %s\n' "$(xray_agent_yaml_quote "${flow_value}")"
+    fi
     printf '    network: xhttp\n'
     printf '    xhttp-opts:\n'
     printf '      path: %s\n' "$(xray_agent_yaml_quote "/${path}")"

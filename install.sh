@@ -70,6 +70,7 @@ xray_agent_runtime_layout_complete() {
         "${SCRIPT_DIR}/lib/system.sh" \
         "${SCRIPT_DIR}/lib/tls.sh" \
         "${SCRIPT_DIR}/lib/core.sh" \
+        "${SCRIPT_DIR}/lib/xray_hardening.sh" \
         "${SCRIPT_DIR}/lib/nginx_state.sh" \
         "${SCRIPT_DIR}/lib/nginx_preflight.sh" \
         "${SCRIPT_DIR}/lib/nginx_render.sh" \
@@ -160,6 +161,7 @@ for module_file in \
     "${SCRIPT_DIR}/lib/system.sh" \
     "${SCRIPT_DIR}/lib/tls.sh" \
     "${SCRIPT_DIR}/lib/core.sh" \
+    "${SCRIPT_DIR}/lib/xray_hardening.sh" \
     "${SCRIPT_DIR}/lib/nginx_state.sh" \
     "${SCRIPT_DIR}/lib/nginx_preflight.sh" \
     "${SCRIPT_DIR}/lib/nginx_render.sh" \

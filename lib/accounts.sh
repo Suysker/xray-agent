@@ -80,8 +80,12 @@ addUser() {
             xray_agent_append_client_to_inbound "${configPath}${RealityfrontingType}.json" "${reality_user}"
         fi
         if echo "${currentInstallProtocolType}" | grep -q 8; then
-            local xhttp_user="${users//\"flow\":\"xtls-rprx-vision\",/}"
-            xhttp_user="${xhttp_user//\,\"alterId\":0/}"
+            local xhttp_user
+            if declare -F xray_agent_xhttp_vless_client_json >/dev/null 2>&1; then
+                xhttp_user="$(xray_agent_xhttp_vless_client_json "${uuid}")"
+            else
+                xhttp_user="$(jq -nc --arg id "${uuid}" '{id:$id}')"
+            fi
             xray_agent_append_client_to_inbound "${configPath}08_VLESS_XHTTP_inbounds.json" "${xhttp_user}"
         fi
         if echo "${currentInstallProtocolType}" | grep -q 9; then
@@ -372,7 +376,7 @@ xray_agent_vless_profile_share_uri() {
     xray_agent_load_protocol_profile "${profile_name}" || return 1
 
     local address port sni share_path security mode reality_params
-    local encryption tls_params finalmask_params
+    local encryption tls_params finalmask_params flow_value
     address="$(xray_agent_protocol_address_value "${variant}")" || return 1
     [[ -n "${address}" ]] || return 1
     port="$(xray_agent_protocol_port_value "${variant}")"
@@ -397,6 +401,7 @@ xray_agent_vless_profile_share_uri() {
     local XRAY_SHARE_REALITY_PARAMS=""
     local XRAY_SHARE_TLS_PARAMS=""
     local XRAY_SHARE_ENCRYPTION
+    local XRAY_SHARE_FLOW_PARAM=""
     local XRAY_SHARE_FM_PARAM=""
     local XRAY_SHARE_NAME
 
@@ -412,6 +417,13 @@ xray_agent_vless_profile_share_uri() {
     XRAY_SHARE_SECURITY="$(xray_agent_urlencode "${security}")"
     XRAY_SHARE_ENCRYPTION="$(xray_agent_urlencode "${encryption}")"
     XRAY_SHARE_NAME="$(xray_agent_urlencode "${id}")"
+
+    if [[ "${profile_name}" == "vless_xhttp" ]] && declare -F xray_agent_xhttp_vision_flow_for_share >/dev/null 2>&1; then
+        flow_value="$(xray_agent_xhttp_vision_flow_for_share)"
+        if [[ -n "${flow_value}" ]]; then
+            XRAY_SHARE_FLOW_PARAM="&flow=$(xray_agent_urlencode "${flow_value}")"
+        fi
+    fi
 
     if [[ "${security}" == "tls" && "${XRAY_AGENT_PROTOCOL_TRANSPORT}" == "xhttp" && -n "${XRAY_AGENT_PROTOCOL_ALPN}" ]]; then
         XRAY_SHARE_ALPN_PARAM="&alpn=${XRAY_SHARE_ALPN}"

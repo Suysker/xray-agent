@@ -575,6 +575,9 @@ xray_agent_tool_status_header() {
     echoContent yellow "域名: ${domain:-无}  TLS证书域名: ${TLSDomain:-无}"
     if [[ -n "${RealityDestDomain:-}" ]]; then
         echoContent yellow "Reality目标: ${RealityDestDomain}  端口: ${RealityPort:-未检测}"
+        if declare -F xray_agent_reality_target_pq_summary >/dev/null 2>&1; then
+            echoContent yellow "$(xray_agent_reality_target_pq_summary "${RealityDestDomain}")"
+        fi
     fi
     if [[ -f "$(xray_agent_hysteria2_inbound_file)" ]]; then
         if [[ -n "${Hysteria2HopPorts:-}" ]] && declare -F xray_agent_hysteria2_port_spec_valid >/dev/null 2>&1 && xray_agent_hysteria2_port_spec_valid "${Hysteria2HopPorts}"; then

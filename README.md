@@ -32,7 +32,7 @@ xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的
 - 支持黑名单、CN IP/域名策略、WARP 分流、IPv4/IPv6 出站策略。
 - 支持 Nginx 网站/反代管理，可优先复用已有本机网站作为伪装站；配置写入前会执行检查，失败时回滚。
 - 443 入口会自动选择合适的 PROXY protocol 模式：确认安全时开启，检测到可能影响已有 HTTPS 网站时关闭，并在菜单中提示原因。
-- 按当前 Xray-core 正式能力启用 VLESS Encryption、REALITY ML-DSA-65、TLS ECH、Hysteria2 优化参数等增强能力；内核不支持时会提示升级，不生成不可运行配置。
+- 按当前 Xray-core 正式版能力启用 VLESS Encryption、XHTTP Vision flow、REALITY ML-DSA-65、TLS ECH、Hysteria2 优化参数等增强能力；内核不支持或配置测试不通过时会回退到兼容配置。
 
 ## 支持协议
 
@@ -120,6 +120,7 @@ vasma
 - Oracle Cloud、GCP、部分云厂商有额外安全组或本机防火墙，请同时检查云控制台和系统防火墙。
 - Hysteria2 默认使用 UDP/443，不会占用 TCP/443；但云防火墙必须单独放行 UDP。启用端口跳跃时，还要放行所选 UDP 端口范围。
 - Reality 的目标域名应选择真实、稳定、证书链合理的站点；不要把 Reality 目标域名当作自己的证书域名。
+- XHTTP、WS 这类 HTTP 传输可以配合 CDN；Reality TCP、Hysteria2 和普通 TCP TLS 不会默认套用 CDN 或未发布的实验能力。
 - 修改证书、Nginx、端口和路由前，建议先确认当前菜单中的状态提示。
 
 ## License

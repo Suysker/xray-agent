@@ -25,6 +25,8 @@ Reality 套餐默认包含：
 
 Reality 分享链接会包含 `pbk`、`sid`、`spx`。当当前 Xray-core 支持并且目标站点预检合适时，也会包含 `pqv`。
 
+Reality 的抗量子增强依赖目标站点实际 TLS 行为。脚本会检查证书链长度和 X25519MLKEM768 支持情况；证书链不足 3500 时不会启用 `pqv`。
+
 ## Hysteria2
 
 Hysteria2 使用 Xray-core 内置能力，不依赖官方 Hysteria YAML 服务。
@@ -44,13 +46,17 @@ XHTTP 会使用脚本生成的路径。TLS 场景下通过你的域名访问；R
 
 分享链接会包含 `type=xhttp`、`path`、`host`、`mode` 等字段。当前默认 `mode=auto`。
 
+XHTTP 是适合配合 CDN 的 HTTP 类传输。当前 Xray-core 支持 VLESS Encryption 时，脚本会让 XHTTP 使用 Vision flow，并在分享链接和 Mihomo 订阅中同步输出 `flow=xtls-rprx-vision`。如果配置测试不通过，脚本会回退为兼容模式，不会输出与服务端不一致的分享参数。
+
 ## 正式版增强能力
 
 脚本会检测当前 Xray-core 是否支持相关命令和字段：
 
-- VLESS Encryption：默认用于无回落的 VLESS WS/XHTTP。
-- REALITY ML-DSA-65：目标站点合适时启用，分享链接输出 `pqv`。
+- VLESS Encryption：默认用于无回落的 VLESS WS/XHTTP；XHTTP 会同步 Vision flow。
+- REALITY ML-DSA-65：目标站点证书链长度达到 3500 以上时才启用，分享链接输出 `pqv`。
 - TLS ECH：当前内核和证书条件支持时启用，分享链接输出 `ech`。
 - Hysteria2 QUIC 参数：当前内核支持时启用，不支持时跳过。
 
 部分入口需要兼容浏览器回落或协议分流，脚本会自动选择是否启用 VLESS Encryption，避免生成无法启动的配置。
+
+预览版 Xray-core 中的未发布能力不会作为默认生产配置。需要测试预览版时，请从 core 管理菜单显式选择预览版升级。

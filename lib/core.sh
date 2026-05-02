@@ -305,6 +305,7 @@ xray_agent_xray_supports_release_hardening() {
 xray_agent_warn_release_hardening_status() {
     xray_agent_xray_binary_ready || return 0
     local missing=()
+    local release_channel
     xray_agent_xray_supports_command vlessenc || missing+=("vlessenc")
     xray_agent_xray_supports_command mldsa65 || missing+=("mldsa65")
     xray_agent_xray_supports_command mlkem768 || missing+=("mlkem768")
@@ -314,6 +315,13 @@ xray_agent_warn_release_hardening_status() {
     if [[ "${#missing[@]}" -gt 0 ]]; then
         echoContent yellow " ---> 当前 Xray-core 缺少 release hardening 能力: $(xray_agent_join_by ', ' "${missing[@]}")"
         echoContent yellow " ---> 请通过菜单14升级正式版；脚本不会生成当前内核不支持的强化配置。"
+    fi
+    if [[ "${XRAY_AGENT_CHECK_CURRENT_RELEASE_CHANNEL:-false}" == "true" ]] &&
+        declare -F xray_agent_xray_current_release_channel >/dev/null 2>&1; then
+        release_channel="$(xray_agent_xray_current_release_channel)"
+        if [[ "${release_channel}" == "prerelease" ]]; then
+            echoContent yellow " ---> 当前 Xray-core 是预览版。普通升级仍只跟随正式版，预览版能力只在明确支持并通过配置测试后使用。"
+        fi
     fi
 }
 
@@ -360,6 +368,7 @@ xrayVersionManageMenu() {
             ;;
         2)
             prereleaseStatus=true
+            echoContent yellow " ---> 将切换到 Xray-core 预览版通道。预览版用于测试新能力，普通升级仍只跟随正式版。"
             updateXray || echoContent red " ---> Xray-core 预览版升级未完成"
             ;;
         3)

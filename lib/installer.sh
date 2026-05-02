@@ -385,6 +385,22 @@ xray_agent_render_install_bundle() {
         rendered_paths+=("${rendered_path}")
     done
     xray_agent_apply_install_profile_trusted_xff_patches "${rendered_paths[@]}"
+
+    if declare -F xray_agent_xhttp_should_validate_vision_flow >/dev/null 2>&1 &&
+        xray_agent_install_profile_has_protocol "vless_xhttp" &&
+        xray_agent_xhttp_should_validate_vision_flow; then
+        if ! xray_agent_xray_config_test; then
+            echoContent yellow " ---> 当前 Xray-core 未接受 XHTTP + VLESS Encryption + Vision flow 配置，已回退为 XHTTP 兼容模式。"
+            XRAY_AGENT_XHTTP_DISABLE_VISION_FLOW=true
+            rendered_path="$(xray_agent_render_install_profile_protocol "vless_xhttp" "${accept_proxy_protocol}" "${sniffing_json}")" || return 1
+            xray_agent_apply_install_profile_trusted_xff_patches "${rendered_path}"
+            if ! xray_agent_xray_config_test; then
+                echoContent red " ---> Xray 配置测试仍失败，请检查 /tmp/xray-agent-xray-test.log"
+                [[ -f /tmp/xray-agent-xray-test.log ]] && tail -n 30 /tmp/xray-agent-xray-test.log
+                return 1
+            fi
+        fi
+    fi
 }
 
 xray_agent_render_tls_bundle() {

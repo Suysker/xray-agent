@@ -68,13 +68,19 @@ xray_agent_load_protocol_profile() {
 xray_agent_generate_clients_json() {
     local protocol="$1"
     local uuid_csv="$2"
-    jq -nc --arg protocol "${protocol}" --arg uuidCsv "${uuid_csv}" '
+    local xhttp_flow=""
+    if [[ "${protocol}" == "VLESS_XHTTP" ]] && declare -F xray_agent_xhttp_vision_flow_for_new_config >/dev/null 2>&1; then
+        xhttp_flow="$(xray_agent_xhttp_vision_flow_for_new_config)"
+    fi
+    jq -nc --arg protocol "${protocol}" --arg uuidCsv "${uuid_csv}" --arg xhttpFlow "${xhttp_flow}" '
       ($uuidCsv | split(",") | map(select(length > 0))) as $uuids
       | $uuids
       | map(
           if $protocol == "VLESS_TCP" then
             {id: ., flow: "xtls-rprx-vision"}
-          elif $protocol == "VLESS_XHTTP" or $protocol == "VLESS_WS" then
+          elif $protocol == "VLESS_XHTTP" then
+            {id: .} + (if $xhttpFlow != "" then {flow: $xhttpFlow} else {} end)
+          elif $protocol == "VLESS_WS" then
             {id: .}
           elif $protocol == "VMESS_WS" then
             {id: ., alterId: 0}
@@ -368,32 +374,27 @@ xray_agent_generate_mldsa65_material() {
     [[ -n "${RealityMldsa65Seed}" && -n "${RealityMldsa65Verify}" ]]
 }
 
-xray_agent_reality_target_certificate_length() {
-    local target="$1"
-    local tls_ping_output
-    [[ -n "${target}" && -x "${ctlPath:-}" ]] || return 1
-    tls_ping_output="$("${ctlPath}" tls ping "${target}" 2>/dev/null)" || return 1
-    awk -F '[:(]' '/Certificate chain.*total length/ {gsub(/[^0-9]/, "", $2); print $2; exit}' <<<"${tls_ping_output}"
-}
-
-xray_agent_reality_target_allows_mldsa65() {
-    local target="$1"
-    local cert_length
-    cert_length="$(xray_agent_reality_target_certificate_length "${target}" || true)"
-    [[ -n "${cert_length}" ]] || return 1
-    [[ "${cert_length}" -le 3500 ]]
-}
-
 xray_agent_prepare_reality_mldsa65() {
+    local status_json cert_length summary
     if [[ -n "${RealityMldsa65Seed:-}" ]]; then
         RealityMldsa65Verify="$(xray_agent_reality_mldsa65_verify_value || true)"
         return 0
     fi
-    if ! xray_agent_reality_target_allows_mldsa65 "${RealityDestDomain}"; then
+    status_json="$(xray_agent_reality_target_pq_status_json "${RealityDestDomain}")"
+    if [[ "$(printf '%s\n' "${status_json}" | jq -r '.mldsa65_allowed')" != "true" ]]; then
         RealityMldsa65Seed=
         RealityMldsa65Verify=
-        echoContent yellow " ---> Reality 目标 TLS 预检不适合启用 ML-DSA-65，已跳过 pqv。建议更换证书链更短且行为稳定的 target。"
+        cert_length="$(printf '%s\n' "${status_json}" | jq -r '.certificate_length // "未知"')"
+        echoContent yellow " ---> Reality 目标证书链太短或无法确认，已跳过 pqv。证书链长度=${cert_length}，需要 3500+ 才能隐藏 ML-DSA-65 签名。"
         return 0
+    fi
+    summary="$(printf '%s\n' "${status_json}" | jq -r '.summary')"
+    if [[ "${summary}" == "complete" ]]; then
+        cert_length="$(printf '%s\n' "${status_json}" | jq -r '.certificate_length')"
+        echoContent green " ---> Reality PQ 预检完整: 证书链长度=${cert_length}，支持 X25519MLKEM768，启用 ML-DSA-65。"
+    elif [[ "${summary}" == "partial" ]]; then
+        cert_length="$(printf '%s\n' "${status_json}" | jq -r '.certificate_length')"
+        echoContent yellow " ---> Reality PQ 预检部分满足: 证书链长度=${cert_length}，可启用 ML-DSA-65；未检测到 X25519MLKEM768。"
     fi
     if ! xray_agent_generate_mldsa65_material; then
         RealityMldsa65Seed=
