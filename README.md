@@ -118,7 +118,7 @@ vasma
 
 - 如果域名接入 Cloudflare，使用 TLS/WS/XHTTP/CDN 场景时请确认 SSL/TLS 模式为 Full 或 Full(strict)。
 - Oracle Cloud、GCP、部分云厂商有额外安全组或本机防火墙，请同时检查云控制台和系统防火墙。
-- Hysteria2 默认使用 UDP/443，不会占用 TCP/443；但云防火墙必须单独放行 UDP。启用端口跳跃时，还要放行所选 UDP 端口范围。
+- Hysteria2 默认使用 UDP/443，不会占用 TCP/443；但云防火墙必须单独放行 UDP。启用端口跳跃时，还要在云安全组放行所选 UDP 端口范围，脚本会在本机把跳跃端口转到 UDP/443。
 - Reality 的目标域名应选择真实、稳定、证书链合理的站点；不要把 Reality 目标域名当作自己的证书域名。
 - XHTTP、WS 这类 HTTP 传输可以配合 CDN；Reality TCP、Hysteria2 和普通 TCP TLS 不会默认套用 CDN 或未发布的实验能力。
 - 修改证书、Nginx、端口和路由前，建议先确认当前菜单中的状态提示。

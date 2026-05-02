@@ -444,6 +444,9 @@ readConfigHostPathUUID() {
     if [[ -n "${tls_inbound_file}" && -f "${tls_inbound_file}" ]]; then
         ECHServerKeys="$(jq -r '.inbounds[0].streamSettings.tlsSettings.echServerKeys // empty' "${tls_inbound_file}" | tr -d '\r')"
         ECHConfigList="$(xray_agent_tls_ech_config_list_value || true)"
+    elif [[ -f "${hysteria2_inbound_file}" ]]; then
+        ECHServerKeys="$(jq -r '.inbounds[0].streamSettings.tlsSettings.echServerKeys // empty' "${hysteria2_inbound_file}" | tr -d '\r')"
+        ECHConfigList="$(xray_agent_tls_ech_config_list_value || true)"
     fi
 
     if [[ -f "${hysteria2_inbound_file}" ]]; then
@@ -587,6 +590,9 @@ xray_agent_tool_status_header() {
         fi
     else
         echoContent yellow "Hysteria2: 未启用"
+    fi
+    if declare -F xray_agent_tls_ech_status_summary >/dev/null 2>&1; then
+        echoContent yellow "$(xray_agent_tls_ech_status_summary)"
     fi
     echoContent yellow "证书: ${cert_status}"
     if declare -F xray_agent_nginx_status_line >/dev/null 2>&1; then

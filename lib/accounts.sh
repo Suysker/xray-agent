@@ -360,13 +360,19 @@ xray_agent_tls_share_params() {
 
 xray_agent_share_finalmask_param() {
     local profile_name="$1"
+    local finalmask_value
     case "${profile_name}" in
         vless_xhttp)
-            if [[ -n "${XHTTPFinalmaskURI:-}" ]] && xray_agent_xray_supports_finalmask; then
-                printf '&fm=%s\n' "$(xray_agent_urlencode "${XHTTPFinalmaskURI}")"
+            if declare -F xray_agent_xhttp_finalmask_share_value >/dev/null 2>&1 &&
+                xray_agent_xray_supports_finalmask; then
+                finalmask_value="$(xray_agent_xhttp_finalmask_share_value)"
+                if [[ -n "${finalmask_value}" ]]; then
+                    printf '&fm=%s\n' "$(xray_agent_urlencode "${finalmask_value}")"
+                fi
             fi
             ;;
     esac
+    return 0
 }
 
 xray_agent_vless_profile_share_uri() {

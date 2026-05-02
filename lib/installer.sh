@@ -315,6 +315,35 @@ xray_agent_apply_install_profile_trusted_xff_patches() {
     done
 }
 
+xray_agent_rerender_tls_ech_protocols() {
+    local accept_proxy_protocol="$1"
+    local sniffing_json="$2"
+    local protocol_name rendered_path
+    local -a rendered_paths=()
+
+    for protocol_name in vless_tcp_tls hysteria2; do
+        xray_agent_install_profile_has_protocol "${protocol_name}" || continue
+        rendered_path="$(xray_agent_render_install_profile_protocol "${protocol_name}" "${accept_proxy_protocol}" "${sniffing_json}")" || return 1
+        [[ -n "${rendered_path}" ]] || continue
+        rendered_paths+=("${rendered_path}")
+    done
+    xray_agent_apply_install_profile_trusted_xff_patches "${rendered_paths[@]}"
+}
+
+xray_agent_rollback_hysteria2_install_hop_config() {
+    local accept_proxy_protocol="$1"
+    local sniffing_json="$2"
+    local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
+
+    Hysteria2HopPorts=
+    Hysteria2HopInterval=
+    if ! xray_agent_render_install_profile_protocol "hysteria2" "${accept_proxy_protocol}" "${sniffing_json}" >/dev/null 2>&1; then
+        if declare -F xray_agent_hysteria2_json_clear_udp_hop_file >/dev/null 2>&1; then
+            xray_agent_hysteria2_json_clear_udp_hop_file "${hysteria2_file}" >/dev/null 2>&1 || true
+        fi
+    fi
+}
+
 xray_agent_render_common_xray_configs() {
     local keepconfigstatus="n"
     if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
@@ -386,6 +415,14 @@ xray_agent_render_install_bundle() {
     done
     xray_agent_apply_install_profile_trusted_xff_patches "${rendered_paths[@]}"
 
+    if declare -F xray_agent_tls_ech_enabled >/dev/null 2>&1 &&
+        xray_agent_tls_ech_enabled &&
+        ! xray_agent_xray_config_test; then
+        echoContent yellow " ---> 当前 Xray-core 未接受 TLS ECH 配置，已清空 ECH 并回退为兼容 TLS。"
+        xray_agent_tls_ech_clear_for_config
+        xray_agent_rerender_tls_ech_protocols "${accept_proxy_protocol}" "${sniffing_json}" || return 1
+    fi
+
     if declare -F xray_agent_xhttp_should_validate_vision_flow >/dev/null 2>&1 &&
         xray_agent_install_profile_has_protocol "vless_xhttp" &&
         xray_agent_xhttp_should_validate_vision_flow; then
@@ -400,6 +437,23 @@ xray_agent_render_install_bundle() {
                 return 1
             fi
         fi
+    fi
+
+    if ! xray_agent_xray_config_test; then
+        echoContent red " ---> Xray 配置测试失败，请检查 /tmp/xray-agent-xray-test.log"
+        [[ -f /tmp/xray-agent-xray-test.log ]] && tail -n 30 /tmp/xray-agent-xray-test.log
+        return 1
+    fi
+
+    if xray_agent_install_profile_has_protocol "hysteria2" &&
+        [[ -n "${Hysteria2HopPorts:-}" ]] &&
+        declare -F xray_agent_hysteria2_apply_hop_redirects >/dev/null 2>&1; then
+        if ! xray_agent_hysteria2_apply_hop_redirects "${Hysteria2HopPorts}" "${Hysteria2Port:-443}"; then
+            xray_agent_rollback_hysteria2_install_hop_config "${accept_proxy_protocol}" "${sniffing_json}"
+            echoContent red " ---> Hysteria2 端口跳跃本机 REDIRECT 写入失败，已回滚 Xray udpHop 配置。"
+            return 1
+        fi
+        xray_agent_hysteria2_allow_hop_ports
     fi
 }
 

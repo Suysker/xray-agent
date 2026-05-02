@@ -98,6 +98,73 @@ xray_agent_xhttp_should_validate_vision_flow() {
         xray_agent_vless_encryption_enabled
 }
 
+xray_agent_tls_ech_enabled() {
+    [[ -n "${ECHServerKeys:-}" ]]
+}
+
+xray_agent_tls_ech_clear_for_config() {
+    ECHServerKeys=
+    ECHConfigList=
+    XRAY_AGENT_TLS_ECH_DISABLED_FOR_CONFIG=true
+}
+
+xray_agent_tls_ech_inbound_has_keys() {
+    local inbound_file="$1"
+    [[ -f "${inbound_file}" ]] || return 1
+    jq -e '.inbounds[0].streamSettings.tlsSettings.echServerKeys? | strings | length > 0' "${inbound_file}" >/dev/null 2>&1
+}
+
+xray_agent_tls_ech_configured_count() {
+    local count=0
+    local candidate
+    for candidate in "${configPath:-}02_VLESS_TCP_inbounds.json" "${configPath:-}09_Hysteria2_inbounds.json"; do
+        if xray_agent_tls_ech_inbound_has_keys "${candidate}"; then
+            count=$((count + 1))
+        fi
+    done
+    printf '%s\n' "${count}"
+}
+
+xray_agent_tls_ech_status_summary() {
+    local count
+    count="$(xray_agent_tls_ech_configured_count)"
+    if [[ "${count}" -gt 0 ]]; then
+        printf 'TLS ECH: 已启用，覆盖 %s 个 TLS/QUIC inbound；客户端不支持 ech 时可使用不带 ech 的分享参数\n' "${count}"
+    elif [[ "${XRAY_AGENT_TLS_ECH_DISABLED_FOR_CONFIG:-false}" == "true" ]]; then
+        printf 'TLS ECH: 已回退，当前 Xray-core 未接受生成的 ECH 配置\n'
+    elif declare -F xray_agent_xray_supports_tls_ech >/dev/null 2>&1 && xray_agent_xray_supports_tls_ech; then
+        printf 'TLS ECH: 未启用，当前配置未写入 echServerKeys\n'
+    else
+        printf 'TLS ECH: 当前 Xray-core 不支持或未安装，分享不会输出 ech\n'
+    fi
+}
+
+xray_agent_xhttp_finalmask_share_value() {
+    local inbound_file="${1:-$(xray_agent_xhttp_inbound_path)}"
+    [[ -n "${XHTTPFinalmaskURI:-}" && -f "${inbound_file}" ]] || return 0
+    jq -e '.inbounds[0].streamSettings.finalmask? | type == "object"' "${inbound_file}" >/dev/null 2>&1 || return 0
+    printf '%s\n' "${XHTTPFinalmaskURI}"
+}
+
+xray_agent_hysteria2_hop_redirect_plan_json() {
+    local ports="$1"
+    local listen_port="${2:-443}"
+    local item dport
+    local -a items
+    [[ -n "${ports}" ]] || {
+        jq -nc --argjson listenPort "${listen_port}" '{listen_port:$listenPort, items:[]}'
+        return 0
+    }
+    IFS=',' read -r -a items <<<"${ports}"
+    {
+        for item in "${items[@]}"; do
+            [[ -n "${item}" ]] || continue
+            dport="${item/-/:}"
+            jq -nc --arg spec "${item}" --arg dport "${dport}" --argjson listenPort "${listen_port}" '{spec:$spec, dport:$dport, listen_port:$listenPort}'
+        done
+    } | jq -s --argjson listenPort "${listen_port}" '{listen_port:$listenPort, items:.}'
+}
+
 xray_agent_reality_tls_ping_address() {
     local target="$1"
     target="${target//\"/}"
