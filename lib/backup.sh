@@ -329,7 +329,7 @@ xray_agent_backup_restore_prompt() {
         return 0
     fi
     echoContent yellow "将恢复备份: ${archive_path}"
-    xray_agent_confirm "确认继续？[y/N]:" "n" || return 0
+    xray_agent_confirm_action "确认继续？" "n" || return 0
     xray_agent_backup_restore "${archive_path}"
 }
 

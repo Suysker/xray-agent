@@ -463,8 +463,7 @@ updateXray() {
         remote_version="$(xray_agent_version_normalize "${version}")"
         echoContent green " ---> 当前Xray-core版本:${current_version}"
         if [[ -n "$1" ]]; then
-            read -r -p "回退版本为${version}，是否继续？[y/n]:" rollbackXrayStatus
-            if [[ "${rollbackXrayStatus}" == "y" ]]; then
+            if xray_agent_confirm_danger "回退版本为${version}，是否继续？"; then
                 xray_agent_install_xray_release "${version}" || return 1
                 reloadCore
                 echoContent green " ---> Xray-core 已切换到 ${version}"
@@ -472,8 +471,7 @@ updateXray() {
                 echoContent green " ---> 放弃回退版本"
             fi
         elif xray_agent_version_eq "${current_version}" "${remote_version}"; then
-            read -r -p "当前版本与最新版相同，是否重新安装？[y/n]:" reInstallXrayStatus
-            if [[ "${reInstallXrayStatus}" == "y" ]]; then
+            if xray_agent_confirm_danger "当前版本与最新版相同，是否重新安装？"; then
                 xray_agent_install_xray_release "${version}" || return 1
                 reloadCore
                 echoContent green " ---> Xray-core ${version} 已重新安装"
@@ -484,8 +482,7 @@ updateXray() {
             echoContent yellow " ---> 当前版本 ${current_version} 高于远端目标版本 ${version}，不会自动降级。"
             echoContent yellow " ---> 如需回退，请使用菜单 3 并明确选择目标版本。"
         else
-            read -r -p "最新版本为:${version}，是否更新？[y/n]:" installXrayStatus
-            if [[ "${installXrayStatus}" == "y" ]]; then
+            if xray_agent_prompt_yes_no "最新版本为:${version}，是否更新？" "y"; then
                 xray_agent_install_xray_release "${version}" || return 1
                 reloadCore
                 echoContent green " ---> Xray-core 已更新到 ${version}"

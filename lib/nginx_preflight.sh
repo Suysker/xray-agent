@@ -238,15 +238,8 @@ xray_agent_nginx_frontdoor_prompt_default() {
 
 xray_agent_nginx_prompt_enable_frontdoor() {
     local prompt_title="$1"
-    local default_answer answer suffix
+    local default_answer
     default_answer="$(xray_agent_nginx_frontdoor_prompt_default)"
-    if [[ "${default_answer}" == "y" ]]; then
-        suffix="[Y/n]:"
-    else
-        suffix="[y/N]:"
-    fi
     echoContent yellow "${prompt_title}"
-    read -r -p "是否启用 443 前门？${suffix}" answer
-    answer="${answer:-${default_answer}}"
-    [[ "${answer}" == "y" || "${answer}" == "Y" ]]
+    xray_agent_prompt_yes_no "是否启用 443 前门？" "${default_answer}"
 }

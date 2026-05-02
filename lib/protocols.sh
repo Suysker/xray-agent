@@ -736,10 +736,8 @@ xray_agent_hysteria2_prompt_hop_ports() {
 xray_agent_hysteria2_prompt_port_hopping() {
     local enable_hop default_ports
     echoContent yellow " ---> Hysteria2 支持端口跳跃；启用后客户端会在多个 UDP 端口之间切换。"
-    echoContent yellow " ---> 这些 UDP 端口必须同时在云安全组和本机防火墙放行。未确认前建议先保持关闭。"
-    read -r -p "是否启用 Hysteria2 端口跳跃？[y/N]:" enable_hop
-    enable_hop="${enable_hop:-n}"
-    if [[ "${enable_hop}" != "y" ]]; then
+    echoContent yellow " ---> 这些 UDP 端口必须同时在云安全组和本机防火墙放行。不想启用可输入 n。"
+    if ! xray_agent_prompt_yes_no "是否启用 Hysteria2 端口跳跃？" "y"; then
         Hysteria2HopPorts=
         Hysteria2HopInterval=
         return 0
@@ -860,8 +858,11 @@ xray_agent_hysteria2_prepare_runtime() {
     allowPort 443 udp
 
     if [[ -n "${Hysteria2MasqueradeURL:-}" ]]; then
-        read -r -p "读取到上次 Hysteria2 配置，是否继续使用？[Y/n]:" reuse_hysteria2_config
-        reuse_hysteria2_config="${reuse_hysteria2_config:-y}"
+        if xray_agent_prompt_yes_no "读取到上次 Hysteria2 配置，是否继续使用？" "y"; then
+            reuse_hysteria2_config="y"
+        else
+            reuse_hysteria2_config="n"
+        fi
     fi
 
     if [[ "${reuse_hysteria2_config}" != "y" ]]; then
@@ -982,7 +983,7 @@ xray_agent_hysteria2_uninstall() {
     local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
     if [[ -f "${hysteria2_file}" ]]; then
         xray_agent_hysteria2_status_summary
-        xray_agent_confirm "确认卸载 Hysteria2 inbound？[y/N]:" "n" || return 0
+        xray_agent_confirm_action "确认卸载 Hysteria2 inbound？" "n" || return 0
         rm -f "${hysteria2_file}"
         reloadCore
         echoContent green " ---> Hysteria2 已卸载"
@@ -1094,7 +1095,10 @@ xray_agent_hysteria2_manage_port_hopping() {
             default_ports="${Hysteria2HopPorts:-20000-50000}"
             selected_ports="$(xray_agent_hysteria2_prompt_hop_ports "${default_ports}")"
             selected_interval="$(xray_agent_hysteria2_prompt_hop_interval "${Hysteria2HopInterval:-30}")"
-            xray_agent_confirm "确认启用/修改为 UDP/${selected_ports}，间隔 ${selected_interval} 秒？[Y/n]:" "y" || return 0
+            xray_agent_prompt_yes_no "确认启用/修改为 UDP/${selected_ports}，间隔 ${selected_interval} 秒？" "y" || {
+                echoContent yellow " ---> 已取消 Hysteria2 端口跳跃修改"
+                return 0
+            }
             xray_agent_hysteria2_apply_hop_config enable "${selected_ports}" "${selected_interval}"
             ;;
         2)
@@ -1102,7 +1106,10 @@ xray_agent_hysteria2_manage_port_hopping() {
                 echoContent yellow " ---> 当前未启用端口跳跃"
                 return 0
             fi
-            xray_agent_confirm "确认关闭 Hysteria2 端口跳跃并恢复只使用 UDP/443？[y/N]:" "n" || return 0
+            xray_agent_prompt_yes_no "确认关闭 Hysteria2 端口跳跃并恢复只使用 UDP/443？" "y" || {
+                echoContent yellow " ---> 已取消关闭 Hysteria2 端口跳跃"
+                return 0
+            }
             xray_agent_hysteria2_apply_hop_config disable
             ;;
         *)
@@ -1177,7 +1184,7 @@ xray_agent_hysteria2_manage_menu() {
         1) xray_agent_hysteria2_show_accounts ;;
         2)
             echoContent yellow "启用/重配会重写 Hysteria2 inbound，账号将复用当前 UUID/auth 列表。"
-            xray_agent_confirm "确认继续？[Y/n]:" "y" && xray_agent_hysteria2_enable_or_reconfigure
+            xray_agent_confirm_action "确认继续？" "y" && xray_agent_hysteria2_enable_or_reconfigure
             ;;
         3) xray_agent_hysteria2_uninstall ;;
         4) xray_agent_hysteria2_manage_port_hopping ;;

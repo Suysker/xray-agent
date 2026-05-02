@@ -93,7 +93,7 @@ xray_agent_nginx_update_default_upstream() {
         return 0
     fi
     echoContent yellow "将使用外部伪装站 ${mirror_url}。真实同域站点通常比外部镜像更自然。"
-    xray_agent_confirm "确认继续？[y/N]:" "n" || return 0
+    xray_agent_confirm_action "确认继续？" "y" || return 0
     updated_json="$(xray_agent_nginx_reverse_proxy_json | jq --arg url "${mirror_url}" '
       .default_upstream.url = $url
       | .sites = ((.sites // []) | map(select(.mode != "http_fallback")))
@@ -122,7 +122,7 @@ xray_agent_nginx_register_site_upstream() {
     server_name="${domain:-default}"
     echoContent yellow "将把浏览器 fallback 转发到 ${site_url}，Host=${host_header}"
     echoContent yellow "提示: 如果这是已有真实网站，建议让该 upstream 返回与 ${domain} 对齐的内容和证书行为。"
-    xray_agent_confirm "确认继续？[y/N]:" "n" || return 0
+    xray_agent_confirm_action "确认继续？" "y" || return 0
     updated_json="$(xray_agent_nginx_reverse_proxy_json | jq --arg server "${server_name}" --arg url "${site_url}" --arg host "${host_header}" '
       .sites = ((.sites // []) | map(select(.mode != "http_fallback" or .server_name != $server)) + [{
         server_name:$server,
@@ -167,7 +167,7 @@ xray_agent_nginx_add_legacy_https_backend() {
     if [[ "${proxy_protocol_status}" != "supported" ]]; then
         echoContent yellow "提示: 只要存在 unknown/unsupported HTTPS 后端，auto 会推荐关闭全局前门 PROXY。"
     fi
-    xray_agent_confirm "确认登记该 HTTPS 后端？[y/N]:" "n" || return 0
+    xray_agent_confirm_action "确认登记该 HTTPS 后端？" "y" || return 0
     updated_json="$(xray_agent_nginx_reverse_proxy_json | jq --arg server "${server_name}" --arg target "${target}" --arg proxy_protocol "${proxy_protocol_status}" '
         .sites = ((.sites // []) | map(select(.mode != "stream_tls" or .server_name != $server)) + [{
             server_name:$server,
@@ -197,6 +197,7 @@ xray_agent_nginx_remove_legacy_https_backend() {
         return 0
     fi
     selected_server="$(printf '%s\n' "${proxy_json}" | jq -r --argjson idx "$((selected_index - 1))" '[.sites[]? | select(.enabled == true and .mode == "stream_tls")][$idx].server_name')"
+    xray_agent_confirm_action "确认删除 HTTPS 后端 ${selected_server}？" "n" || return 0
     updated_json="$(printf '%s\n' "${proxy_json}" | jq --arg server "${selected_server}" '.sites = ((.sites // []) | map(select(.mode != "stream_tls" or .server_name != $server)))')"
     xray_agent_nginx_apply_reverse_proxy_update "${updated_json}" auto
 }
@@ -252,7 +253,7 @@ xray_agent_nginx_switch_frontdoor_proxy_protocol() {
           . + {resolved:.recommended, resolved_reason:.reason}
         end')"
     echoContent yellow "将设置前门 PROXY: ${selected_mode}，当前生效: $(printf '%s\n' "${result_json}" | jq -r '.resolved')"
-    xray_agent_confirm "确认同步重渲染 Nginx stream 和 Xray inbound？[y/N]:" "n" || return 0
+    xray_agent_confirm_action "确认同步重渲染 Nginx stream 和 Xray inbound？" "y" || return 0
     updated_json="$(xray_agent_nginx_reverse_proxy_json | jq --arg mode "${selected_mode}" '
       .frontdoor.proxy_protocol = $mode
       | .frontdoor.last_reason = "menu"

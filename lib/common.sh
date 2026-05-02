@@ -54,13 +54,54 @@ xray_agent_log() {
     echoContent "${color}" "${message}"
 }
 
-xray_agent_confirm() {
+xray_agent_normalize_yes_no_prompt() {
     local prompt="$1"
-    local default_value="${2:-n}"
-    local answer
-    read -r -p "${prompt}" answer
-    answer="${answer:-${default_value}}"
-    [[ "${answer}" == "y" ]]
+    if [[ "${prompt}" =~ ^(.*)\[[Yy]/[Nn]\]:?$ ]]; then
+        prompt="${BASH_REMATCH[1]}"
+    fi
+    printf '%s' "${prompt}"
+}
+
+xray_agent_prompt_yes_no() {
+    local prompt="$1"
+    local default_value="${2:-y}"
+    local answer suffix
+    prompt="$(xray_agent_normalize_yes_no_prompt "${prompt}")"
+    default_value="$(printf '%s' "${default_value}" | tr '[:upper:]' '[:lower:]')"
+    [[ "${default_value}" == "n" ]] || default_value="y"
+    if [[ "${default_value}" == "y" ]]; then
+        suffix="[Y/n]:"
+    else
+        suffix="[y/N]:"
+    fi
+    while true; do
+        read -r -p "${prompt}${suffix}" answer
+        answer="${answer:-${default_value}}"
+        answer="$(printf '%s' "${answer}" | tr '[:upper:]' '[:lower:]')"
+        case "${answer}" in
+            y | yes) return 0 ;;
+            n | no) return 1 ;;
+            *) echoContent red " ---> 请输入 y 或 n" ;;
+        esac
+    done
+}
+
+xray_agent_confirm() {
+    xray_agent_prompt_yes_no "$@"
+}
+
+xray_agent_confirm_action() {
+    local prompt="$1"
+    local default_value="${2:-y}"
+    if xray_agent_prompt_yes_no "${prompt}" "${default_value}"; then
+        return 0
+    fi
+    echoContent yellow " ---> 已取消"
+    return 1
+}
+
+xray_agent_confirm_danger() {
+    xray_agent_prompt_yes_no "$1" "n"
 }
 
 xray_agent_error() {

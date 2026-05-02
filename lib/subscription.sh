@@ -702,7 +702,7 @@ xray_agent_subscription_add_custom_rule() {
     xray_agent_subscription_append_custom_rule "${next_id}" "${name}" "${behavior}" "${format}" "${url}" "${target}" || return 1
     echoContent green " ---> 已保存自定义规则: ${name}"
     echoContent yellow " ---> 文件: $(xray_agent_subscription_custom_rules_file)"
-    if xray_agent_confirm "是否立即生成 Clash/Mihomo 订阅？[Y/n]:" "y"; then
+    if xray_agent_prompt_yes_no "是否立即生成 Clash/Mihomo 订阅？" "y"; then
         xray_agent_subscription_print_clash
     fi
 }

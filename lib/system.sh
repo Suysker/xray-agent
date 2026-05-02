@@ -128,10 +128,11 @@ installTools() {
         nginxVersion=$(nginx -v 2>&1)
         nginxVersion=$(echo "${nginxVersion}" | awk -F "[n][g][i][n][x][/]" '{print $2}' | awk -F "[.]" '{print $2}')
         if [[ ${nginxVersion} -lt 14 ]]; then
-            if xray_agent_confirm "读取到当前的Nginx版本不支持gRPC，会导致安装失败，是否卸载Nginx后重新安装 ？[y/n]:" "n"; then
+            if xray_agent_confirm_danger "读取到当前的Nginx版本不支持gRPC，会导致安装失败，是否卸载Nginx后重新安装？"; then
                 ${removeType} nginx >/dev/null 2>&1
                 installNginxTools >/dev/null 2>&1
             else
+                echoContent yellow " ---> 已取消"
                 exit 0
             fi
         fi
@@ -314,14 +315,16 @@ customPortFunction() {
     fi
 
     if [[ -n "${port}" ]]; then
-        read -r -p "${1}读取到上次安装时的端口，是否使用上次安装时的端口 ？[y/n]:" historyCustomPortStatus
-        if [[ "${historyCustomPortStatus}" == "y" ]]; then
+        if xray_agent_prompt_yes_no "${1}读取到上次安装时的端口，是否使用上次安装时的端口？" "y"; then
+            historyCustomPortStatus="y"
             if [[ "${reuse443}" == "y" && "${port}" == "443" ]]; then
                 historyCustomPortStatus="n"
             else
                 xray_agent_blank
                 echoContent yellow " ---> ${1}端口: ${port}"
             fi
+        else
+            historyCustomPortStatus="n"
         fi
     fi
 

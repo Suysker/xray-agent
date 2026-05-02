@@ -6,8 +6,7 @@ fi
 
 xray_agent_prepare_uuid() {
     if [[ -n "${UUID}" ]]; then
-        read -r -p "读取到上次安装记录，是否使用上次安装时的UUID ？[y/n]:" historyUUIDStatus
-        if [[ "${historyUUIDStatus}" != "y" ]]; then
+        if ! xray_agent_prompt_yes_no "读取到上次安装记录，是否使用上次安装时的UUID？" "y"; then
             echoContent yellow "请输入自定义UUID[需合法](支持以逗号为分割输入多个)，[回车]随机UUID"
             read -r -p 'UUID:' UUID
         else
@@ -27,8 +26,7 @@ xray_agent_prepare_uuid() {
 xray_agent_prepare_reality_keys() {
     echoContent skyBlue "========================== 生成key =========================="
     if [[ -n "${RealityPrivateKey}" || -n "${RealityPublicKey}" ]]; then
-        read -r -p "读取到上次安装记录，是否使用上次安装时的PublicKey/PrivateKey ？[y/n]:" historyKeyStatus
-        if [[ "${historyKeyStatus}" == "y" && -n "${RealityPrivateKey}" ]]; then
+        if xray_agent_prompt_yes_no "读取到上次安装记录，是否使用上次安装时的PublicKey/PrivateKey？" "y" && [[ -n "${RealityPrivateKey}" ]]; then
             xray_agent_ensure_reality_public_key || true
             echoContent green " ---> 使用成功"
         else
@@ -205,19 +203,15 @@ xray_agent_install_profile_append_protocol() {
 
 xray_agent_offer_optional_hysteria2() {
     local progress_index="$1"
-    local default_answer="n"
-    local answer prompt
+    local prompt
     xray_agent_blank
     echoContent skyBlue "进度 ${progress_index}/${totalProgress} : Hysteria2可选安装"
     if [[ -f "${configPath}09_Hysteria2_inbounds.json" ]]; then
-        default_answer="y"
-        prompt="检测到已有 Hysteria2 配置，是否保留并重配到本次 Reality 套餐？[Y/n]:"
+        prompt="检测到已有 Hysteria2 配置，是否保留并重配到本次 Reality 套餐？"
     else
-        prompt="是否同时安装 Hysteria2？[y/N]:"
+        prompt="是否同时安装 Hysteria2？"
     fi
-    read -r -p "${prompt}" answer
-    answer="${answer:-${default_answer}}"
-    if [[ "${answer}" == "y" || "${answer}" == "Y" ]]; then
+    if xray_agent_prompt_yes_no "${prompt}" "y"; then
         xray_agent_install_profile_append_protocol "hysteria2"
     fi
 }
@@ -324,7 +318,9 @@ xray_agent_apply_install_profile_trusted_xff_patches() {
 xray_agent_render_common_xray_configs() {
     local keepconfigstatus="n"
     if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
-        read -r -p "是否保留路由和分流规则 ？[y/n]:" keepconfigstatus
+        if xray_agent_prompt_yes_no "是否保留路由和分流规则？" "y"; then
+            keepconfigstatus="y"
+        fi
     fi
     if [[ "${keepconfigstatus}" == "y" ]]; then
         return 0

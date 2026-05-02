@@ -149,7 +149,7 @@ addCorePort() {
                 fi
                 checkPort "${port}"
                 echoContent yellow "将新增公开端口 ${port}，转发到 TLS Vision 后端 ${Port}。"
-                xray_agent_confirm "确认继续？[y/N]:" "n" || continue
+                xray_agent_confirm_action "确认继续？" "y" || continue
                 rm -f "${configPath}02_dokodemodoor_inbounds_${port}.json"
                 allowPort "${port}"
                 xray_agent_render_dokodemo_port "${port}"
@@ -168,7 +168,7 @@ addCorePort() {
         read -r -p "请输入要删除的端口编号:" portIndex
         if [[ "${portIndex}" =~ ^[0-9]+$ && "${portIndex}" -ge 1 && "${portIndex}" -le "${#dokoFiles[@]}" ]]; then
             echoContent yellow "将删除 ${dokoFiles[$((portIndex - 1))]##*/}"
-            xray_agent_confirm "确认继续？[y/N]:" "n" || return 0
+            xray_agent_confirm_action "确认继续？" "n" || return 0
             rm -f "${dokoFiles[$((portIndex - 1))]}"
             reloadCore
         else
@@ -385,8 +385,7 @@ manageSockopt() {
 }
 
 unInstall() {
-    read -r -p "是否确认卸载安装内容？[y/n]:" unInstallStatus
-    if [[ "${unInstallStatus}" != "y" ]]; then
+    if ! xray_agent_confirm_danger "是否确认卸载安装内容？"; then
         echoContent green " ---> 放弃卸载"
         return 0
     fi

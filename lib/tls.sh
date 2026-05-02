@@ -269,16 +269,12 @@ xray_agent_cert_explain_failure() {
 xray_agent_cert_select_apply_method() {
     local selected_method
     if [[ "${certRecommendMethod:-dns}" == "http" ]]; then
-        read -r -p "使用推荐的 HTTP-01 standalone？[Y/n]:" selected_method
-        selected_method="${selected_method:-y}"
-        [[ "${selected_method}" == "y" ]] && {
+        xray_agent_prompt_yes_no "使用推荐的 HTTP-01 standalone？" "y" && {
             installSSLType=3
             return 0
         }
     else
-        read -r -p "使用推荐的 DNS-01？[Y/n]:" selected_method
-        selected_method="${selected_method:-y}"
-        [[ "${selected_method}" == "y" ]] && {
+        xray_agent_prompt_yes_no "使用推荐的 DNS-01？" "y" && {
             installSSLType=1
             return 0
         }
@@ -301,7 +297,7 @@ xray_agent_cert_apply() {
     xray_agent_cert_preflight "${input_domain}" "${want_wildcard}" || return 1
     xray_agent_cert_select_apply_method
     echoContent yellow "即将申请/安装证书: ${TLSDomain}，方式: $([[ "${installSSLType}" == "3" ]] && printf 'HTTP-01' || printf 'DNS-01')"
-    if ! xray_agent_confirm "确认继续？[y/N]:" "n"; then
+    if ! xray_agent_prompt_yes_no "确认继续？" "y"; then
         echoContent yellow " ---> 已取消"
         return 0
     fi
@@ -334,8 +330,7 @@ switchSSLType() {
 
 customSSLEmail() {
     if echo "$1" | grep -q "validate email"; then
-        read -r -p "是否重新输入邮箱地址[y/n]:" sslEmailStatus
-        if [[ "${sslEmailStatus}" == "y" ]]; then
+        if xray_agent_prompt_yes_no "是否重新输入邮箱地址？" "y"; then
             sed '/ACCOUNT_EMAIL/d' /root/.acme.sh/account.conf >/root/.acme.sh/account.conf_tmp && mv /root/.acme.sh/account.conf_tmp /root/.acme.sh/account.conf
         else
             exit 0
@@ -418,8 +413,7 @@ acmeInstallSSL() {
             echoContent green " --->  value：${txtValue}"
             echoContent yellow " --->  检测命令: dig @1.1.1.1 +short TXT _acme-challenge.${TLSDomain}"
             echoContent yellow " --->  TXT 生效可能需要几分钟，未生效时不要反复申请。"
-            read -r -p "是否添加完成[y/n]:" addDNSTXTRecordStatus
-            if [[ "${addDNSTXTRecordStatus}" == "y" ]]; then
+            if xray_agent_prompt_yes_no "是否添加完成？" "y"; then
                 txtAnswer=$(dig @1.1.1.1 +nocmd "_acme-challenge.${TLSDomain}" txt +noall +answer | awk -F "[\"]" '{print $2}')
                 if [[ "${txtAnswer}" == "${txtValue}" ]]; then
                     sudo "$HOME/.acme.sh/acme.sh" --renew -d "${TLSDomain}" -d "*.${TLSDomain}" --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}" ${installSSLIPv6} --force 2>&1 | tee -a /etc/xray-agent/tls/acme.log >/dev/null
@@ -442,8 +436,7 @@ initTLSNginxConfig() {
     xray_agent_blank
     echoContent skyBlue "进度  $1/${totalProgress} : 初始化Nginx申请证书配置"
     if [[ -n "${domain}" ]]; then
-        read -r -p "读取到上次安装记录，是否使用上次安装时的域名 ？[y/n]:" historyDomainStatus
-        if [[ "${historyDomainStatus}" != "y" ]]; then
+        if ! xray_agent_prompt_yes_no "读取到上次安装记录，是否使用上次安装时的域名？" "y"; then
             echoContent yellow "请输入要配置的域名 例: www.xray-agent.com --->"
             read -r -p "域名:" domain
         else
@@ -464,7 +457,11 @@ randomPathFunction() {
     xray_agent_blank
     echoContent skyBlue "进度  $1/${totalProgress} : 生成随机路径"
     if [[ -n "${path}" ]]; then
-        read -r -p "读取到上次安装记录，是否使用上次安装时的path路径 ？[y/n]:" historyPathStatus
+        if xray_agent_prompt_yes_no "读取到上次安装记录，是否使用上次安装时的path路径？" "y"; then
+            historyPathStatus="y"
+        else
+            historyPathStatus="n"
+        fi
     fi
     if [[ "${historyPathStatus}" != "y" ]]; then
         echoContent yellow "请输入自定义路径[例: alone]，不需要斜杠，[回车]随机路径"
@@ -498,10 +495,11 @@ installTLS() {
         if [[ ! -f "/etc/xray-agent/tls/${TLSDomain}.crt" || ! -f "/etc/xray-agent/tls/${TLSDomain}.key" || ! -s "/etc/xray-agent/tls/${TLSDomain}.crt" ]]; then
             sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${TLSDomain}" --fullchainpath "/etc/xray-agent/tls/${TLSDomain}.crt" --keypath "/etc/xray-agent/tls/${TLSDomain}.key" --ecc >/dev/null
         else
-            read -r -p "是否重新安装？[y/n]:" reInstallStatus
-            if [[ "${reInstallStatus}" == "y" ]]; then
+            if xray_agent_confirm_danger "是否重新安装证书？"; then
                 find /etc/xray-agent/tls/ -type f -name "*${TLSDomain}*" -exec rm -f {} \;
                 installTLS "$1" 0
+            else
+                echoContent yellow " ---> 已取消"
             fi
         fi
     elif [[ -d "$HOME/.acme.sh" ]]; then
@@ -564,7 +562,7 @@ updateTLSCertificate() {
 
 xray_agent_cert_force_renew_all() {
     local cert_domain
-    if ! xray_agent_confirm "强制续签会触发 CA 频率限制风险，确认继续？[y/N]:" "n"; then
+    if ! xray_agent_confirm_danger "强制续签会触发 CA 频率限制风险，确认继续？"; then
         echoContent yellow " ---> 已取消"
         return 0
     fi
@@ -598,6 +596,7 @@ removeCert() {
     if [[ ${delCertificateIndex} -lt 0 || ${delCertificateIndex} -ge ${#certificates[@]} ]]; then
         echoContent red " ---> 选择错误"
     else
+        xray_agent_confirm_action "确认删除证书 ${certificates[$delCertificateIndex]}？" "n" || return 0
         sudo rm -f "/etc/xray-agent/tls/${certificates[$delCertificateIndex]}.crt" "/etc/xray-agent/tls/${certificates[$delCertificateIndex]}.key"
     fi
 }
@@ -627,7 +626,11 @@ manageCert() {
             else
                 read -r -p "域名:" input_domain
             fi
-            read -r -p "是否申请通配证书(*.$(xray_agent_cert_base_domain "${input_domain}"))？[y/N]:" wildcard_status
+            if xray_agent_prompt_yes_no "是否申请通配证书(*.$(xray_agent_cert_base_domain "${input_domain}"))？" "y"; then
+                wildcard_status="y"
+            else
+                wildcard_status="n"
+            fi
             installSSLType=
             xray_agent_cert_apply "${input_domain}" "$([[ "${wildcard_status}" == "y" ]] && printf true || printf false)"
             ;;
@@ -671,8 +674,7 @@ initTLSRealityConfig() {
     fi
     while true; do
         if [[ -n "${RealityDestDomain}" ]]; then
-            read -r -p "读取到上次安装记录，是否使用上次安装时的域名 ？[y/n]:" historyDestStatus
-            if [[ "${historyDestStatus}" != "y" ]]; then
+            if ! xray_agent_prompt_yes_no "读取到上次安装记录，是否使用上次安装时的域名？" "y"; then
                 xray_agent_blank
                 if [[ -n "${default_reality_target:-}" ]]; then
                     echoContent skyBlue " ---> 检测到已注册真实网站，Reality target 默认使用 ${default_reality_target}"

@@ -124,7 +124,7 @@ removeUser() {
     userIdToDelete=${userIdsArray[$((delUserIndex-1))]}
     if [[ -n "${userIdToDelete}" ]]; then
         xray_agent_account_removal_impact "${userIdToDelete}"
-        if ! xray_agent_confirm "确认删除该用户？[y/N]:" "n"; then
+        if ! xray_agent_confirm_danger "确认删除该用户？"; then
             echoContent yellow " ---> 已取消"
             return 0
         fi
@@ -290,7 +290,7 @@ manageAccount() {
             ;;
         2)
             echoContent yellow "添加用户会同步写入所有已安装协议，包括 Hysteria2 auth。"
-            if xray_agent_confirm "确认继续？[Y/n]:" "y"; then
+            if xray_agent_confirm_action "确认继续？" "y"; then
                 addUser
             fi
             ;;
