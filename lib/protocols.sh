@@ -1176,8 +1176,8 @@ xray_agent_hysteria2_manage_menu() {
     echoContent red "=============================================================="
     echoContent yellow "1.查看 Hysteria2 账号"
     echoContent yellow "2.启用或重配 Hysteria2"
-    echoContent yellow "3.卸载 Hysteria2"
-    echoContent yellow "4.管理 Hysteria2 端口跳跃"
+    echoContent yellow "3.管理 Hysteria2 端口跳跃"
+    echoContent yellow "4.卸载 Hysteria2"
     echoContent red "=============================================================="
     read -r -p "请输入:" hysteria2_status
     case "${hysteria2_status}" in
@@ -1186,7 +1186,7 @@ xray_agent_hysteria2_manage_menu() {
             echoContent yellow "启用/重配会重写 Hysteria2 inbound，账号将复用当前 UUID/auth 列表。"
             xray_agent_confirm_action "确认继续？" "y" && xray_agent_hysteria2_enable_or_reconfigure
             ;;
-        3) xray_agent_hysteria2_uninstall ;;
-        4) xray_agent_hysteria2_manage_port_hopping ;;
+        3) xray_agent_hysteria2_manage_port_hopping ;;
+        4) xray_agent_hysteria2_uninstall ;;
     esac
 }
