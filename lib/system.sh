@@ -70,6 +70,66 @@ installNginxTools() {
     systemctl enable nginx
 }
 
+xray_agent_install_context_needs_nginx() {
+    case "${XRAY_AGENT_INSTALL_PROFILE_ENTRY:-}" in
+        xrayCoreInstall)
+            return 0
+            ;;
+        xrayCoreInstall_Reality)
+            return 1
+            ;;
+        "")
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+xray_agent_install_context_needs_cert_tools() {
+    case "${XRAY_AGENT_INSTALL_PROFILE_ENTRY:-}" in
+        xrayCoreInstall)
+            return 0
+            ;;
+        xrayCoreInstall_Reality)
+            return 1
+            ;;
+        "")
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+xray_agent_ensure_nginx_tools() {
+    if ! command -v nginx >/dev/null 2>&1; then
+        installNginxTools
+    else
+        nginxVersion=$(nginx -v 2>&1)
+        nginxVersion=$(echo "${nginxVersion}" | awk -F "[n][g][i][n][x][/]" '{print $2}' | awk -F "[.]" '{print $2}')
+        if [[ ${nginxVersion} -lt 14 ]]; then
+            if xray_agent_confirm_danger "读取到当前的Nginx版本不支持gRPC，会导致安装失败，是否卸载Nginx后重新安装？"; then
+                ${removeType} nginx >/dev/null 2>&1
+                installNginxTools >/dev/null 2>&1
+            else
+                echoContent yellow " ---> 已取消"
+                exit 0
+            fi
+        fi
+    fi
+}
+
+xray_agent_ensure_acme_tools() {
+    mkdir -p "${XRAY_AGENT_TLS_DIR}"
+    if [[ ! -d "$HOME/.acme.sh" ]] || [[ -d "$HOME/.acme.sh" && -z $(find "$HOME/.acme.sh/acme.sh") ]]; then
+        curl -s https://get.acme.sh | sh >"${XRAY_AGENT_TLS_DIR}/acme.log" 2>&1
+        sudo "$HOME/.acme.sh/acme.sh" --upgrade --auto-upgrade
+        if [[ ! -d "$HOME/.acme.sh" ]] || [[ -z $(find "$HOME/.acme.sh/acme.sh") ]]; then
+            tail -n 100 "${XRAY_AGENT_TLS_DIR}/acme.log"
+            exit 0
+        fi
+    fi
+}
+
 installTools() {
     xray_agent_blank
     echoContent skyBlue "进度  $1/${totalProgress} : 安装工具"
@@ -122,20 +182,10 @@ installTools() {
         fi
     done
 
-    if ! command -v nginx >/dev/null 2>&1; then
-        installNginxTools
+    if xray_agent_install_context_needs_nginx; then
+        xray_agent_ensure_nginx_tools
     else
-        nginxVersion=$(nginx -v 2>&1)
-        nginxVersion=$(echo "${nginxVersion}" | awk -F "[n][g][i][n][x][/]" '{print $2}' | awk -F "[.]" '{print $2}')
-        if [[ ${nginxVersion} -lt 14 ]]; then
-            if xray_agent_confirm_danger "读取到当前的Nginx版本不支持gRPC，会导致安装失败，是否卸载Nginx后重新安装？"; then
-                ${removeType} nginx >/dev/null 2>&1
-                installNginxTools >/dev/null 2>&1
-            else
-                echoContent yellow " ---> 已取消"
-                exit 0
-            fi
-        fi
+        echoContent yellow " ---> 当前安装 profile 不需要 Nginx，跳过 Nginx 安装/版本检查"
     fi
 
     if ! command -v semanage >/dev/null 2>&1; then
@@ -153,13 +203,10 @@ installTools() {
         fi
     fi
 
-    if [[ ! -d "$HOME/.acme.sh" ]] || [[ -d "$HOME/.acme.sh" && -z $(find "$HOME/.acme.sh/acme.sh") ]]; then
-        curl -s https://get.acme.sh | sh >/etc/xray-agent/tls/acme.log 2>&1
-        sudo "$HOME/.acme.sh/acme.sh" --upgrade --auto-upgrade
-        if [[ ! -d "$HOME/.acme.sh" ]] || [[ -z $(find "$HOME/.acme.sh/acme.sh") ]]; then
-            tail -n 100 /etc/xray-agent/tls/acme.log
-            exit 0
-        fi
+    if xray_agent_install_context_needs_cert_tools; then
+        xray_agent_ensure_acme_tools
+    else
+        echoContent yellow " ---> 当前安装 profile 不需要 TLS 证书，跳过 acme.sh 安装/升级"
     fi
 }
 
@@ -261,6 +308,104 @@ checkUDPPort() {
     fi
 }
 
+xray_agent_tcp_port_reusable_for_xray() {
+    local label="$1"
+    local port="$2"
+    xray_agent_validate_reuse_tcp_port "${label}" "${port}" "xray-backend" || true
+    xray_agent_print_reuse_check_result "${label}端口" "TCP/${port}" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
+    xray_agent_reuse_can_prompt
+}
+
+xray_agent_validate_reuse_tcp_port() {
+    local label="$1"
+    local port="$2"
+    local expected_role="${3:-xray-backend}"
+    local owner
+
+    if ! xray_agent_validate_port "${port}"; then
+        xray_agent_reuse_result block "${label}端口不合法"
+        return 1
+    fi
+
+    owner="$(xray_agent_port_owner TCP "${port}" 2>/dev/null || printf '未检测')"
+    echoContent yellow " ---> ${label}端口owner: TCP/${port}=${owner}"
+    case "${owner}" in
+        空闲 | xray/* | Xray/*)
+            xray_agent_reuse_result ok "端口空闲或由 Xray 占用，可继续复用"
+            return 0
+            ;;
+        未检测*)
+            xray_agent_reuse_result warn "无法确认端口 owner，后续仍会做监听检查"
+            return 0
+            ;;
+        nginx/* | Nginx/*)
+            if [[ "${expected_role}" == "frontdoor" ]]; then
+                xray_agent_reuse_result ok "端口由预期 Nginx 前门占用"
+                return 0
+            fi
+            xray_agent_reuse_result block "端口由 Nginx 前门占用，不能作为 Xray 后端复用"
+            return 1
+            ;;
+        *)
+            xray_agent_reuse_result block "端口被非预期进程占用: ${owner}"
+            return 1
+            ;;
+    esac
+}
+
+xray_agent_default_backend_port_for_label() {
+    case "$1" in
+        Vision) printf '31301\n' ;;
+        Reality) printf '31302\n' ;;
+        *) printf '31303\n' ;;
+    esac
+}
+
+xray_agent_other_suite_uses_public_443() {
+    case "$1" in
+        Vision)
+            xray_agent_reality_suite_installed && [[ "${RealityPort:-}" == "443" ]] && ! xray_agent_nginx_frontdoor_enabled
+            ;;
+        Reality)
+            xray_agent_tls_suite_installed && [[ "${Port:-}" == "443" ]] && ! xray_agent_nginx_frontdoor_enabled
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+xray_agent_force_shared_frontdoor() {
+    local label="$1"
+    xray_agent_other_suite_uses_public_443 "${label}" || return 1
+    echoContent yellow " ---> 检测到另一个套餐已使用公网 TCP/443。"
+    echoContent yellow " ---> TLS 与 Reality 同时安装时强制使用 Nginx stream 共用公网443。"
+    echoContent yellow " ---> Reality/XHTTP 本身不需要 Nginx；这里仅用于两个套餐共用公网443。"
+    reuse443="y"
+    XRAY_AGENT_INSTALL_STREAM_ONLY=true
+    XRAY_AGENT_FORCE_SHARED_FRONTDOOR=true
+    return 0
+}
+
+xray_agent_prepare_existing_suite_backend_for_frontdoor() {
+    local current_label="$1"
+    [[ "${reuse443}" == "y" ]] || return 0
+    [[ "${XRAY_AGENT_SHARED_FRONTDOOR_PORT_PREPARED:-}" != "true" ]] || return 0
+    XRAY_AGENT_SHARED_FRONTDOOR_PORT_PREPARED=true
+    case "${current_label}" in
+        Vision)
+            if [[ "${RealityPort:-}" == "443" ]]; then
+                customPortFunction "Reality"
+            fi
+            ;;
+        Reality)
+            if [[ "${Port:-}" == "443" ]]; then
+                customPortFunction "Vision"
+            fi
+            ;;
+    esac
+}
+
 handleNginx() {
     if [[ -z $(pgrep -f "nginx") ]] && [[ "$1" == "start" ]]; then
         systemctl start nginx 2>/etc/xray-agent/nginx_error.log
@@ -307,48 +452,84 @@ installXrayService() {
 }
 
 customPortFunction() {
-    local port historyCustomPortStatus
+    local port historyCustomPortStatus default_port disallow_443="false"
     if [[ "$1" == "Vision" ]]; then
         port="${Port}"
     elif [[ "$1" == "Reality" ]]; then
         port="${RealityPort}"
     fi
+    default_port="443"
+
+    if [[ "${reuse443}" != "y" ]] && xray_agent_other_suite_uses_public_443 "$1"; then
+        if xray_agent_force_shared_frontdoor "$1"; then
+            :
+        else
+            disallow_443="true"
+            default_port="$(xray_agent_default_backend_port_for_label "$1")"
+        fi
+    fi
+
+    if [[ "${reuse443}" == "y" ]]; then
+        disallow_443="true"
+        default_port="$(xray_agent_default_backend_port_for_label "$1")"
+        xray_agent_prepare_existing_suite_backend_for_frontdoor "$1"
+    fi
 
     if [[ -n "${port}" ]]; then
-        if xray_agent_prompt_yes_no "${1}读取到上次安装时的端口，是否使用上次安装时的端口？" "y"; then
-            historyCustomPortStatus="y"
-            if [[ "${reuse443}" == "y" && "${port}" == "443" ]]; then
-                historyCustomPortStatus="n"
+        echoContent yellow " ---> 检测到上次安装时的${1}端口: ${port}"
+        if [[ "${disallow_443}" == "true" && "${port}" == "443" ]]; then
+            echoContent yellow " ---> 当前场景下 ${1} 后端不能继续监听443"
+            if xray_agent_tcp_port_reusable_for_xray "${1}" "${default_port}"; then
+                port="${default_port}"
+                historyCustomPortStatus="y"
+                echoContent yellow " ---> ${1}后端端口自动切换为: ${port}"
             else
+                port=
+                historyCustomPortStatus="n"
+            fi
+        elif xray_agent_tcp_port_reusable_for_xray "${1}" "${port}"; then
+            if xray_agent_prompt_yes_no "是否继续使用该${1}端口？" "y"; then
+                historyCustomPortStatus="y"
                 xray_agent_blank
                 echoContent yellow " ---> ${1}端口: ${port}"
+            else
+                historyCustomPortStatus="n"
             fi
+        else
+            echoContent red " ---> 上次${1}端口当前不可用，请重新选择"
+            historyCustomPortStatus="n"
+        fi
+    fi
+
+    if [[ -z "${port}" && "${disallow_443}" == "true" ]]; then
+        if xray_agent_tcp_port_reusable_for_xray "${1}" "${default_port}"; then
+            port="${default_port}"
+            historyCustomPortStatus="y"
+            echoContent yellow " ---> ${1}后端端口自动使用: ${port}"
         else
             historyCustomPortStatus="n"
         fi
     fi
 
     if [[ "${historyCustomPortStatus}" == "n" || -z "${port}" ]]; then
-        echoContent yellow "${1}请输入自定义端口[例: 2083]，[回车]使用443"
+        echoContent yellow "${1}请输入自定义端口[例: 2083]，[回车]使用${default_port}"
         read -r -p "端口:" port
         if [[ -n "${port}" ]]; then
-            if ((port >= 1 && port <= 65535)); then
-                if [[ "${reuse443}" == "y" && "${port}" == "443" ]]; then
-                    xray_agent_error " ---> ${1}全局设置为不允许使用端口 443"
+            if xray_agent_validate_port "${port}"; then
+                if [[ "${disallow_443}" == "true" && "${port}" == "443" ]]; then
+                    xray_agent_error " ---> 当前场景下不允许 ${1} 后端使用端口 443"
                 fi
                 checkPort "${port}"
             else
                 xray_agent_error " ---> ${1}端口输入错误"
             fi
         else
-            if [[ "${reuse443}" == "y" ]]; then
-                xray_agent_error " ---> ${1}全局设置为不允许使用默认端口 443"
-            fi
-            port=443
+            port="${default_port}"
             checkPort "${port}"
         fi
     fi
 
+    checkPort "${port}"
     allowPort "${port}"
 
     if [[ "$1" == "Vision" ]]; then

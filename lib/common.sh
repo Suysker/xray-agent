@@ -270,6 +270,56 @@ xray_agent_validate_csv() {
     [[ "$1" != *"  "* ]]
 }
 
+xray_agent_reuse_result() {
+    XRAY_AGENT_REUSE_STATUS="$1"
+    XRAY_AGENT_REUSE_REASON="$2"
+}
+
+xray_agent_reuse_status() {
+    printf '%s\n' "${XRAY_AGENT_REUSE_STATUS:-block}"
+}
+
+xray_agent_reuse_reason() {
+    printf '%s\n' "${XRAY_AGENT_REUSE_REASON:-未完成检测}"
+}
+
+xray_agent_reuse_can_prompt() {
+    local status="${1:-${XRAY_AGENT_REUSE_STATUS:-block}}"
+    [[ "${status}" == "ok" || "${status}" == "warn" ]]
+}
+
+xray_agent_reuse_status_label() {
+    case "$1" in
+        ok) printf '可继续使用\n' ;;
+        warn) printf '可继续使用，但有风险\n' ;;
+        block) printf '不可继续使用\n' ;;
+        *) printf '未知\n' ;;
+    esac
+}
+
+xray_agent_print_reuse_check_result() {
+    local label="$1"
+    local value="$2"
+    local status="${3:-${XRAY_AGENT_REUSE_STATUS:-block}}"
+    local reason="${4:-${XRAY_AGENT_REUSE_REASON:-未完成检测}}"
+    echoContent yellow " ---> 识别到上次${label}: ${value}"
+    case "${status}" in
+        ok) echoContent green " ---> ${label}检测结果: $(xray_agent_reuse_status_label "${status}")。原因: ${reason}" ;;
+        warn) echoContent yellow " ---> ${label}检测结果: $(xray_agent_reuse_status_label "${status}")。原因: ${reason}" ;;
+        *) echoContent red " ---> ${label}检测结果: $(xray_agent_reuse_status_label "${status}")。原因: ${reason}" ;;
+    esac
+}
+
+xray_agent_mask_secret() {
+    local value="$1"
+    local length="${#value}"
+    if ((length <= 8)); then
+        printf '****\n'
+    else
+        printf '%s****%s\n' "${value:0:4}" "${value: -4}"
+    fi
+}
+
 xray_agent_lock_path() {
     echo "/tmp/xray-agent.lock"
 }

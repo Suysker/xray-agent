@@ -18,15 +18,15 @@ xray_agent_print_banner() {
 }
 
 xray_agent_print_install_menu_items() {
-    if [[ "${coreInstallType}" == "1" || "${coreInstallType}" == "3" ]]; then
+    if xray_agent_tls_suite_installed; then
         echoContent yellow "1.重新安装TLS套餐(VLESS-TCP/VLESS-WS/VMess-WS/XHTTP/Hysteria2)"
     else
         echoContent yellow "1.安装TLS套餐(VLESS-TCP/VLESS-WS/VMess-WS/XHTTP/Hysteria2)"
     fi
-    if [[ "${coreInstallType}" == "2" || "${coreInstallType}" == "3" ]]; then
-        echoContent yellow "2.重新安装Reality套餐(VLESS-TCP/XHTTP，可选Hysteria2)"
+    if xray_agent_reality_suite_installed; then
+        echoContent yellow "2.重新安装Reality套餐(VLESS-TCP/XHTTP Reality，可选Hysteria2)"
     else
-        echoContent yellow "2.安装Reality套餐(VLESS-TCP/XHTTP，可选Hysteria2)"
+        echoContent yellow "2.安装Reality套餐(VLESS-TCP/XHTTP Reality，可选Hysteria2)"
     fi
 }
 
@@ -60,7 +60,7 @@ xray_agent_print_script_menu_items() {
 
 xray_agent_print_external_menu_items() {
     echoContent skyBlue "-------------------------其他功能-----------------------------"
-    echoContent yellow "19.Adguardhome"
+    echoContent yellow "19.AdGuardHome管理[$(xray_agent_adguard_status_label)]"
     echoContent yellow "20.WARP"
     echoContent yellow "21.内核管理及BBR优化"
     echoContent yellow "22.五网测速+IPV6"

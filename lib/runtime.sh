@@ -46,6 +46,70 @@ xray_agent_hysteria2_inbound_file() {
     xray_agent_xray_conf_file "09_Hysteria2_inbounds.json"
 }
 
+xray_agent_tls_suite_installed() {
+    [[ -f "$(xray_agent_xray_conf_file "02_VLESS_TCP_inbounds.json")" ]]
+}
+
+xray_agent_reality_suite_installed() {
+    [[ -f "$(xray_agent_xray_conf_file "07_VLESS_Reality_TCP_inbounds.json")" ]]
+}
+
+xray_agent_xhttp_installed() {
+    [[ -f "$(xray_agent_xhttp_inbound_file)" ]]
+}
+
+xray_agent_hysteria2_installed() {
+    [[ -f "$(xray_agent_hysteria2_inbound_file)" ]]
+}
+
+xray_agent_nginx_frontdoor_enabled() {
+    [[ -f "$(xray_agent_nginx_conf_file "alone.stream")" ]]
+}
+
+xray_agent_adguard_home_dir() {
+    printf '%s\n' "${XRAY_AGENT_ADGUARD_HOME_DIR:-/opt/AdGuardHome}"
+}
+
+xray_agent_adguard_binary_path() {
+    printf '%s/AdGuardHome\n' "$(xray_agent_adguard_home_dir)"
+}
+
+xray_agent_adguard_config_path() {
+    printf '%s/AdGuardHome.yaml\n' "$(xray_agent_adguard_home_dir)"
+}
+
+xray_agent_adguard_installed() {
+    [[ -f "$(xray_agent_adguard_binary_path)" ]]
+}
+
+xray_agent_adguard_running() {
+    if [[ -n "${XRAY_AGENT_ADGUARD_ACTIVE_OVERRIDE:-}" ]]; then
+        [[ "${XRAY_AGENT_ADGUARD_ACTIVE_OVERRIDE}" == "active" || "${XRAY_AGENT_ADGUARD_ACTIVE_OVERRIDE}" == "running" || "${XRAY_AGENT_ADGUARD_ACTIVE_OVERRIDE}" == "true" ]]
+        return $?
+    fi
+    xray_agent_adguard_installed || return 1
+    command -v systemctl >/dev/null 2>&1 || return 1
+    systemctl is-active --quiet AdGuardHome
+}
+
+xray_agent_adguard_configured() {
+    [[ -f "$(xray_agent_adguard_config_path)" ]]
+}
+
+xray_agent_adguard_status_label() {
+    if ! xray_agent_adguard_installed; then
+        printf '未安装\n'
+    elif xray_agent_adguard_running; then
+        if xray_agent_adguard_configured; then
+            printf '运行中\n'
+        else
+            printf '运行中(未初始化)\n'
+        fi
+    else
+        printf '已安装未运行\n'
+    fi
+}
+
 xray_agent_inbound_clients_csv() {
     local inbound_file="$1"
     [[ -f "${inbound_file}" ]] || return 0
@@ -281,6 +345,9 @@ initVar() {
     networkJSON=
     networkDetected=false
     selectedRealityPublicIP=
+    XRAY_AGENT_INSTALL_STREAM_ONLY=false
+    XRAY_AGENT_FORCE_SHARED_FRONTDOOR=false
+    XRAY_AGENT_SHARED_FRONTDOOR_PORT_PREPARED=
 }
 
 checkBTPanel() {
@@ -335,15 +402,15 @@ readInstallType() {
     coreInstallType=
     reuse443=
     if [[ -d "${XRAY_AGENT_ETC_DIR}" ]]; then
-        if [[ -d "/etc/xray-agent/xray" && -f "${ctlPath}" ]]; then
-            if [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}02_VLESS_TCP_inbounds.json" ]] && [[ -f "${configPath}07_VLESS_Reality_TCP_inbounds.json" ]]; then
+        if [[ -d "${XRAY_AGENT_XRAY_DIR}" ]]; then
+            if [[ -d "${XRAY_AGENT_XRAY_CONF_DIR}" ]] && xray_agent_tls_suite_installed && xray_agent_reality_suite_installed; then
                 coreInstallType=3
-            elif [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}02_VLESS_TCP_inbounds.json" ]]; then
+            elif [[ -d "${XRAY_AGENT_XRAY_CONF_DIR}" ]] && xray_agent_tls_suite_installed; then
                 coreInstallType=1
-            elif [[ -d "/etc/xray-agent/xray/conf" ]] && [[ -f "${configPath}07_VLESS_Reality_TCP_inbounds.json" ]]; then
+            elif [[ -d "${XRAY_AGENT_XRAY_CONF_DIR}" ]] && xray_agent_reality_suite_installed; then
                 coreInstallType=2
             fi
-            if [[ -f "${nginxConfigPath}alone.stream" ]]; then
+            if xray_agent_nginx_frontdoor_enabled; then
                 reuse443="y"
             fi
         fi
@@ -386,6 +453,7 @@ readConfigHostPathUUID() {
     domain=
     TLSDomain=
     RealityPort=
+    RealityPrivateKey=
     RealityPublicKey=
     RealityServerNames=
     RealityDestDomain=

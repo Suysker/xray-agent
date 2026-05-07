@@ -13,7 +13,7 @@ xray-agent 是一个面向 Xray-core 的 N 合一安装与管理脚本，提供 
 
 xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的 Xray-core 能力做成一套可以长期维护的 N 合一控制台。你可以从同一个菜单完成安装、证书、账号、分享、伪装站、路由、WARP、Hysteria2、日志和内核管理，不需要在多个脚本、配置文件和外部项目之间来回切换。
 
-- **一套入口管理多协议**：TLS 套餐默认提供 VLESS TCP Vision、VLESS WS、VMess WS、XHTTP 和 Hysteria2；Reality 套餐提供 VLESS Reality 和 XHTTP Reality，并可按需启用 Hysteria2。
+- **一套入口管理多协议**：TLS 套餐默认提供 VLESS TCP Vision、VLESS WS、VMess WS、XHTTP 和 Hysteria2；Reality 套餐默认提供 VLESS TCP Reality 和 XHTTP Reality，并可按需启用 Hysteria2。
 - **配置集中管理**：协议、证书、Nginx 和分享链接都由菜单统一处理，减少手动编辑多个配置文件带来的错误。
 - **证书流程更稳**：证书管理会先展示证书库存、解析结果、端口占用和网络栈状态，再推荐 HTTP-01 或 DNS-01，减少因为 DNS、防火墙或端口冲突导致的反复失败。
 - **面向真实网络环境**：安装和路由逻辑会考虑 IPv4-only、IPv6-only、双栈、多公网 IP、WARP 默认路由和 WARP 专用接口等常见 VPS 场景。
@@ -24,7 +24,7 @@ xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的
 
 - 只使用 Xray-core，不引入 sing-box、订阅系统或外部 Hysteria YAML 服务。
 - TLS 套餐默认包含 `VLESS-TCP`、`VLESS-WS`、`VMess-WS`、`XHTTP` 和 Xray-core 内置 `Hysteria2`。
-- Reality 套餐包含 `VLESS-TCP Reality Vision` 和 `XHTTP Reality`，安装时可选择同时启用 Hysteria2。
+- Reality 套餐默认包含 `VLESS-TCP Reality Vision` 和 `XHTTP Reality`，二者都不依赖 Nginx 或镜像站；Reality 主配置完成并 reload 成功后，可选择继续启用 Hysteria2。
 - 支持多用户管理、分享链接生成、自定义 UUID、端口管理、日志查看、卸载与脚本更新。
 - 支持一键备份/恢复，备份包包含配置、证书和脚本管理的 Nginx 配置，恢复前会先校验。
 - 支持 ACME 证书申请与续签，包含 HTTP-01、DNS-01、Cloudflare、DNSPod、Aliyun 和手动 TXT。
@@ -44,7 +44,7 @@ xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的
 | TLS | VLESS XHTTP TLS | 默认经 Nginx 反代到本机 Xray |
 | TLS | Hysteria2 | Xray-core 内置协议，默认 UDP/443，可选端口跳跃 |
 | Reality | VLESS TCP Reality Vision | 默认推荐的 Reality 入口 |
-| Reality | VLESS XHTTP Reality | Reality 环境下的 XHTTP 入口 |
+| Reality | VLESS XHTTP Reality | 通过 Reality fallback 转到本机 XHTTP inbound，不依赖 Nginx |
 | Reality 可选 | Hysteria2 | 复用或申请同域名 TLS 证书 |
 
 更多协议和分享链接说明见 [协议说明](docs/protocols.md)。

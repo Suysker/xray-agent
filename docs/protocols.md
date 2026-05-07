@@ -21,7 +21,7 @@ Reality 套餐默认包含：
 - `VLESS-TCP Reality Vision`
 - `VLESS-XHTTP Reality`
 
-安装过程中可以选择同时启用 Hysteria2。Hysteria2 仍需要用户自己控制的域名和 TLS 证书，不使用 Reality 目标域名签发证书。
+Reality TCP 和 Reality XHTTP 都不依赖 Nginx、证书或镜像站。XHTTP 由 Reality inbound fallback 到本机 XHTTP inbound。Reality 主配置完成并 reload 成功后，可以选择继续启用 Hysteria2。Hysteria2 仍需要用户自己控制的域名和 TLS 证书，不使用 Reality 目标域名签发证书。
 
 Reality 分享链接会包含 `pbk`、`sid`、`spx`。当当前 Xray-core 支持并且目标站点预检合适时，也会包含 `pqv`。
 

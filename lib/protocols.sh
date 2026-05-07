@@ -338,6 +338,11 @@ xray_agent_tls_fallbacks_json() {
 
 xray_agent_reality_fallbacks_json() {
     local xhttp_dest
+    if declare -F xray_agent_install_profile_has_protocol >/dev/null 2>&1 &&
+        ! xray_agent_install_profile_has_protocol "vless_xhttp"; then
+        jq -nc '[]'
+        return 0
+    fi
     xhttp_dest="$(xray_agent_loopback_endpoint 31305)"
     jq -nc --arg xhttpDest "${xhttp_dest}" '[{dest:$xhttpDest,xver:0}]'
 }
@@ -994,8 +999,75 @@ xray_agent_hysteria2_prepare_tls_domain() {
     fi
 
     if [[ ! -f "${XRAY_AGENT_TLS_DIR}/${TLSDomain}.crt" || ! -f "${XRAY_AGENT_TLS_DIR}/${TLSDomain}.key" ]]; then
+        if declare -F xray_agent_ensure_acme_tools >/dev/null 2>&1; then
+            xray_agent_ensure_acme_tools
+        fi
         installTLS 1 0
     fi
+}
+
+xray_agent_hysteria2_url_valid() {
+    local candidate="$1"
+    local url_host
+    [[ "${candidate}" =~ ^https?:// ]] || return 1
+    [[ "${candidate}" != *[[:space:]]* ]] || return 1
+    url_host="${candidate#http://}"
+    url_host="${url_host#https://}"
+    url_host="${url_host%%/*}"
+    url_host="${url_host%%:*}"
+    [[ -n "${url_host}" ]] || return 1
+    xray_agent_validate_domain "${url_host}" || [[ "${url_host}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+xray_agent_validate_reuse_hysteria2_config() {
+    local masquerade_url="${1:-${Hysteria2MasqueradeURL:-}}"
+    local up_mbps="${2:-${Hysteria2BrutalUpMbps:-}}"
+    local down_mbps="${3:-${Hysteria2BrutalDownMbps:-}}"
+    local hop_ports="${4:-${Hysteria2HopPorts:-}}"
+    local hop_interval="${5:-${Hysteria2HopInterval:-}}"
+
+    if [[ -z "${masquerade_url}" ]]; then
+        xray_agent_reuse_result block "未检测到 Hysteria2 伪装站 URL"
+        return 1
+    fi
+    if ! xray_agent_hysteria2_url_valid "${masquerade_url}"; then
+        xray_agent_reuse_result block "Hysteria2 伪装站 URL 不合法: ${masquerade_url}"
+        return 1
+    fi
+    if [[ -n "${up_mbps}" ]]; then
+        if [[ ! "${up_mbps}" =~ ^[0-9]+$ ]]; then
+            xray_agent_reuse_result block "Brutal 上行值不是整数 Mbps: ${up_mbps}"
+            return 1
+        fi
+    fi
+    if [[ -n "${down_mbps}" ]]; then
+        if [[ ! "${down_mbps}" =~ ^[0-9]+$ ]]; then
+            xray_agent_reuse_result block "Brutal 下行值不是整数 Mbps: ${down_mbps}"
+            return 1
+        fi
+    fi
+    if [[ -n "${hop_ports}" ]]; then
+        if ! xray_agent_hysteria2_port_spec_valid "${hop_ports}"; then
+            xray_agent_reuse_result block "端口跳跃范围不合法: ${hop_ports}"
+            return 1
+        fi
+    fi
+    if [[ -n "${hop_interval}" ]]; then
+        if [[ ! "${hop_interval}" =~ ^[0-9]+$ ]] || ((hop_interval < 5 || hop_interval > 3600)); then
+            xray_agent_reuse_result block "端口跳跃间隔不在 5-3600 秒范围: ${hop_interval}"
+            return 1
+        fi
+    fi
+    xray_agent_reuse_result ok "Hysteria2 伪装站、Brutal 和端口跳跃配置格式可用"
+}
+
+xray_agent_hysteria2_reuse_summary() {
+    printf 'URL=%s BrutalUp=%s BrutalDown=%s Hop=%s Interval=%s\n' \
+        "${Hysteria2MasqueradeURL:-未检测}" \
+        "${Hysteria2BrutalUpMbps:-0}" \
+        "${Hysteria2BrutalDownMbps:-0}" \
+        "${Hysteria2HopPorts:-未启用}" \
+        "${Hysteria2HopInterval:-30}"
 }
 
 xray_agent_hysteria2_prepare_runtime() {
@@ -1014,9 +1086,12 @@ xray_agent_hysteria2_prepare_runtime() {
     allowPort 443 udp
 
     if [[ -n "${Hysteria2MasqueradeURL:-}" ]]; then
-        if xray_agent_prompt_yes_no "读取到上次 Hysteria2 配置，是否继续使用？" "y"; then
+        xray_agent_validate_reuse_hysteria2_config || true
+        xray_agent_print_reuse_check_result "Hysteria2旧配置" "$(xray_agent_hysteria2_reuse_summary)" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
+        if xray_agent_reuse_can_prompt && xray_agent_prompt_yes_no "是否继续使用上次 Hysteria2 配置？" "y"; then
             reuse_hysteria2_config="y"
         else
+            echoContent yellow " ---> 下一步: 重新填写 Hysteria2 伪装站、带宽和端口跳跃配置"
             reuse_hysteria2_config="n"
         fi
     fi

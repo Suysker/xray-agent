@@ -97,6 +97,28 @@ xray_agent_nginx_test_config() {
     fi
 }
 
+xray_agent_nginx_print_test_failure() {
+    local headline="${1:- ---> nginx -t 失败。}"
+    local log_file="/tmp/xray-agent-nginx-test.log"
+    local module_path
+
+    echoContent red "${headline}"
+    if [[ ! -f "${log_file}" ]]; then
+        return 0
+    fi
+
+    if grep -Eq 'module ".*" version [0-9]+ instead of [0-9]+' "${log_file}"; then
+        module_path="$(awk -F '"' '/module ".*" version [0-9]+ instead of [0-9]+/ {print $2; exit}' "${log_file}")"
+        echoContent red " ---> 检测到 Nginx 动态模块版本不匹配。"
+        [[ -n "${module_path}" ]] && echoContent yellow " ---> 不匹配模块: ${module_path}"
+        echoContent yellow " ---> 通常是 Nginx 升级后仍加载旧版本 module.so；请移除对应 load_module 或重装与当前 nginx 版本匹配的模块后重试。"
+    else
+        echoContent yellow " ---> 请检查 Nginx 是否支持 http_v2/grpc/stream/ssl_preread，以及是否存在第三方配置冲突。"
+    fi
+
+    tail -n 20 "${log_file}"
+}
+
 xray_agent_nginx_create_reverse_proxy_backup() {
     local backup_dir proxy_file
     backup_dir="$(mktemp -d)"
@@ -146,8 +168,7 @@ xray_agent_nginx_apply_with_rollback() {
         accept_proxy_protocol="$(xray_agent_nginx_resolved_proxy_protocol_bool)"
     fi
     if ! xray_agent_nginx_test_config; then
-        echoContent red " ---> nginx -t 失败，已回滚。"
-        [[ -f /tmp/xray-agent-nginx-test.log ]] && tail -n 20 /tmp/xray-agent-nginx-test.log
+        xray_agent_nginx_print_test_failure " ---> nginx -t 失败，已回滚。"
         backupNginxConfig restoreBackup
         xray_agent_nginx_restore_reverse_proxy_backup "${json_backup_dir}"
         [[ "${json_backup_owned}" == "true" ]] && xray_agent_nginx_cleanup_reverse_proxy_backup "${json_backup_dir}"

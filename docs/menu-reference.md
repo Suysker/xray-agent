@@ -7,7 +7,7 @@
 | 编号 | 功能 |
 | --- | --- |
 | 1 | 安装或重新安装 TLS 套餐：VLESS-TCP、VLESS-WS、VMess-WS、XHTTP、Hysteria2 |
-| 2 | 安装或重新安装 Reality 套餐：VLESS-TCP Reality、XHTTP Reality，可选 Hysteria2 |
+| 2 | 安装或重新安装 Reality 套餐：VLESS-TCP Reality、XHTTP Reality；主配置完成后可选 Hysteria2 |
 
 ## 工具管理
 

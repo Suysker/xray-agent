@@ -5,30 +5,119 @@ if [[ -z "${XRAY_AGENT_PROJECT_ROOT:-}" ]]; then
 fi
 
 xray_agent_prepare_uuid() {
-    if [[ -n "${UUID}" ]]; then
-        if ! xray_agent_prompt_yes_no "读取到上次安装记录，是否使用上次安装时的UUID？" "y"; then
-            echoContent yellow "请输入自定义UUID[需合法](支持以逗号为分割输入多个)，[回车]随机UUID"
-            read -r -p 'UUID:' UUID
+    local previous_uuid input_uuid
+    previous_uuid="${UUID:-}"
+    UUID=
+
+    if [[ -n "${previous_uuid}" ]]; then
+        xray_agent_validate_reuse_uuid "${previous_uuid}" || true
+        xray_agent_print_reuse_check_result "UUID" "${previous_uuid}" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
+        if xray_agent_reuse_can_prompt && xray_agent_prompt_yes_no "是否继续使用上次安装时的UUID？" "y"; then
+            UUID="${previous_uuid}"
+            echoContent green " ---> 使用上次UUID"
         else
-            echoContent green " ---> 使用成功"
+            echoContent yellow " ---> 下一步: 重新输入 UUID，或回车随机生成"
         fi
-    else
-        echoContent yellow "请输入自定义UUID[需合法](支持以逗号为分割输入多个)，[回车]随机UUID"
-        read -r -p 'UUID:' UUID
     fi
+
+    if [[ -z "${UUID}" ]]; then
+        echoContent yellow "请输入自定义UUID[需合法](支持以逗号为分割输入多个)，[回车]随机UUID"
+        read -r -p 'UUID:' input_uuid
+        if [[ -n "${input_uuid}" ]]; then
+            if xray_agent_validate_reuse_uuid "${input_uuid}"; then
+                UUID="${input_uuid}"
+            else
+                xray_agent_print_reuse_check_result "UUID" "${input_uuid}" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
+                UUID=
+            fi
+        fi
+    fi
+
     if [[ -z "${UUID}" ]]; then
         echoContent red " ---> uuid读取错误，重新生成"
-        UUID=$(${ctlPath} uuid)
+        UUID="$(xray_agent_generate_uuid_value)"
     fi
     echoContent yellow " ${UUID}"
 }
 
+xray_agent_generate_uuid_value() {
+    if [[ -x "${ctlPath:-}" ]]; then
+        "${ctlPath}" uuid 2>/dev/null && return 0
+    fi
+    if [[ -r /proc/sys/kernel/random/uuid ]]; then
+        cat /proc/sys/kernel/random/uuid
+        return 0
+    fi
+    if command -v uuidgen >/dev/null 2>&1; then
+        uuidgen | tr '[:upper:]' '[:lower:]'
+        return 0
+    fi
+    openssl rand -hex 16 2>/dev/null | sed -E 's/^(.{8})(.{4})(.{4})(.{4})(.{12})$/\1-\2-\3-\4-\5/'
+}
+
+xray_agent_validate_reuse_uuid() {
+    local uuid_csv="$1"
+    local uuid_item
+    if [[ -z "${uuid_csv}" ]]; then
+        xray_agent_reuse_result block "UUID 为空"
+        return 1
+    fi
+    while IFS= read -r uuid_item; do
+        if ! xray_agent_validate_uuid "${uuid_item}"; then
+            xray_agent_reuse_result block "UUID 格式无效: ${uuid_item}"
+            return 1
+        fi
+    done < <(xray_agent_csv_to_lines "${uuid_csv}")
+    xray_agent_reuse_result ok "UUID 格式正确"
+}
+
+xray_agent_validate_reuse_reality_keys() {
+    local private_key="$1"
+    local public_key="$2"
+    local derived_public_key
+    if [[ -z "${private_key}" ]]; then
+        xray_agent_reuse_result block "未检测到 PrivateKey，服务端无法复用旧 Reality key"
+        return 1
+    fi
+    if [[ -x "${ctlPath:-}" ]]; then
+        derived_public_key="$(xray_agent_reality_public_key_from_private "${private_key}" || true)"
+        if [[ -z "${derived_public_key}" ]]; then
+            xray_agent_reuse_result block "PrivateKey 无法通过 xray x25519 校验"
+            return 1
+        fi
+        if [[ -n "${public_key}" && "${public_key}" != "${derived_public_key}" ]]; then
+            xray_agent_reuse_result block "PublicKey 与 PrivateKey 不匹配"
+            return 1
+        fi
+        RealityPublicKey="${derived_public_key}"
+        xray_agent_reuse_result ok "PrivateKey/PublicKey 匹配"
+    else
+        if [[ -z "${public_key}" ]]; then
+            xray_agent_reuse_result block "Xray 可执行文件缺失且未检测到 PublicKey，无法校验 Reality key"
+            return 1
+        fi
+        xray_agent_reuse_result warn "Xray 可执行文件缺失，无法重新推导 PublicKey，只能保留已有 key"
+    fi
+}
+
 xray_agent_prepare_reality_keys() {
     echoContent skyBlue "========================== 生成key =========================="
-    if [[ -n "${RealityPrivateKey}" || -n "${RealityPublicKey}" ]]; then
-        if xray_agent_prompt_yes_no "读取到上次安装记录，是否使用上次安装时的PublicKey/PrivateKey？" "y" && [[ -n "${RealityPrivateKey}" ]]; then
+    local previous_private_key previous_public_key
+    previous_private_key="${RealityPrivateKey:-}"
+    previous_public_key="${RealityPublicKey:-}"
+    RealityPrivateKey=
+    RealityPublicKey=
+    if [[ -n "${previous_private_key}" || -n "${previous_public_key}" ]]; then
+        echoContent yellow " ---> 检测到上次Reality PrivateKey: $(xray_agent_mask_secret "${previous_private_key}")"
+        echoContent yellow " ---> 检测到上次Reality PublicKey: ${previous_public_key:-未检测}"
+        RealityPrivateKey="${previous_private_key}"
+        RealityPublicKey="${previous_public_key}"
+        xray_agent_validate_reuse_reality_keys "${previous_private_key}" "${previous_public_key}" || true
+        xray_agent_print_reuse_check_result "Reality key" "PrivateKey=$(xray_agent_mask_secret "${previous_private_key}") PublicKey=${RealityPublicKey:-未检测}" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
+        if xray_agent_reuse_can_prompt && xray_agent_prompt_yes_no "是否继续使用上次安装时的PublicKey/PrivateKey？" "y"; then
+            RealityPrivateKey="${previous_private_key}"
             xray_agent_ensure_reality_public_key || true
-            echoContent green " ---> 使用成功"
+            echoContent green " ---> 使用上次Reality key"
         else
             if ! xray_agent_generate_reality_keypair; then
                 echoContent red " ---> Reality key 生成失败"
@@ -48,6 +137,14 @@ xray_agent_prepare_reality_keys() {
                     echoContent yellow " ---> PublicKey 与 PrivateKey 不匹配，已按 PrivateKey 重新计算"
                 fi
                 RealityPublicKey="${derived_public_key}"
+            fi
+        fi
+        if [[ -n "${RealityPrivateKey}" || -n "${RealityPublicKey}" ]]; then
+            xray_agent_validate_reuse_reality_keys "${RealityPrivateKey}" "${RealityPublicKey}" || true
+            if ! xray_agent_reuse_can_prompt; then
+                xray_agent_print_reuse_check_result "Reality key" "PrivateKey=$(xray_agent_mask_secret "${RealityPrivateKey}") PublicKey=${RealityPublicKey:-未检测}" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
+                RealityPrivateKey=
+                RealityPublicKey=
             fi
         fi
         if [[ -z "${RealityPrivateKey}" || -z "${RealityPublicKey}" ]]; then
@@ -83,7 +180,7 @@ xray_agent_default_install_profile_steps() {
             echo "install_tools,init_tls_nginx,stop_xray,install_tls,install_xray,install_service,random_path,custom_port_vision,update_nginx_vision,render_tls_bundle,install_cron_tls,reload_core,update_geodata,check_gfw,show_accounts"
             ;;
         xrayCoreInstall_Reality)
-            echo "install_tools,stop_xray,install_xray,install_service,init_reality,warning_reality_target,random_path,custom_port_reality,warning_xhttp_port,update_nginx_reality,optional_hysteria2,render_reality_bundle,reload_core,update_geodata,check_gfw,show_accounts"
+            echo "install_tools,stop_xray,install_xray,install_service,init_reality,warning_reality_target,random_path,custom_port_reality,warning_xhttp_port,update_nginx_stream_if_requested,render_reality_bundle,reload_core,optional_hysteria2,update_geodata,check_gfw,show_accounts"
             ;;
     esac
 }
@@ -177,7 +274,7 @@ xray_agent_dispatch_install_profile_step() {
         custom_port_reality) customPortFunction "Reality" ;;
         warning_xhttp_port) xray_agent_tls_warning_for_xhttp_port "${RealityPort}" ;;
         update_nginx_vision) updateRedirectNginxConf "Vision" "${progress_index}" ;;
-        update_nginx_reality) updateRedirectNginxConf "Reality" "${progress_index}" ;;
+        update_nginx_stream_if_requested) xray_agent_nginx_update_stream_if_requested "${progress_index}" ;;
         optional_hysteria2) xray_agent_offer_optional_hysteria2 "${progress_index}" ;;
         render_tls_bundle) xray_agent_render_tls_bundle ;;
         render_reality_bundle) xray_agent_render_reality_bundle ;;
@@ -205,14 +302,18 @@ xray_agent_offer_optional_hysteria2() {
     local progress_index="$1"
     local prompt
     xray_agent_blank
-    echoContent skyBlue "进度 ${progress_index}/${totalProgress} : Hysteria2可选安装"
+    echoContent skyBlue "进度 ${progress_index}/${totalProgress} : Reality完成后可选安装Hysteria2"
+    echoContent yellow " ---> Reality TCP/XHTTP 主配置已完成并 reload 成功。"
+    echoContent yellow " ---> Hysteria2 使用 Xray-core 内置 UDP 协议，需要你自己的 TLS 域名和证书；不使用 Reality target。"
     if [[ -f "${configPath}09_Hysteria2_inbounds.json" ]]; then
-        prompt="检测到已有 Hysteria2 配置，是否保留并重配到本次 Reality 套餐？"
+        prompt="检测到已有 Hysteria2 配置，是否进入 Hysteria2 重配流程？"
     else
-        prompt="是否同时安装 Hysteria2？"
+        prompt="是否继续安装 Hysteria2？"
     fi
     if xray_agent_prompt_yes_no "${prompt}" "y"; then
-        xray_agent_install_profile_append_protocol "hysteria2"
+        xray_agent_hysteria2_enable_or_reconfigure
+    else
+        echoContent yellow " ---> 已跳过 Hysteria2；未安装 acme 或申请证书"
     fi
 }
 

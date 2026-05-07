@@ -34,20 +34,16 @@ updateRedirectNginxConf() {
     if ([[ "${coreInstallType}" == "1" ]] && [[ "$1" == "Reality" ]]) || ([[ "${coreInstallType}" == "2" ]] && [[ "$1" == "Vision" ]]) || [[ "${coreInstallType}" == "3" ]]; then
         xray_agent_blank
         echoContent red "=============================================================="
-        echoContent red "检测到能够共用443端口的条件。"
+        echoContent yellow "检测到 TLS 与 Reality 同时安装，强制使用 Nginx stream 共用公网 TCP/443。"
+        echoContent yellow "Reality/XHTTP 本身不需要 Nginx；这里仅用于两个套餐共用公网443。"
         echoContent red "=============================================================="
-        if xray_agent_nginx_prompt_enable_frontdoor "启用后 Nginx stream 将接管 TCP/443 并分流到 Xray/HTTPS 后端。"; then
-            reuse443="y"
-        else
-            reuse443="n"
+        reuse443="y"
+        XRAY_AGENT_FORCE_SHARED_FRONTDOOR=true
+        if [[ "${Port}" == "443" ]]; then
+            customPortFunction "Vision"
         fi
-        if [[ "${reuse443}" == "y" ]]; then
-            if [[ "${Port}" == "443" ]]; then
-                customPortFunction "Vision"
-            fi
-            if [[ "${RealityPort}" == "443" ]]; then
-                customPortFunction "Reality"
-            fi
+        if [[ "${RealityPort}" == "443" ]]; then
+            customPortFunction "Reality"
         fi
     fi
     if [[ "$1" == "Vision" && "${Port}" != "443" && "${reuse443}" != "y" ]]; then
@@ -62,7 +58,7 @@ updateRedirectNginxConf() {
             reuse443="n"
         fi
     fi
-    if [[ "${reuse443}" == "y" ]] && ! xray_agent_nginx_confirm_frontdoor_takeover; then
+    if [[ "${reuse443}" == "y" && "${XRAY_AGENT_FORCE_SHARED_FRONTDOOR:-false}" != "true" ]] && ! xray_agent_nginx_confirm_frontdoor_takeover; then
         reuse443="n"
     fi
     xray_agent_render_nginx_stream_conf "${reuse443}"
@@ -72,12 +68,42 @@ updateRedirectNginxConf() {
     export XRAY_AGENT_FRONTDOOR_PROXY_PROTOCOL="${accept_proxy_protocol}"
     xray_agent_nginx_capability_summary
     if ! xray_agent_nginx_test_config; then
-        echoContent red " ---> nginx -t 失败，请检查 Nginx 是否支持 http_v2/grpc/stream/ssl_preread。"
-        [[ -f /tmp/xray-agent-nginx-test.log ]] && tail -n 20 /tmp/xray-agent-nginx-test.log
+        xray_agent_nginx_print_test_failure " ---> nginx -t 失败。"
         return 1
     fi
     handleNginx stop
     handleNginx start
+}
+
+xray_agent_nginx_update_stream_only() {
+    xray_agent_blank
+    echoContent skyBlue "进度  $1/${totalProgress} : 配置443前门分流"
+    echoContent yellow " ---> 仅配置 Nginx stream 分流；Reality/XHTTP 本身不使用镜像站。"
+    if declare -F xray_agent_ensure_nginx_tools >/dev/null 2>&1; then
+        xray_agent_ensure_nginx_tools
+    fi
+    if [[ "${XRAY_AGENT_FORCE_SHARED_FRONTDOOR:-false}" != "true" ]] && ! xray_agent_nginx_confirm_frontdoor_takeover; then
+        reuse443="n"
+        XRAY_AGENT_INSTALL_STREAM_ONLY=false
+        return 0
+    fi
+    xray_agent_nginx_print_proxy_protocol_preflight
+    xray_agent_render_nginx_stream_conf "y"
+    export XRAY_AGENT_FRONTDOOR_PROXY_PROTOCOL
+    XRAY_AGENT_FRONTDOOR_PROXY_PROTOCOL="$(xray_agent_nginx_resolved_proxy_protocol_bool)"
+    xray_agent_nginx_capability_summary
+    if ! xray_agent_nginx_test_config; then
+        xray_agent_nginx_print_test_failure " ---> nginx -t 失败。"
+        return 1
+    fi
+    handleNginx stop
+    handleNginx start
+}
+
+xray_agent_nginx_update_stream_if_requested() {
+    if [[ "${XRAY_AGENT_INSTALL_STREAM_ONLY:-false}" == "true" ]]; then
+        xray_agent_nginx_update_stream_only "$1"
+    fi
 }
 
 xray_agent_nginx_update_default_upstream() {

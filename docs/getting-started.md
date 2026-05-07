@@ -34,7 +34,7 @@ vasma
 4. 安装完成后查看脚本输出的分享链接。
 5. 使用客户端导入分享链接并连接测试。
 
-TLS 套餐适合希望使用同域名证书、Nginx 伪装站、XHTTP、Hysteria2 的场景。Reality 套餐适合使用 Reality 目标站点伪装的场景，安装时可选择是否同时启用 Hysteria2。
+TLS 套餐适合希望使用同域名证书、Nginx 伪装站、XHTTP、Hysteria2 的场景。Reality 套餐适合使用 Reality 目标站点伪装的场景，Reality TCP/XHTTP 主配置完成后可选择继续启用 Hysteria2。
 
 ## 更新、卸载和重新打开菜单
 

@@ -41,56 +41,108 @@ xray_agent_adguard_use_local_dns() {
     fi
 }
 
-AdguardManageMenu() {
-    xray_agent_blank
-    echoContent skyBlue "Adguardhome管理"
-    xray_agent_blank
-    echoContent red "=============================================================="
-    echoContent yellow "1.安装Adguardhome"
-    echoContent yellow "2.升级Adguardhome"
-    echoContent yellow "3.卸载Adguardhome"
-    echoContent yellow "4.关闭Adguardhome"
-    echoContent yellow "5.打开Adguardhome"
-    echoContent yellow "6.重启Adguardhome"
-    echoContent red "=============================================================="
-    if [[ "${xrayCoreCPUVendor}" == "Xray-linux-64" ]]; then
-        adgCoreCPUVendor="AdGuardHome_linux_amd64"
-    elif [[ "${xrayCoreCPUVendor}" == "Xray-linux-arm64-v8a" ]]; then
-        adgCoreCPUVendor="AdGuardHome_linux_arm64"
+xray_agent_adguard_arch() {
+    case "${xrayCoreCPUVendor}" in
+        Xray-linux-arm64-v8a) printf 'AdGuardHome_linux_arm64\n' ;;
+        *) printf 'AdGuardHome_linux_amd64\n' ;;
+    esac
+}
+
+xray_agent_adguard_prepare_systemd_resolved() {
+    if [[ -f /etc/systemd/resolved.conf ]] && ! grep -q "DNSStubListener=no" /etc/systemd/resolved.conf; then
+        sudo sed -i '/\[Resolve\]/a DNSStubListener=no' /etc/systemd/resolved.conf
+        sudo systemctl restart systemd-resolved
     fi
-    read -r -p "请选择:" selectADGType
-    if [[ "${selectADGType}" == "1" ]]; then
-        if [[ -f "/opt/AdGuardHome/AdGuardHome" ]]; then
-            echoContent red " ---> 检测到安装目录，请执行脚本卸载操作"
-            menu
-            exit 0
+}
+
+xray_agent_adguard_install_or_repair() {
+    curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
+}
+
+xray_agent_adguard_print_status() {
+    echoContent yellow "状态: $(xray_agent_adguard_status_label)"
+    if xray_agent_adguard_installed; then
+        echoContent yellow "安装目录: $(xray_agent_adguard_home_dir)"
+        if xray_agent_adguard_configured; then
+            echoContent yellow "配置文件: $(xray_agent_adguard_config_path)"
+        else
+            echoContent yellow "配置文件: 未检测到，请完成 Web 初始化后再设为系统 DNS"
         fi
-        curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
     fi
-    if [[ ! -f "/opt/AdGuardHome/AdGuardHome" ]]; then
-        echoContent red " ---> 没有检测到安装目录，请先安装Adguardhome"
-        menu
-        exit 0
+}
+
+xray_agent_adguard_print_menu() {
+    xray_agent_blank
+    echoContent skyBlue "AdGuardHome管理"
+    xray_agent_adguard_print_status
+    xray_agent_blank
+    echoContent red "=============================================================="
+    if xray_agent_adguard_installed; then
+        echoContent yellow "1.重新安装/修复AdGuardHome"
+        echoContent yellow "2.升级AdGuardHome"
+        echoContent yellow "3.卸载AdGuardHome"
+        if xray_agent_adguard_running; then
+            echoContent yellow "4.关闭AdGuardHome"
+            echoContent yellow "6.重启AdGuardHome"
+        else
+            echoContent yellow "5.打开AdGuardHome"
+            echoContent yellow "6.重启AdGuardHome"
+        fi
     else
-        if [[ -f /etc/systemd/resolved.conf ]] && ! grep -q "DNSStubListener=no" /etc/systemd/resolved.conf; then
-            sudo sed -i '/\[Resolve\]/a DNSStubListener=no' /etc/systemd/resolved.conf
-            sudo systemctl restart systemd-resolved
-        fi
-        systemctl start AdGuardHome
-        systemctl enable AdGuardHome
+        echoContent yellow "1.安装AdGuardHome"
     fi
+    echoContent yellow "0.返回"
+    echoContent red "=============================================================="
+}
+
+xray_agent_adguard_apply_runtime_status() {
+    sleep 0.8
+    xray_agent_adguard_installed || return 0
+    if xray_agent_adguard_running; then
+        echoContent green " ---> AdGuardHome运行中"
+        if xray_agent_adguard_configured; then
+            xray_agent_adguard_use_local_dns
+            echoContent green " ---> AdGuardHome已成功设置为DNS服务器"
+        else
+            echoContent red " ---> 未检测到AdGuardHome配置文件，请完成初始化配置后再设为系统DNS"
+        fi
+    else
+        echoContent red " ---> AdGuardHome未运行"
+        xray_agent_adguard_restore_dns
+        echoContent green " ---> 已恢复原始DNS配置"
+    fi
+}
+
+AdguardManageMenu() {
+    local selectADGType adgCoreCPUVendor adguard_binary adguard_dir
+    adgCoreCPUVendor="$(xray_agent_adguard_arch)"
+    adguard_binary="$(xray_agent_adguard_binary_path)"
+    adguard_dir="$(xray_agent_adguard_home_dir)"
+
+    xray_agent_adguard_print_menu
+    read -r -p "请选择:" selectADGType
+    [[ "${selectADGType}" != "0" ]] || return 0
+
+    if ! xray_agent_adguard_installed && [[ "${selectADGType}" != "1" ]]; then
+        echoContent red " ---> 没有检测到安装目录，请先安装AdGuardHome"
+        return 0
+    fi
+
     case "${selectADGType}" in
+        1)
+            xray_agent_adguard_install_or_repair
+            ;;
         2)
-            wget -O '/tmp/AdGuardHome_linux_amd64.tar.gz' "https://static.adguard.com/adguardhome/release/${adgCoreCPUVendor}.tar.gz"
-            tar -C /tmp/ -f /tmp/AdGuardHome_linux_amd64.tar.gz -x -v -z
+            wget -O '/tmp/AdGuardHome.tar.gz' "https://static.adguard.com/adguardhome/release/${adgCoreCPUVendor}.tar.gz"
+            tar -C /tmp/ -f /tmp/AdGuardHome.tar.gz -x -v -z
             systemctl stop AdGuardHome
-            cp /tmp/AdGuardHome/AdGuardHome /opt/AdGuardHome/AdGuardHome
+            cp /tmp/AdGuardHome/AdGuardHome "${adguard_binary}"
             systemctl start AdGuardHome
             systemctl enable AdGuardHome
             ;;
         3)
-            /opt/AdGuardHome/AdGuardHome -s uninstall
-            rm -rf /opt/AdGuardHome
+            "${adguard_binary}" -s uninstall
+            rm -rf "${adguard_dir}"
             xray_agent_adguard_restore_dns
             ;;
         4)
@@ -99,27 +151,19 @@ AdguardManageMenu() {
             xray_agent_adguard_restore_dns
             ;;
         5)
+            xray_agent_adguard_prepare_systemd_resolved
             systemctl start AdGuardHome
             systemctl enable AdGuardHome
             ;;
         6)
+            xray_agent_adguard_prepare_systemd_resolved
             systemctl restart AdGuardHome
             systemctl enable AdGuardHome
             ;;
+        *)
+            echoContent red " ---> 选择错误"
+            return 0
+            ;;
     esac
-    sleep 0.8
-    if [[ -f "/opt/AdGuardHome/AdGuardHome" ]]; then
-        if systemctl is-active --quiet AdGuardHome; then
-            echoContent green " ---> AdGuardhome运行中"
-            xray_agent_adguard_use_local_dns
-            echoContent green " ---> AdGuardhome已成功设置为DNS服务器"
-            if [[ ! -f "/opt/AdGuardHome/AdGuardHome.yaml" ]]; then
-                echoContent red " ---> 未检测到AdGuardhome配置文件，请尽快完成初始化配置，否则DNS将无法解析"
-            fi
-        else
-            echoContent red " ---> AdGuardhome未运行"
-            xray_agent_adguard_restore_dns
-            echoContent green " ---> 已恢复原始DNS配置"
-        fi
-    fi
+    xray_agent_adguard_apply_runtime_status
 }
