@@ -100,6 +100,31 @@ xray_agent_validate_reuse_reality_keys() {
     fi
 }
 
+xray_agent_reality_private_key_summary() {
+    local private_key="$1"
+    if [[ -z "${private_key}" ]]; then
+        printf '未生成\n'
+        return 0
+    fi
+    xray_agent_mask_secret "${private_key}"
+}
+
+xray_agent_reality_mldsa65_summary() {
+    local verify_value="$1"
+    local length hash_value
+    if [[ -z "${verify_value}" ]]; then
+        printf '未生成\n'
+        return 0
+    fi
+    length="${#verify_value}"
+    if command -v sha256sum >/dev/null 2>&1; then
+        hash_value="$(printf '%s' "${verify_value}" | sha256sum | awk '{print substr($1,1,12)}')"
+        printf '已生成，长度=%s，sha256=%s\n' "${length}" "${hash_value}"
+    else
+        printf '已生成，长度=%s\n' "${length}"
+    fi
+}
+
 xray_agent_prepare_reality_keys() {
     echoContent skyBlue "========================== 生成key =========================="
     local previous_private_key previous_public_key
@@ -158,10 +183,10 @@ xray_agent_prepare_reality_keys() {
         RealityShortID=$(openssl rand -hex 4 2>/dev/null)
     fi
     xray_agent_prepare_reality_mldsa65
-    echoContent green " privateKey:${RealityPrivateKey}"
+    echoContent green " privateKey:$(xray_agent_reality_private_key_summary "${RealityPrivateKey}")"
     echoContent green " publicKey:${RealityPublicKey}"
     if [[ -n "${RealityMldsa65Verify:-}" ]]; then
-        echoContent green " mldsa65Verify:${RealityMldsa65Verify}"
+        echoContent green " mldsa65Verify:$(xray_agent_reality_mldsa65_summary "${RealityMldsa65Verify}")"
     fi
     echoContent skyBlue "========================== 生成UUID =========================="
 }
@@ -260,6 +285,7 @@ xray_agent_load_install_profile() {
 xray_agent_dispatch_install_profile_step() {
     local step_name="$1"
     local progress_index="$2"
+    xray_agent_print_install_step_progress "${step_name}" "${progress_index}"
     case "${step_name}" in
         install_tools) installTools "${progress_index}" ;;
         init_tls_nginx) initTLSNginxConfig "${progress_index}" ;;
@@ -288,6 +314,39 @@ xray_agent_dispatch_install_profile_step() {
             return 1
             ;;
     esac
+}
+
+xray_agent_install_step_title() {
+    local step_name="$1"
+    case "${step_name}" in
+        stop_xray) printf '停止Xray服务\n' ;;
+        warning_reality_target) printf '检查Reality目标兼容性\n' ;;
+        custom_port_vision) printf '检查TLS监听端口\n' ;;
+        custom_port_reality) printf '检查Reality监听端口\n' ;;
+        warning_xhttp_port) printf '检查XHTTP/Reality端口兼容性\n' ;;
+        update_nginx_stream_if_requested)
+            if [[ "${XRAY_AGENT_INSTALL_STREAM_ONLY:-false}" == "true" ]]; then
+                return 1
+            fi
+            printf '检查443前置分流\n'
+            ;;
+        render_tls_bundle) printf '生成TLS套餐配置\n' ;;
+        render_reality_bundle) printf '生成Reality套餐配置\n' ;;
+        install_cron_tls) printf '配置TLS证书续签任务\n' ;;
+        reload_core) printf '验证并重载Xray服务\n' ;;
+        update_geodata) printf '配置Geo数据自动更新\n' ;;
+        *) return 1 ;;
+    esac
+}
+
+xray_agent_print_install_step_progress() {
+    local step_name="$1"
+    local progress_index="$2"
+    local title
+    title="$(xray_agent_install_step_title "${step_name}" || true)"
+    [[ -n "${title}" ]] || return 0
+    xray_agent_blank
+    echoContent skyBlue "进度  ${progress_index}/${totalProgress} : ${title}"
 }
 
 xray_agent_install_profile_append_protocol() {

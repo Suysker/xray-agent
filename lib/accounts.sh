@@ -201,6 +201,31 @@ xray_agent_account_removal_impact() {
     fi
 }
 
+xray_agent_accounts_include_reality_share() {
+    if echo "${currentInstallProtocolType:-}" | grep -q 7; then
+        return 0
+    fi
+    if echo "${currentInstallProtocolType:-}" | grep -q 8 &&
+        [[ "${coreInstallType:-}" == "2" || "${coreInstallType:-}" == "3" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+xray_agent_prepare_reality_share_address() {
+    xray_agent_accounts_include_reality_share || return 0
+    [[ -n "${selectedRealityPublicIP:-}" ]] && return 0
+    selectedRealityPublicIP="$(xray_agent_select_public_ip_for_reality)" || return 1
+}
+
+xray_agent_reality_share_address_for_output() {
+    if [[ -n "${selectedRealityPublicIP:-}" ]]; then
+        printf '%s\n' "${selectedRealityPublicIP}"
+        return 0
+    fi
+    xray_agent_select_public_ip_for_reality
+}
+
 showAccounts() {
     readInstallType
     readInstallProtocolType
@@ -208,6 +233,7 @@ showAccounts() {
     local show=
     xray_agent_blank
     echoContent skyBlue "进度 $1/${totalProgress} : 账号"
+    xray_agent_prepare_reality_share_address || return 1
     if echo "${currentInstallProtocolType}" | grep -q 0; then
         show=1
         echoContent skyBlue "===================== VLESS TCP TLS ======================"
@@ -492,7 +518,7 @@ defaultBase64Code() {
             echoContent yellow " ---> 通用格式 (VLESS+TCP+Reality)"
             if xray_agent_print_vless_profile_share "vless_reality_tcp" "${id}"; then
                 local reality_address
-                reality_address="$(xray_agent_select_public_ip_for_reality)" || return 1
+                reality_address="$(xray_agent_reality_share_address_for_output)" || return 1
                 echoContent yellow " ---> 格式化明文 (VLESS+TCP+Reality)"
                 echoContent green "协议类型: VLESS Reality，地址: ${reality_address}，publicKey: ${RealityPublicKey}，pqv: ${RealityMldsa65Verify:-无}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_reality_tcp)，用户ID: ${id}，传输方式: tcp，账户名: ${id}"
             fi
@@ -508,7 +534,7 @@ defaultBase64Code() {
                 echoContent yellow " ---> 通用格式 (VLESS+XHTTP+Reality)"
                 if xray_agent_print_vless_profile_share "vless_xhttp" "${id}" "reality"; then
                     local reality_address
-                    reality_address="$(xray_agent_select_public_ip_for_reality)" || return 1
+                    reality_address="$(xray_agent_reality_share_address_for_output)" || return 1
                     echoContent yellow " ---> 格式化明文 (VLESS+XHTTP+Reality)"
                     echoContent green "协议类型: VLESS XHTTP，地址: ${reality_address}，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_xhttp reality)，用户ID: ${id}，传输方式: XHTTP，client-fingerprint: chrome，encryption: $(xray_agent_share_encryption_for_profile vless_xhttp)，账户名: ${id}"
                 fi

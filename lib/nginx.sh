@@ -16,7 +16,7 @@ xray_agent_nginx_status_line() {
     else
         site_mode="外部伪装站"
     fi
-    printf '网站fallback: %s  来源=%s  upstream=%s  Host=%s  HTTPS透传=%s  前门PROXY=%s\n' "${site_mode}" "${masquerade_source}" "${active_upstream}" "${host_header}" "${legacy_count}" "${proxy_mode}"
+    printf '网站fallback: %s  来源=%s  upstream=%s  Host=%s  HTTPS透传=%s  前置PROXY=%s\n' "${site_mode}" "${masquerade_source}" "${active_upstream}" "${host_header}" "${legacy_count}" "${proxy_mode}"
 }
 
 updateRedirectNginxConf() {
@@ -49,10 +49,10 @@ updateRedirectNginxConf() {
     if [[ "$1" == "Vision" && "${Port}" != "443" && "${reuse443}" != "y" ]]; then
         xray_agent_blank
         echoContent red "=============================================================="
-        echoContent yellow "检测到 TLS 后端端口不是 443。若已把现有网站迁到本机 upstream，可让 Nginx 前门接管公网 443 后转发到 Xray。"
+        echoContent yellow "检测到 TLS 后端端口不是 443。若已把现有网站迁到本机 upstream，可让 Nginx 前置接管公网 443 后转发到 Xray。"
         echoContent yellow "启用后 Xray 后端是否接收 PROXY protocol 将按上方 preflight 判定。"
         echoContent red "=============================================================="
-        if xray_agent_nginx_prompt_enable_frontdoor "是否让 Nginx 前门接管公网 443？"; then
+        if xray_agent_nginx_prompt_enable_frontdoor "是否让 Nginx 前置接管公网 443？"; then
             reuse443="y"
         else
             reuse443="n"
@@ -77,7 +77,7 @@ updateRedirectNginxConf() {
 
 xray_agent_nginx_update_stream_only() {
     xray_agent_blank
-    echoContent skyBlue "进度  $1/${totalProgress} : 配置443前门分流"
+    echoContent skyBlue "进度  $1/${totalProgress} : 配置443前置分流"
     echoContent yellow " ---> 仅配置 Nginx stream 分流；Reality/XHTTP 本身不使用镜像站。"
     if declare -F xray_agent_ensure_nginx_tools >/dev/null 2>&1; then
         xray_agent_ensure_nginx_tools
@@ -103,6 +103,8 @@ xray_agent_nginx_update_stream_only() {
 xray_agent_nginx_update_stream_if_requested() {
     if [[ "${XRAY_AGENT_INSTALL_STREAM_ONLY:-false}" == "true" ]]; then
         xray_agent_nginx_update_stream_only "$1"
+    else
+        echoContent yellow " ---> 当前无需配置 443 前置分流"
     fi
 }
 
@@ -164,7 +166,7 @@ xray_agent_nginx_register_site_upstream() {
 xray_agent_nginx_add_legacy_https_backend() {
     local server_name target updated_json legacy_count proxy_protocol_choice proxy_protocol_status
     if [[ ! -f "${nginxConfigPath}alone.stream" ]]; then
-        echoContent yellow " ---> 当前未检测到 443 前门 stream 配置；将先登记后端，启用前门时再参与分流。"
+        echoContent yellow " ---> 当前未检测到 443 前置 stream 配置；将先登记后端，启用前置时再参与分流。"
     fi
     read -r -p "请输入需要透传的站点 SNI[例 www.example.com，回车取消]:" server_name
     [[ -n "${server_name}" ]] || {
@@ -191,7 +193,7 @@ xray_agent_nginx_add_legacy_https_backend() {
         *) proxy_protocol_status="unknown" ;;
     esac
     if [[ "${proxy_protocol_status}" != "supported" ]]; then
-        echoContent yellow "提示: 只要存在 unknown/unsupported HTTPS 后端，auto 会推荐关闭全局前门 PROXY。"
+        echoContent yellow "提示: 只要存在 unknown/unsupported HTTPS 后端，auto 会推荐关闭全局前置 PROXY。"
     fi
     xray_agent_confirm_action "确认登记该 HTTPS 后端？" "y" || return 0
     updated_json="$(xray_agent_nginx_reverse_proxy_json | jq --arg server "${server_name}" --arg target "${target}" --arg proxy_protocol "${proxy_protocol_status}" '
@@ -250,7 +252,7 @@ xray_agent_nginx_preflight_guide() {
     echoContent skyBlue "-------------------------接入建议-----------------------------"
     echoContent yellow "脚本只维护 alone.conf、alone.stream 和 Xray inbound，不会自动重写宝塔、1Panel、OpenResty、Caddy、Apache 配置。"
     echoContent yellow "已有真实网站建议迁移到本机 HTTP upstream，例如 http://127.0.0.1:8080，再在本菜单注册为 fallback。"
-    echoContent yellow "HTTPS SNI 透传后端只有在确认支持 PROXY protocol 时，才适合把全局前门 PROXY 开启。"
+    echoContent yellow "HTTPS SNI 透传后端只有在确认支持 PROXY protocol 时，才适合把全局前置 PROXY 开启。"
 }
 
 xray_agent_nginx_switch_frontdoor_proxy_protocol() {
@@ -260,7 +262,7 @@ xray_agent_nginx_switch_frontdoor_proxy_protocol() {
     xray_agent_nginx_print_proxy_protocol_preflight
     xray_agent_nginx_print_proxy_protocol_affected
     echoContent yellow "可选模式: auto / on / off"
-    read -r -p "请输入新的前门 PROXY 模式[回车保持 ${current_mode}]:" selected_mode
+    read -r -p "请输入新的前置 PROXY 模式[回车保持 ${current_mode}]:" selected_mode
     selected_mode="${selected_mode:-${current_mode}}"
     case "${selected_mode}" in
         auto | on | off) ;;
@@ -272,13 +274,13 @@ xray_agent_nginx_switch_frontdoor_proxy_protocol() {
     result_json="$(xray_agent_nginx_proxy_protocol_recommendation_json | jq -c --arg configured "${selected_mode}" '
       .configured = $configured
       | if $configured == "on" then
-          . + {resolved:"on", resolved_reason:"用户配置前门 PROXY=on"}
+          . + {resolved:"on", resolved_reason:"用户配置前置 PROXY=on"}
         elif $configured == "off" then
-          . + {resolved:"off", resolved_reason:"用户配置前门 PROXY=off"}
+          . + {resolved:"off", resolved_reason:"用户配置前置 PROXY=off"}
         else
           . + {resolved:.recommended, resolved_reason:.reason}
         end')"
-    echoContent yellow "将设置前门 PROXY: ${selected_mode}，当前生效: $(printf '%s\n' "${result_json}" | jq -r '.resolved')"
+    echoContent yellow "将设置前置 PROXY: ${selected_mode}，当前生效: $(printf '%s\n' "${result_json}" | jq -r '.resolved')"
     xray_agent_confirm_action "确认同步重渲染 Nginx stream 和 Xray inbound？" "y" || return 0
     updated_json="$(xray_agent_nginx_reverse_proxy_json | jq --arg mode "${selected_mode}" '
       .frontdoor.proxy_protocol = $mode
@@ -292,7 +294,7 @@ xray_agent_nginx_status() {
     echoContent skyBlue "-------------------------网站/反代状态-----------------------"
     echoContent yellow "$(xray_agent_nginx_status_line)"
     echoContent yellow "Nginx配置目录: ${nginxConfigPath}"
-    echoContent yellow "前门stream: $([[ -f "${nginxConfigPath}alone.stream" ]] && printf '已启用' || printf '未启用')"
+    echoContent yellow "前置stream: $([[ -f "${nginxConfigPath}alone.stream" ]] && printf '已启用' || printf '未启用')"
     if [[ -f "$(xray_agent_nginx_reverse_proxy_file)" ]]; then
         echoContent yellow "反代注册文件: $(xray_agent_nginx_reverse_proxy_file)"
     else
@@ -324,7 +326,7 @@ xray_agent_nginx_manage_menu() {
     echoContent yellow "5.删除 legacy HTTPS SNI 后端"
     echoContent yellow "6.测试并重载 Nginx"
     echoContent yellow "7.检测现有网站/面板接入建议"
-    echoContent yellow "8.切换前门 PROXY 模式"
+    echoContent yellow "8.切换前置 PROXY 模式"
     echoContent red "=============================================================="
     read -r -p "请输入:" selected_item
     case "${selected_item}" in

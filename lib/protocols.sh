@@ -507,42 +507,55 @@ xray_agent_render_vless_xhttp_inbound() {
 
 xray_agent_hysteria2_default_masquerade_url() {
     local include_existing="${1:-true}"
+    xray_agent_hysteria2_default_masquerade_with_source "${include_existing}"
+    printf '%s\n' "${XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_URL:-}"
+}
+
+xray_agent_hysteria2_default_masquerade_with_source() {
+    local include_existing="${1:-true}"
     local candidate
+    XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_URL=
+    XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE=
 
     if declare -F xray_agent_nginx_real_site_masquerade_url >/dev/null 2>&1; then
         candidate="$(xray_agent_nginx_real_site_masquerade_url)"
         if [[ -n "${candidate}" ]]; then
-            printf '%s\n' "${candidate}"
+            XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_URL="${candidate}"
+            XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE="本机/自有站点"
             return 0
         fi
     fi
 
     if [[ "${include_existing}" == "true" && -n "${Hysteria2MasqueradeURL:-}" ]]; then
-        printf '%s\n' "${Hysteria2MasqueradeURL}"
+        XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_URL="${Hysteria2MasqueradeURL}"
+        XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE="外部兜底"
         return 0
     fi
 
     candidate="$(xray_agent_hysteria2_nginx_masquerade_url)"
     if [[ -n "${candidate}" ]]; then
-        printf '%s\n' "${candidate}"
+        XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_URL="${candidate}"
+        XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE="现有 Nginx 伪装站"
         return 0
     fi
 
     candidate="$(xray_agent_hysteria2_reality_masquerade_url)"
     if [[ -n "${candidate}" ]]; then
-        printf '%s\n' "${candidate}"
+        XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_URL="${candidate}"
+        XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE="Reality target"
         return 0
     fi
 
     if declare -F xray_agent_nginx_masquerade_context_json >/dev/null 2>&1; then
         candidate="$(xray_agent_nginx_masquerade_context_json | jq -r 'select(.source != "real-site") | .masquerade_url // empty')"
         if [[ -n "${candidate}" ]]; then
-            printf '%s\n' "${candidate}"
+            XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_URL="${candidate}"
+            XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE="外部兜底"
             return 0
         fi
     fi
 
-    printf ''
+    return 0
 }
 
 xray_agent_hysteria2_nginx_masquerade_url() {
@@ -1072,7 +1085,7 @@ xray_agent_hysteria2_reuse_summary() {
 
 xray_agent_hysteria2_prepare_runtime() {
     local reuse_hysteria2_config="n"
-    local default_masquerade_url input_masquerade_url
+    local default_masquerade_url default_masquerade_source input_masquerade_url
     xray_agent_hysteria2_prepare_tls_domain
     echoContent yellow " ---> Hysteria2 需要当前 Xray-core 支持 protocol=hysteria；旧内核请先用菜单12升级"
     if ! xray_agent_xray_supports_hysteria2; then
@@ -1097,9 +1110,11 @@ xray_agent_hysteria2_prepare_runtime() {
     fi
 
     if [[ "${reuse_hysteria2_config}" != "y" ]]; then
-        default_masquerade_url="$(xray_agent_hysteria2_default_masquerade_url false)"
+        xray_agent_hysteria2_default_masquerade_with_source false
+        default_masquerade_url="${XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_URL:-}"
+        default_masquerade_source="${XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE:-外部兜底}"
         if [[ -n "${default_masquerade_url}" ]]; then
-            echoContent yellow "请输入 Hysteria2 伪装站 URL，[回车使用 ${default_masquerade_url}]:"
+            echoContent yellow "请输入 Hysteria2 伪装站 URL，[回车使用 ${default_masquerade_url}，默认来源: ${default_masquerade_source}]:"
         else
             echoContent yellow "请输入 Hysteria2 伪装站 URL[例如 https://www.example.com/]:"
         fi

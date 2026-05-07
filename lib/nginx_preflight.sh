@@ -172,9 +172,9 @@ xray_agent_nginx_proxy_protocol_recommendation_json() {
 xray_agent_nginx_resolved_proxy_protocol_json() {
     xray_agent_nginx_proxy_protocol_recommendation_json | jq -c '
       if .configured == "on" then
-        . + {resolved:"on", resolved_reason:"用户配置前门 PROXY=on"}
+        . + {resolved:"on", resolved_reason:"用户配置前置 PROXY=on"}
       elif .configured == "off" then
-        . + {resolved:"off", resolved_reason:"用户配置前门 PROXY=off"}
+        . + {resolved:"off", resolved_reason:"用户配置前置 PROXY=off"}
       else
         . + {resolved:.recommended, resolved_reason:.reason}
       end'
@@ -199,10 +199,10 @@ xray_agent_nginx_frontdoor_proxy_protocol() {
 xray_agent_nginx_print_proxy_protocol_preflight() {
     local result_json
     result_json="$(xray_agent_nginx_resolved_proxy_protocol_json)"
-    echoContent skyBlue "-------------------------443前门预检-----------------------------"
+    echoContent skyBlue "-------------------------443前置预检-----------------------------"
     echoContent yellow "TCP/443占用: $(printf '%s\n' "${result_json}" | jq -r '.port443_owner')"
     echoContent yellow "脚本 alone.stream: $(printf '%s\n' "${result_json}" | jq -r '.script_stream')"
-    echoContent yellow "前门PROXY配置: $(printf '%s\n' "${result_json}" | jq -r '.configured')  推荐: $(printf '%s\n' "${result_json}" | jq -r '.recommended')  生效: $(printf '%s\n' "${result_json}" | jq -r '.resolved')"
+    echoContent yellow "前置PROXY配置: $(printf '%s\n' "${result_json}" | jq -r '.configured')  推荐: $(printf '%s\n' "${result_json}" | jq -r '.recommended')  生效: $(printf '%s\n' "${result_json}" | jq -r '.resolved')"
     echoContent yellow "原因: $(printf '%s\n' "${result_json}" | jq -r '.resolved_reason')"
     printf '%s\n' "${result_json}" | jq -r '.site_stats | "已注册站点: HTTP fallback=\(.http_total) HTTPS透传=\(.stream_total) HTTPS未知/不支持=\(.stream_unknown_or_unsupported)"' |
         while IFS= read -r line; do echoContent yellow "${line}"; done
@@ -241,5 +241,5 @@ xray_agent_nginx_prompt_enable_frontdoor() {
     local default_answer
     default_answer="$(xray_agent_nginx_frontdoor_prompt_default)"
     echoContent yellow "${prompt_title}"
-    xray_agent_prompt_yes_no "是否启用 443 前门？" "${default_answer}"
+    xray_agent_prompt_yes_no "是否启用 443 前置？" "${default_answer}"
 }

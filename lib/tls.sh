@@ -211,7 +211,7 @@ xray_agent_validate_reuse_domain() {
         空闲 | nginx/* | xray/* | Xray/* | 未检测*) ;;
         *)
             status="warn"
-            reason="TCP/443 当前由 ${port443_owner} 占用，安装会受现有前门影响"
+            reason="TCP/443 当前由 ${port443_owner} 占用，安装会受现有前置影响"
             ;;
     esac
 
@@ -565,7 +565,6 @@ randomPathFunction() {
         xray_agent_print_reuse_check_result "path路径" "${previous_path}" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
         if xray_agent_reuse_can_prompt && xray_agent_prompt_yes_no "是否继续使用该path路径？" "y"; then
             path="${previous_path}"
-            echoContent yellow " ---> path路径: ${path}"
         else
             echoContent yellow " ---> 下一步: 重新输入或随机生成 path"
         fi
@@ -800,6 +799,47 @@ xray_agent_reality_tls_ping_cert_length_from_output() {
     ' <<<"$1"
 }
 
+xray_agent_reality_tls_ping_summary() {
+    local target="${1:-${XRAY_AGENT_REALITY_TLS_PING_TARGET:-}}"
+    local tls_ping_output="${2:-${XRAY_AGENT_REALITY_TLS_PING_OUTPUT:-}}"
+    local resolved_ip handshake_status tls_version pq_status cert_length san_count success_count failure_count
+
+    resolved_ip="$(awk -F 'Using IP:[[:space:]]*' 'NF > 1 {print $2; exit}' <<<"${tls_ping_output}")"
+    success_count="$(grep -ci "Handshake succeeded" <<<"${tls_ping_output}" || true)"
+    failure_count="$(grep -Eci "Handshake failed|TLS ping failed|failed" <<<"${tls_ping_output}" || true)"
+    if [[ "${success_count}" -gt 0 ]]; then
+        handshake_status="成功(${success_count})"
+    elif [[ "${failure_count}" -gt 0 ]]; then
+        handshake_status="失败"
+    else
+        handshake_status="未知"
+    fi
+    tls_version="$(awk -F ':' '/TLS Version:/ {gsub(/^[[:space:]]+/, "", $2); print $2; exit}' <<<"${tls_ping_output}")"
+    pq_status="$(awk -F ':' '/TLS Post-Quantum key exchange:/ {gsub(/^[[:space:]]+/, "", $2); print $2; exit}' <<<"${tls_ping_output}")"
+    cert_length="$(xray_agent_reality_tls_ping_cert_length_from_output "${tls_ping_output}")"
+    san_count="$(xray_agent_csv_to_lines "${XRAY_AGENT_REALITY_TLS_PING_ALLOWED_DOMAINS:-}" | awk 'END {print NR + 0}')"
+
+    echoContent yellow " ---> TLS ping摘要:"
+    echoContent yellow "     目标: ${target:-未知}"
+    echoContent yellow "     解析IP: ${resolved_ip:-未识别}"
+    echoContent yellow "     握手: ${handshake_status}"
+    echoContent yellow "     TLS版本: ${tls_version:-未识别}"
+    echoContent yellow "     PQ状态: ${pq_status:-未识别}"
+    echoContent yellow "     证书链长度: ${cert_length:-未识别}"
+    echoContent yellow "     证书SAN数量: ${san_count}"
+}
+
+xray_agent_print_reality_allowed_domains() {
+    local allowed_domains="$1"
+    local allowed_count
+    [[ -n "${allowed_domains}" ]] || return 0
+    allowed_count="$(xray_agent_csv_to_lines "${allowed_domains}" | awk 'END {print NR + 0}')"
+    echoContent yellow " ---> TLS ping识别到目标证书SAN: ${allowed_count} 个"
+    while IFS= read -r allowed_domain; do
+        [[ -n "${allowed_domain}" ]] && echoContent yellow "     - ${allowed_domain}"
+    done < <(xray_agent_csv_to_lines "${allowed_domains}")
+}
+
 xray_agent_reality_tls_ping_run() {
     local target="$1"
     local host="${target%%:*}"
@@ -946,10 +986,14 @@ xray_agent_reality_print_tls_ping() {
     tls_ping_result="${XRAY_AGENT_REALITY_TLS_PING_OUTPUT}"
 
     if [[ -n "${tls_ping_result}" ]]; then
-        echoContent yellow " ---> TLS ping结果:"
-        while IFS= read -r line; do
-            [[ -n "${line}" ]] && echoContent yellow "     ${line}"
-        done <<<"${tls_ping_result}"
+        if [[ "${XRAY_AGENT_VERBOSE_TLS_PING:-false}" == "true" ]]; then
+            echoContent yellow " ---> TLS ping结果:"
+            while IFS= read -r line; do
+                [[ -n "${line}" ]] && echoContent yellow "     ${line}"
+            done <<<"${tls_ping_result}"
+        else
+            xray_agent_reality_tls_ping_summary "${target}" "${tls_ping_result}"
+        fi
     else
         echoContent yellow " ---> TLS ping未返回结果，请确认目标站可从本机访问"
     fi
@@ -1016,7 +1060,7 @@ initTLSRealityConfig() {
     xray_agent_blank
     allowed_domains="${XRAY_AGENT_REALITY_TLS_PING_ALLOWED_DOMAINS:-}"
     if [[ -n "${allowed_domains}" ]]; then
-        echoContent yellow " ---> TLS ping识别到目标证书SAN: ${allowed_domains}"
+        xray_agent_print_reality_allowed_domains "${allowed_domains}"
     fi
     while true; do
         if [[ "${historyDestStatus}" == "y" ]] && [[ -n "${previous_reality_server_names}" ]]; then

@@ -340,10 +340,10 @@ xray_agent_validate_reuse_tcp_port() {
             ;;
         nginx/* | Nginx/*)
             if [[ "${expected_role}" == "frontdoor" ]]; then
-                xray_agent_reuse_result ok "端口由预期 Nginx 前门占用"
+                xray_agent_reuse_result ok "端口由预期 Nginx 前置占用"
                 return 0
             fi
-            xray_agent_reuse_result block "端口由 Nginx 前门占用，不能作为 Xray 后端复用"
+            xray_agent_reuse_result block "端口由 Nginx 前置占用，不能作为 Xray 后端复用"
             return 1
             ;;
         *)
