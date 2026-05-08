@@ -439,14 +439,36 @@ handleXray() {
     fi
 }
 
+xray_agent_render_xray_service_file() {
+    export XRAY_SERVICE_EXEC_START_PRE=
+    export XRAY_SERVICE_EXEC_START="${ctlPath:-${XRAY_AGENT_XRAY_BINARY}} run -confdir /etc/xray-agent/xray/conf"
+    readConfigHostPathUUID 2>/dev/null || true
+    if [[ -n "${Hysteria2HopPorts:-}" ]] &&
+        declare -F xray_agent_hysteria2_port_spec_valid >/dev/null 2>&1 &&
+        xray_agent_hysteria2_port_spec_valid "${Hysteria2HopPorts}"; then
+        XRAY_SERVICE_EXEC_START_PRE="ExecStartPre=-/usr/bin/env bash /etc/xray-agent/lib/hysteria2-check.sh"
+    fi
+    xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/systemd/xray.service.tpl" /etc/systemd/system/xray.service
+    systemctl daemon-reload
+}
+
+xray_agent_refresh_xray_service() {
+    if [[ -n $(find /bin /usr/bin -name "systemctl") ]]; then
+        if [[ ! -f /etc/systemd/system/xray.service ]]; then
+            echoContent yellow " ---> xray.service 不存在，跳过刷新"
+            return 0
+        fi
+        xray_agent_render_xray_service_file
+        echoContent green " ---> xray.service 已刷新"
+    fi
+}
+
 installXrayService() {
     xray_agent_blank
     echoContent skyBlue "进度  $1/${totalProgress} : 配置Xray开机自启"
     if [[ -n $(find /bin /usr/bin -name "systemctl") ]]; then
         rm -rf /etc/systemd/system/xray.service
-        export XRAY_SERVICE_EXEC_START="${ctlPath} run -confdir /etc/xray-agent/xray/conf"
-        xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/systemd/xray.service.tpl" /etc/systemd/system/xray.service
-        systemctl daemon-reload
+        xray_agent_render_xray_service_file
         systemctl enable xray.service
     fi
 }

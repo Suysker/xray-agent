@@ -126,6 +126,10 @@ xray_agent_route_args() {
             renewalTLS "all"
             exit 0
             ;;
+        RefreshXrayService)
+            xray_agent_refresh_xray_service
+            exit $?
+            ;;
     esac
 }
 

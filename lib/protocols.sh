@@ -814,7 +814,7 @@ xray_agent_hysteria2_allow_hop_ports() {
     for item in "${hop_items[@]}"; do
         xray_agent_hysteria2_allow_udp_port_item "${item}"
     done
-    echoContent yellow " ---> 请确认云厂商安全组也已放行 UDP/${port_spec}。脚本只能处理本机防火墙，不能自动修改云防火墙。"
+    echoContent yellow " ---> 请确认云厂商安全组/外部防火墙也已放行 UDP/${port_spec}；本机防火墙放行和 REDIRECT 都无法处理云侧丢包。"
 }
 
 xray_agent_hysteria2_hop_redirect_comment() {
@@ -830,6 +830,109 @@ xray_agent_hysteria2_port_spec_items() {
     for item in "${hop_items[@]}"; do
         [[ -n "${item}" ]] && printf '%s\n' "${item}"
     done
+}
+
+xray_agent_hysteria2_hop_redirect_backend() {
+    if command -v iptables >/dev/null 2>&1; then
+        printf 'iptables\n'
+        return 0
+    fi
+    if command -v nft >/dev/null 2>&1; then
+        printf 'nft\n'
+        return 0
+    fi
+    return 1
+}
+
+xray_agent_hysteria2_iptables_redirects_present() {
+    local command_name="$1"
+    local port_spec="$2"
+    local listen_port="$3"
+    local comment item dport
+    comment="$(xray_agent_hysteria2_hop_redirect_comment)"
+    while IFS= read -r item; do
+        [[ "${item}" == "${listen_port}" ]] && continue
+        dport="${item/-/:}"
+        "${command_name}" -t nat -C PREROUTING -p udp --dport "${dport}" -m comment --comment "${comment}" -j REDIRECT --to-ports "${listen_port}" >/dev/null 2>&1 || return 1
+    done < <(xray_agent_hysteria2_port_spec_items "${port_spec}")
+}
+
+xray_agent_hysteria2_nft_redirect_item_present() {
+    local item="$1"
+    local listen_port="$2"
+    local comment
+    comment="$(xray_agent_hysteria2_hop_redirect_comment)"
+    nft list chain inet xray_agent prerouting 2>/dev/null | awk -v item="${item}" -v listen_port="${listen_port}" -v comment="${comment}" '
+        index($0, "udp dport " item) &&
+        (index($0, "redirect to :" listen_port) || index($0, "redirect to " listen_port)) &&
+        index($0, comment) {
+            found = 1
+        }
+        END { exit(found ? 0 : 1) }
+    '
+}
+
+xray_agent_hysteria2_nft_redirects_present() {
+    local port_spec="$1"
+    local listen_port="$2"
+    local item
+    command -v nft >/dev/null 2>&1 || return 1
+    nft list chain inet xray_agent prerouting >/dev/null 2>&1 || return 1
+    while IFS= read -r item; do
+        [[ "${item}" == "${listen_port}" ]] && continue
+        xray_agent_hysteria2_nft_redirect_item_present "${item}" "${listen_port}" || return 1
+    done < <(xray_agent_hysteria2_port_spec_items "${port_spec}")
+}
+
+xray_agent_hysteria2_hop_redirect_state() {
+    local ports="${1:-${Hysteria2HopPorts:-}}"
+    local listen_port="${2:-${Hysteria2Port:-443}}"
+    local backend
+    [[ -n "${ports}" ]] || {
+        printf 'disabled\n'
+        return 0
+    }
+    if ! xray_agent_hysteria2_port_spec_valid "${ports}"; then
+        printf 'invalid\n'
+        return 1
+    fi
+    backend="$(xray_agent_hysteria2_hop_redirect_backend)" || {
+        printf 'no_backend\n'
+        return 1
+    }
+    case "${backend}" in
+        iptables)
+            if xray_agent_hysteria2_iptables_redirects_present iptables "${ports}" "${listen_port}"; then
+                printf 'normal\n'
+                return 0
+            fi
+            ;;
+        nft)
+            if xray_agent_hysteria2_nft_redirects_present "${ports}" "${listen_port}"; then
+                printf 'normal\n'
+                return 0
+            fi
+            ;;
+    esac
+    printf 'missing\n'
+    return 1
+}
+
+xray_agent_hysteria2_hop_redirect_state_label() {
+    case "$1" in
+        normal) printf '正常\n' ;;
+        missing) printf '缺失\n' ;;
+        invalid) printf '范围无效\n' ;;
+        no_backend) printf '未检测到 iptables/nft\n' ;;
+        disabled) printf '未启用\n' ;;
+        *) printf '未知\n' ;;
+    esac
+}
+
+xray_agent_hysteria2_hop_redirect_status() {
+    local state
+    state="$(xray_agent_hysteria2_hop_redirect_state "$@")"
+    xray_agent_hysteria2_hop_redirect_state_label "${state}"
 }
 
 xray_agent_hysteria2_iptables_apply_redirects() {
@@ -955,6 +1058,51 @@ xray_agent_hysteria2_apply_hop_redirects() {
         return 0
     fi
     echoContent red " ---> 未检测到 iptables/nft，无法创建 Hysteria2 UDP REDIRECT"
+    return 1
+}
+
+xray_agent_hysteria2_repair_hop_redirects() {
+    local ports="${1:-${Hysteria2HopPorts:-}}"
+    local listen_port="${2:-${Hysteria2Port:-443}}"
+    local state label
+    state="$(xray_agent_hysteria2_hop_redirect_state "${ports}" "${listen_port}")"
+    label="$(xray_agent_hysteria2_hop_redirect_state_label "${state}")"
+
+    case "${state}" in
+        disabled)
+            echoContent yellow " ---> 当前未启用 Hysteria2 端口跳跃，无需检查 REDIRECT"
+            return 0
+            ;;
+        normal)
+            echoContent green " ---> Hysteria2 端口跳跃 REDIRECT 正常: UDP/${ports} -> UDP/${listen_port}"
+            echoContent yellow " ---> 请确认云厂商安全组/外部防火墙已放行 UDP/${ports}；本机 REDIRECT 正常也无法处理云侧丢包。"
+            return 0
+            ;;
+        invalid)
+            echoContent red " ---> Hysteria2 端口跳跃范围无效: ${ports}"
+            return 1
+            ;;
+        no_backend)
+            echoContent red " ---> 未检测到 iptables/nft，无法检查或修复 Hysteria2 UDP REDIRECT"
+            return 1
+            ;;
+    esac
+
+    echoContent yellow " ---> Hysteria2 端口跳跃 REDIRECT ${label}，正在重建 UDP/${ports} -> UDP/${listen_port}"
+    if ! xray_agent_hysteria2_apply_hop_redirects "${ports}" "${listen_port}"; then
+        echoContent red " ---> Hysteria2 端口跳跃 REDIRECT 修复失败"
+        return 1
+    fi
+
+    state="$(xray_agent_hysteria2_hop_redirect_state "${ports}" "${listen_port}")"
+    if [[ "${state}" == "normal" ]]; then
+        echoContent green " ---> Hysteria2 端口跳跃 REDIRECT 已修复: UDP/${ports} -> UDP/${listen_port}"
+        echoContent yellow " ---> 请确认云厂商安全组/外部防火墙已放行 UDP/${ports}；本机 REDIRECT 正常也无法处理云侧丢包。"
+        return 0
+    fi
+
+    label="$(xray_agent_hysteria2_hop_redirect_state_label "${state}")"
+    echoContent red " ---> Hysteria2 端口跳跃 REDIRECT 修复后仍异常: ${label}"
     return 1
 }
 
@@ -1218,6 +1366,9 @@ xray_agent_hysteria2_enable_or_reconfigure() {
         return 1
     fi
     xray_agent_hysteria2_render_from_current_users
+    if declare -F xray_agent_refresh_xray_service >/dev/null 2>&1; then
+        xray_agent_refresh_xray_service || echoContent yellow " ---> xray.service 刷新失败，请手动检查 systemd 配置"
+    fi
     reloadCore
     readInstallType
     readInstallProtocolType
@@ -1258,7 +1409,7 @@ xray_agent_hysteria2_apply_hop_config() {
     local interval="${3:-30}"
     local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
     local backup_file="${hysteria2_file}.bak.$(date +%s)"
-    local old_ports listen_port
+    local old_ports listen_port redirect_state redirect_label
 
     [[ -f "${hysteria2_file}" ]] || {
         echoContent red " ---> Hysteria2 未安装"
@@ -1337,10 +1488,22 @@ xray_agent_hysteria2_apply_hop_config() {
         Hysteria2HopPorts="${ports}"
         Hysteria2HopInterval="${interval}"
         xray_agent_hysteria2_allow_hop_ports
-        echoContent green " ---> Hysteria2 端口跳跃已启用: UDP/${ports}，间隔 ${interval} 秒；本机已 REDIRECT 到 UDP/${listen_port}"
+        if declare -F xray_agent_refresh_xray_service >/dev/null 2>&1; then
+            xray_agent_refresh_xray_service || echoContent yellow " ---> xray.service 刷新失败，请手动检查 systemd 配置"
+        fi
+        redirect_state="$(xray_agent_hysteria2_hop_redirect_state "${ports}" "${listen_port}")"
+        redirect_label="$(xray_agent_hysteria2_hop_redirect_state_label "${redirect_state}")"
+        if [[ "${redirect_state}" == "normal" ]]; then
+            echoContent green " ---> Hysteria2 端口跳跃已启用: UDP/${ports}，间隔 ${interval} 秒；本机 REDIRECT 状态: ${redirect_label}"
+        else
+            echoContent yellow " ---> Hysteria2 端口跳跃已启用: UDP/${ports}，间隔 ${interval} 秒；本机 REDIRECT 状态: ${redirect_label}，请在 Hysteria2 菜单执行检查/修复"
+        fi
     else
         Hysteria2HopPorts=
         Hysteria2HopInterval=
+        if declare -F xray_agent_refresh_xray_service >/dev/null 2>&1; then
+            xray_agent_refresh_xray_service || echoContent yellow " ---> xray.service 刷新失败，请手动检查 systemd 配置"
+        fi
         echoContent green " ---> Hysteria2 端口跳跃已关闭，本机 REDIRECT 已清理"
     fi
     readConfigHostPathUUID
@@ -1364,6 +1527,7 @@ xray_agent_hysteria2_manage_port_hopping() {
     echoContent red "=============================================================="
     echoContent yellow "1.开启或修改端口跳跃"
     echoContent yellow "2.关闭端口跳跃"
+    echoContent yellow "3.检查/修复端口跳跃 REDIRECT"
     echoContent red "=============================================================="
     read -r -p "请选择[回车=1]:" selected_action
     selected_action="${selected_action:-1}"
@@ -1393,6 +1557,9 @@ xray_agent_hysteria2_manage_port_hopping() {
             }
             xray_agent_hysteria2_apply_hop_config disable
             ;;
+        3)
+            xray_agent_hysteria2_repair_hop_redirects
+            ;;
         *)
             echoContent red " ---> 选择错误"
             return 1
@@ -1421,6 +1588,10 @@ xray_agent_hysteria2_status_summary() {
     echoContent yellow "监听: UDP/${Hysteria2Port:-443}"
     if [[ -n "${Hysteria2HopPorts:-}" ]] && xray_agent_hysteria2_port_spec_valid "${Hysteria2HopPorts}"; then
         echoContent yellow "端口跳跃: 已启用 UDP/${Hysteria2HopPorts}  间隔=${Hysteria2HopInterval:-30}秒"
+        echoContent yellow "端口跳跃 REDIRECT: $(xray_agent_hysteria2_hop_redirect_status "${Hysteria2HopPorts}" "${Hysteria2Port:-443}")"
+    elif [[ -n "${Hysteria2HopPorts:-}" ]]; then
+        echoContent yellow "端口跳跃: 配置无效 UDP/${Hysteria2HopPorts}"
+        echoContent yellow "端口跳跃 REDIRECT: 范围无效"
     else
         echoContent yellow "端口跳跃: 未启用"
     fi
@@ -1459,6 +1630,7 @@ xray_agent_hysteria2_manage_menu() {
     echoContent yellow "2.启用或重配 Hysteria2"
     echoContent yellow "3.管理 Hysteria2 端口跳跃"
     echoContent yellow "4.卸载 Hysteria2"
+    echoContent yellow "5.检查/修复 Hysteria2 端口跳跃 REDIRECT"
     echoContent red "=============================================================="
     read -r -p "请输入:" hysteria2_status
     case "${hysteria2_status}" in
@@ -1469,5 +1641,6 @@ xray_agent_hysteria2_manage_menu() {
             ;;
         3) xray_agent_hysteria2_manage_port_hopping ;;
         4) xray_agent_hysteria2_uninstall ;;
+        5) xray_agent_hysteria2_repair_hop_redirects ;;
     esac
 }

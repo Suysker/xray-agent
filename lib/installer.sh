@@ -614,6 +614,9 @@ xray_agent_render_install_bundle() {
             return 1
         fi
         xray_agent_hysteria2_allow_hop_ports
+        if declare -F xray_agent_refresh_xray_service >/dev/null 2>&1; then
+            xray_agent_refresh_xray_service || echoContent yellow " ---> xray.service 刷新失败，请手动检查 systemd 配置"
+        fi
     fi
 }
 

@@ -459,6 +459,12 @@ updateXRayAgent() {
         return 1
     fi
     chmod 700 /etc/xray-agent/install.sh
+    if [[ -f /etc/systemd/system/xray.service ]]; then
+        echoContent yellow " ---> 刷新 xray.service"
+        if ! bash /etc/xray-agent/install.sh RefreshXrayService; then
+            echoContent yellow " ---> xray.service 刷新失败，请重新安装或手动检查 systemd 配置"
+        fi
+    fi
     rm -rf "${temp_dir}"
     echoContent green " ---> xray-agent 脚本更新完成"
     echoContent yellow " ---> 请重新执行 vasma 以加载新版本"
