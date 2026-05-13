@@ -42,6 +42,22 @@
 
 可以通过菜单 `14.Xray-core 管理` 升级 Xray-core 正式版。
 
+## 访问网站间歇性卡顿
+
+如果服务器同时运行 AdGuardHome、dnsmasq、SmartDNS 等本机 DNS 服务，Xray 可以继续使用 `localhost` DNS 让代理流量也经过广告过滤。但广告/遥测规则可能把 `c.bing.com`、`*.events.data.microsoft.com`、`*.clients6.google.com` 等域名解析成 `0.0.0.0`、`::` 或本机地址，如果 Xray 继续按这个结果拨号，就会出现页面资源长时间等待、TLS 握手失败或连接超时。
+
+默认安装会保留 `localhost` DNS 和 `UseIP`。为避免正常域名的 A 记录可用、AAAA 记录却被 AdGuardHome 返回为 `::` 时被误判为黑洞，建议把 AdGuardHome 的拦截响应模式设为 `nxdomain` 或 `refused`，让被过滤请求以 DNS 错误结束，而不是返回 fake IP。排查已有安装时可检查：
+
+```bash
+jq . /etc/xray-agent/xray/conf/11_dns.json
+jq . /etc/xray-agent/xray/conf/09_routing.json
+getent ahostsv4 c.bing.com
+getent ahostsv4 mobile.events.data.microsoft.com
+dig +short @127.0.0.1 www.bing.com AAAA
+```
+
+如果这些域名在服务器上解析为 `0.0.0.0`、`127.0.0.1`、`::` 或 `::1`，应确认 `/etc/xray-agent/xray/conf/09_routing.json` 里存在把这些地址送到 `blackhole-out` 的规则。如果正常域名的 A 记录正常但 AAAA 记录被过滤为 `::`，优先调整 AdGuardHome 的 `blocking_mode`，不要为了规避误伤而绕过 `localhost` DNS 或改掉 `UseIP`。
+
 ## Xray-core 升级失败
 
 如果 GitHub Release API 被限流或网络返回异常，脚本会停止升级并保留当前 Xray-core。稍后重试，或先确认服务器可以稳定访问 `api.github.com` 和 `github.com/XTLS/Xray-core/releases`。

@@ -94,7 +94,7 @@ xray_agent_default_dns_query_strategy() {
 }
 
 xray_agent_default_routing_rules_json() {
-    jq -nc '[]'
+    jq -nc '[{type:"field",ip:["0.0.0.0/32","127.0.0.0/8","::/128","::1/128"],outboundTag:"blackhole-out"}]'
 }
 
 xray_agent_default_dns_servers_json() {
