@@ -20,6 +20,8 @@
 - Preventive rule: always rerun the target PQ suitability check when Reality target changes or when rendering Reality configs. Keep the existing seed only if the current target still allows ML-DSA-65; otherwise clear seed/verify before rendering links.
 - Root-cause pattern: `xray tls ping` can report both no-SNI and SNI handshakes. Reading the first certificate length, PQ status, or SAN list can validate the wrong certificate when the target returns different certificates without SNI and with SNI.
 - Preventive rule: Reality target validation must prefer the final/SNI handshake values from `xray tls ping` for certificate length, PQ status, and allowed domains.
+- Root-cause pattern: a Reality target can pass ordinary TLS ping, SAN matching, and certificate-length checks while still failing real Reality verification. For example, `packages.microsoft.com` passes Xray `tls ping` but triggers a TLS 1.3 HelloRetryRequest/P-256 certificate-flight path that is unsuitable for Reality substitution.
+- Preventive rule: split Reality target checks into basic Reality and PQ, and use official Xray output first. Basic Reality uses `xray tls ping` for TCP/TLS 1.3/SAN/certificate-chain facts, while PQ uses only the official `TLS Post-Quantum key exchange` field for Post-Quantum and `pqv` suitability. Do not put temporary generated Reality server/client configs, embedded custom clients, or Python probes in `lib/tls.sh`; use `openssl s_client -trace -tls1_3` only as a lightweight certificate-flight gap check, and use a dedicated analyzer or upstream Xray-core command when exact `uConn.Verified` output is required.
 
 ## Hysteria2 Port Reconfiguration
 

@@ -815,6 +815,40 @@ xray_agent_reality_tls_ping_cert_length_from_output() {
     ' <<<"$1"
 }
 
+xray_agent_reality_tls_ping_tls_version_from_output() {
+    awk -F ':' '
+        /TLS Version:/ {
+            value = $2
+            gsub(/^[[:space:]]+/, "", value)
+            if (value != "") {
+                last = value
+            }
+        }
+        END {
+            if (last != "") {
+                print last
+            }
+        }
+    ' <<<"$1"
+}
+
+xray_agent_reality_tls_ping_pq_from_output() {
+    awk -F ':' '
+        /TLS Post-Quantum key exchange:/ {
+            value = $2
+            gsub(/^[[:space:]]+/, "", value)
+            if (value != "") {
+                last = value
+            }
+        }
+        END {
+            if (last != "") {
+                print last
+            }
+        }
+    ' <<<"$1"
+}
+
 xray_agent_reality_tls_ping_summary() {
     local target="${1:-${XRAY_AGENT_REALITY_TLS_PING_TARGET:-}}"
     local tls_ping_output="${2:-${XRAY_AGENT_REALITY_TLS_PING_OUTPUT:-}}"
@@ -830,8 +864,8 @@ xray_agent_reality_tls_ping_summary() {
     else
         handshake_status="未知"
     fi
-    tls_version="$(awk -F ':' '/TLS Version:/ {value = $2; gsub(/^[[:space:]]+/, "", value); last = value} END {print last}' <<<"${tls_ping_output}")"
-    pq_status="$(awk -F ':' '/TLS Post-Quantum key exchange:/ {value = $2; gsub(/^[[:space:]]+/, "", value); last = value} END {print last}' <<<"${tls_ping_output}")"
+    tls_version="$(xray_agent_reality_tls_ping_tls_version_from_output "${tls_ping_output}")"
+    pq_status="$(xray_agent_reality_tls_ping_pq_from_output "${tls_ping_output}")"
     cert_length="$(xray_agent_reality_tls_ping_cert_length_from_output "${tls_ping_output}")"
     san_count="$(xray_agent_csv_to_lines "${XRAY_AGENT_REALITY_TLS_PING_ALLOWED_DOMAINS:-}" | awk 'END {print NR + 0}')"
 
@@ -879,11 +913,154 @@ xray_agent_reality_tls_ping_run() {
     return "${status}"
 }
 
+xray_agent_reality_certificate_flight_probe() {
+    local host="$1"
+    local target_port="$2"
+    local server_name="${3:-$1}"
+    local timeout_seconds="${XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_TIMEOUT:-8}"
+    local probe_output probe_status=0 probe_summary test_status
+    local first_length first_type hrr second_client_hello certificate_seen protocol_alert received_records
+    XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_BYTES=
+    XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON=
+
+    if [[ -n "${XRAY_AGENT_TEST_REALITY_CERTIFICATE_FLIGHT_STATUS+x}" ]]; then
+        test_status="${XRAY_AGENT_TEST_REALITY_CERTIFICATE_FLIGHT_STATUS}"
+        first_length="${XRAY_AGENT_TEST_REALITY_CERTIFICATE_FLIGHT_BYTES:-0}"
+        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_BYTES="${first_length}"
+        case "${test_status}" in
+            ok)
+                XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检正常，未触发 HelloRetryRequest，已看到证书 record"
+                return 0
+                ;;
+            hrr | retry | short | block)
+                XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检失败: 目标触发 TLS 1.3 HelloRetryRequest，首个服务端 record 长度=${first_length}，不适合 Reality 替证"
+                return 1
+                ;;
+            *)
+                XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检未完成，测试状态=${test_status}"
+                return 2
+                ;;
+        esac
+    fi
+
+    if ! command -v openssl >/dev/null 2>&1; then
+        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="未检测到 openssl，跳过 Reality certificate flight 预检"
+        return 2
+    fi
+
+    if command -v timeout >/dev/null 2>&1; then
+        probe_output="$(timeout "${timeout_seconds}" openssl s_client -trace -tls1_3 -servername "${server_name}" -connect "${host}:${target_port}" -alpn "h2,http/1.1" </dev/null 2>&1 | tr -d '\000')" || probe_status=$?
+    else
+        probe_output="$(openssl s_client -trace -tls1_3 -servername "${server_name}" -connect "${host}:${target_port}" -alpn "h2,http/1.1" </dev/null 2>&1 | tr -d '\000')" || probe_status=$?
+    fi
+
+    probe_summary="$(awk '
+        BEGIN {
+            first_received = 0
+            in_first_received = 0
+            in_sent_record = 0
+            sent_client_hello_count = 0
+            hrr = 0
+            second_client_hello = 0
+            certificate_seen = 0
+            protocol_alert = 0
+            received_records = 0
+            first_length = ""
+            first_type = ""
+        }
+        /Received Record/ {
+            received_records++
+            if (first_received == 0) {
+                first_received = 1
+                in_first_received = 1
+            } else {
+                in_first_received = 0
+            }
+            in_sent_record = 0
+            next
+        }
+        /Sent Record/ {
+            in_sent_record = 1
+            in_first_received = 0
+            next
+        }
+        in_sent_record && /ClientHello/ {
+            sent_client_hello_count++
+            if (first_received && !certificate_seen && sent_client_hello_count >= 2) {
+                second_client_hello = 1
+            }
+            in_sent_record = 0
+        }
+        in_first_received && /Content Type =/ {
+            line = $0
+            sub(/^.*Content Type = /, "", line)
+            first_type = line
+        }
+        in_first_received && /Length =/ && first_length == "" {
+            line = $0
+            sub(/^.*Length = /, "", line)
+            sub(/[^0-9].*$/, "", line)
+            first_length = line
+        }
+        /gmt_unix_time=0xCF21AD74/ {
+            hrr = 1
+        }
+        /random_bytes \(len=28\): E59A6111BE1D8C021E65B891C2A211167ABB8C5E079E09E2C8A8339C/ {
+            hrr = 1
+        }
+        /Certificate, Length=/ {
+            certificate_seen = 1
+        }
+        /alert protocol version|description=protocol version/ {
+            protocol_alert = 1
+        }
+        END {
+            print "received_records=" received_records
+            print "first_length=" first_length
+            print "first_type=" first_type
+            print "hrr=" hrr
+            print "second_client_hello=" second_client_hello
+            print "certificate_seen=" certificate_seen
+            print "protocol_alert=" protocol_alert
+        }
+    ' <<<"${probe_output}")"
+
+    received_records="$(awk -F= '$1=="received_records"{print $2}' <<<"${probe_summary}")"
+    first_length="$(awk -F= '$1=="first_length"{print $2}' <<<"${probe_summary}")"
+    first_type="$(awk -F= '$1=="first_type"{print $2}' <<<"${probe_summary}")"
+    hrr="$(awk -F= '$1=="hrr"{print $2}' <<<"${probe_summary}")"
+    second_client_hello="$(awk -F= '$1=="second_client_hello"{print $2}' <<<"${probe_summary}")"
+    certificate_seen="$(awk -F= '$1=="certificate_seen"{print $2}' <<<"${probe_summary}")"
+    protocol_alert="$(awk -F= '$1=="protocol_alert"{print $2}' <<<"${probe_summary}")"
+    [[ -n "${first_length}" ]] || first_length="未知"
+    XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_BYTES="${first_length}"
+
+    if [[ "${protocol_alert}" == "1" ]]; then
+        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检失败: 目标拒绝 TLS 1.3，不适合 Reality target"
+        return 1
+    fi
+    if [[ "${received_records:-0}" -eq 0 ]]; then
+        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检未完成，openssl 状态=${probe_status}"
+        return 2
+    fi
+    if [[ "${hrr}" == "1" || "${second_client_hello}" == "1" ]]; then
+        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检失败: 目标触发 TLS 1.3 HelloRetryRequest，首个服务端 record=${first_type:-未知}/${first_length} bytes，不适合 Reality 替证"
+        return 1
+    fi
+    if [[ "${certificate_seen}" != "1" ]]; then
+        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检未看到证书 record，首个服务端 record=${first_type:-未知}/${first_length} bytes"
+        return 2
+    fi
+
+    XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检正常，未触发 HelloRetryRequest，已看到证书 record"
+    return 0
+}
+
 xray_agent_validate_reuse_reality_target() {
     local target="$1"
     local host="${target%%:*}"
     local target_port="${target##*:}"
-    local tls_ping_output cert_length status="ok" reason="TLS handshake 成功"
+    local tls_ping_output tls_version pq_status cert_length certificate_flight_status status="ok" reason="Xray tls ping 官方预检通过，certificate flight 预检通过"
     XRAY_AGENT_REALITY_TLS_PING_OUTPUT=
     XRAY_AGENT_REALITY_TLS_PING_ALLOWED_DOMAINS=
 
@@ -896,6 +1073,8 @@ xray_agent_validate_reuse_reality_target() {
         return 1
     fi
 
+    # Xray tls ping is the primary source for TCP reachability, TLS version,
+    # certificate SAN, certificate chain, and official PQ detection.
     if ! xray_agent_reality_tls_ping_run "${target}"; then
         if [[ -z "${XRAY_AGENT_REALITY_TLS_PING_OUTPUT}" ]]; then
             xray_agent_reuse_result warn "无法执行 xray tls ping，需确认 Xray 可执行文件是否存在"
@@ -912,15 +1091,32 @@ xray_agent_validate_reuse_reality_target() {
         xray_agent_reuse_result block "TLS ping 未握手成功"
         return 1
     fi
+    tls_version="$(xray_agent_reality_tls_ping_tls_version_from_output "${tls_ping_output}")"
+    if [[ "${tls_version}" != "TLS 1.3" ]]; then
+        xray_agent_reuse_result block "Reality target 必须支持 TLS 1.3，当前 TLS ping 识别为 ${tls_version:-未知}"
+        return 1
+    fi
+
+    certificate_flight_status=0
+    xray_agent_reality_certificate_flight_probe "${host}" "${target_port}" "${host}" || certificate_flight_status=$?
+    if [[ "${certificate_flight_status}" -eq 1 ]]; then
+        xray_agent_reuse_result block "${XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON}"
+        return 1
+    fi
+    if [[ "${certificate_flight_status}" -eq 2 ]]; then
+        status="warn"
+        reason="${XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON}"
+    fi
 
     cert_length="$(xray_agent_reality_tls_ping_cert_length_from_output "${tls_ping_output}")"
-    if grep -qi "TLS Post-Quantum key exchange:[[:space:]]*false" <<<"${tls_ping_output}"; then
+    pq_status="$(xray_agent_reality_tls_ping_pq_from_output "${tls_ping_output}")"
+    if [[ "${pq_status}" =~ ^false ]]; then
         status="warn"
-        reason="TLS 可握手，但目标未检测到 Post-Quantum key exchange"
+        reason="Xray tls ping 官方检测: 目标未检测到 Post-Quantum key exchange"
     fi
     if [[ -n "${cert_length}" && "${cert_length}" =~ ^[0-9]+$ && "${cert_length}" -lt 3500 ]]; then
         status="warn"
-        reason="TLS 可握手，但证书链长度 ${cert_length} 低于 3500，Reality PQ 隐藏条件不理想"
+        reason="Xray tls ping 官方检测: 证书链长度 ${cert_length} 低于 3500，Reality PQ 隐藏条件不理想"
     fi
 
     xray_agent_reuse_result "${status}" "${reason}"
