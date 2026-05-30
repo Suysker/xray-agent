@@ -20,3 +20,8 @@
 - Preventive rule: always rerun the target PQ suitability check when Reality target changes or when rendering Reality configs. Keep the existing seed only if the current target still allows ML-DSA-65; otherwise clear seed/verify before rendering links.
 - Root-cause pattern: `xray tls ping` can report both no-SNI and SNI handshakes. Reading the first certificate length, PQ status, or SAN list can validate the wrong certificate when the target returns different certificates without SNI and with SNI.
 - Preventive rule: Reality target validation must prefer the final/SNI handshake values from `xray tls ping` for certificate length, PQ status, and allowed domains.
+
+## Hysteria2 Port Reconfiguration
+
+- Root-cause pattern: Hysteria2 reconfiguration can misclassify UDP/443 as externally occupied when `lsof` does not report the Xray process name as exactly `xray`. The port may be held by the current `xray.service` MainPID and still be safe to reuse.
+- Preventive rule: UDP/TCP port preflight must identify Xray ownership by process name, `xray.service` MainPID, and process executable/cmdline before blocking. Only non-Xray owners should require manual shutdown.

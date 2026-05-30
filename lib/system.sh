@@ -280,15 +280,98 @@ xray_agent_allow_port_safe() {
     allowPort "${port}" "${protocol}"
 }
 
+xray_agent_xray_service_main_pid() {
+    command -v systemctl >/dev/null 2>&1 || return 1
+    systemctl show -p MainPID --value xray 2>/dev/null |
+        awk '$1 ~ /^[0-9]+$/ && $1 != "0" {print $1; exit}'
+}
+
+xray_agent_process_is_xray() {
+    local command_name="$1"
+    local pid="${2:-}"
+    local main_pid comm exe cmdline
+
+    case "${command_name}" in
+        xray | Xray)
+            return 0
+            ;;
+    esac
+
+    [[ "${pid}" =~ ^[0-9]+$ ]] || return 1
+
+    main_pid="$(xray_agent_xray_service_main_pid || true)"
+    if [[ -n "${main_pid}" && "${pid}" == "${main_pid}" ]]; then
+        return 0
+    fi
+
+    comm="$(ps -p "${pid}" -o comm= 2>/dev/null | awk '{print $1; exit}')"
+    case "${comm}" in
+        xray | Xray)
+            return 0
+            ;;
+    esac
+
+    exe="$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)"
+    case "${exe}" in
+        */xray | */xray-agent/xray/xray)
+            return 0
+            ;;
+    esac
+
+    cmdline="$(tr '\0' ' ' <"/proc/${pid}/cmdline" 2>/dev/null || true)"
+    case "${cmdline}" in
+        *"/xray run "* | *"/xray/xray run "* | *"/etc/xray-agent/xray/xray "*)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+xray_agent_port_owner_label() {
+    local command_name="$1"
+    local pid="${2:-}"
+    local user="${3:-}"
+    if [[ -n "${pid}" && -n "${user}" ]]; then
+        printf '%s/%s/%s\n' "${command_name}" "${pid}" "${user}"
+    elif [[ -n "${pid}" ]]; then
+        printf '%s/%s\n' "${command_name}" "${pid}"
+    else
+        printf '%s\n' "${command_name}"
+    fi
+}
+
+xray_agent_lsof_port_rows() {
+    local protocol="$1"
+    local port="$2"
+    if ! command -v lsof >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if [[ "${protocol}" == "UDP" ]]; then
+        lsof -nP -iUDP:"${port}" 2>/dev/null | awk 'NR>1 {print $1 "|" $2 "|" $3}'
+    else
+        lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $1 "|" $2 "|" $3}'
+    fi
+}
+
 checkPort() {
     local port="$1"
-    local port_progress port_owner
-    port_progress=$(lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $1; exit}')
-    if [[ -n "${port_progress}" && "${port_progress}" != "xray" ]]; then
+    local command_name pid user blocked_owner xray_owner
+    while IFS='|' read -r command_name pid user; do
+        [[ -n "${command_name}" ]] || continue
+        if xray_agent_process_is_xray "${command_name}" "${pid}"; then
+            xray_owner="$(xray_agent_port_owner_label "${command_name}" "${pid}" "${user}")"
+            continue
+        fi
+        blocked_owner="$(xray_agent_port_owner_label "${command_name}" "${pid}" "${user}")"
+        break
+    done < <(xray_agent_lsof_port_rows TCP "${port}")
+
+    if [[ -n "${blocked_owner}" ]]; then
         xray_agent_blank
         if [[ "${port}" == "443" ]]; then
-            port_owner="$(xray_agent_port_owner TCP 443 2>/dev/null || printf '%s\n' "${port_progress}")"
-            echoContent red " ---> TCP/443 当前由 ${port_owner} 占用，不会静默覆盖现有前端/网站。"
+            echoContent red " ---> TCP/443 当前由 ${blocked_owner} 占用，不会静默覆盖现有前端/网站。"
             echoContent yellow " ---> 请先迁移现有网站到本机 upstream 后注册到网站/反代管理，或为 Xray 选择非 443 后端端口。"
             if declare -F xray_agent_nginx_print_proxy_protocol_preflight >/dev/null 2>&1; then
                 xray_agent_nginx_print_proxy_protocol_preflight
@@ -296,15 +379,30 @@ checkPort() {
         fi
         xray_agent_error " ---> ${port}端口被占用，请手动关闭后安装"
     fi
+    if [[ -n "${xray_owner}" ]]; then
+        echoContent yellow " ---> TCP ${port}端口当前由 Xray 占用，可继续复用"
+    fi
 }
 
 checkUDPPort() {
     local port="$1"
-    local port_progress
-    port_progress=$(lsof -nP -iUDP:"${port}" 2>/dev/null | awk 'NR>1 {print $1; exit}')
-    if [[ -n "${port_progress}" && "${port_progress}" != "xray" ]]; then
+    local command_name pid user blocked_owner xray_owner
+    while IFS='|' read -r command_name pid user; do
+        [[ -n "${command_name}" ]] || continue
+        if xray_agent_process_is_xray "${command_name}" "${pid}"; then
+            xray_owner="$(xray_agent_port_owner_label "${command_name}" "${pid}" "${user}")"
+            continue
+        fi
+        blocked_owner="$(xray_agent_port_owner_label "${command_name}" "${pid}" "${user}")"
+        break
+    done < <(xray_agent_lsof_port_rows UDP "${port}")
+
+    if [[ -n "${blocked_owner}" ]]; then
         xray_agent_blank
-        xray_agent_error " ---> UDP ${port}端口被占用，请手动关闭后安装"
+        xray_agent_error " ---> UDP ${port}端口被 ${blocked_owner} 占用，请手动关闭后安装"
+    fi
+    if [[ -n "${xray_owner}" ]]; then
+        echoContent yellow " ---> UDP ${port}端口当前由 Xray 占用，可继续复用"
     fi
 }
 
