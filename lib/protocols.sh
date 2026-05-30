@@ -381,10 +381,6 @@ xray_agent_generate_mldsa65_material() {
 
 xray_agent_prepare_reality_mldsa65() {
     local status_json cert_length summary
-    if [[ -n "${RealityMldsa65Seed:-}" ]]; then
-        RealityMldsa65Verify="$(xray_agent_reality_mldsa65_verify_value || true)"
-        return 0
-    fi
     status_json="$(xray_agent_reality_target_pq_status_json "${RealityDestDomain}")"
     if [[ "$(printf '%s\n' "${status_json}" | jq -r '.mldsa65_allowed')" != "true" ]]; then
         RealityMldsa65Seed=
@@ -400,6 +396,10 @@ xray_agent_prepare_reality_mldsa65() {
     elif [[ "${summary}" == "partial" ]]; then
         cert_length="$(printf '%s\n' "${status_json}" | jq -r '.certificate_length')"
         echoContent yellow " ---> Reality PQ 预检部分满足: 证书链长度=${cert_length}，可启用 ML-DSA-65；未检测到 X25519MLKEM768。"
+    fi
+    if [[ -n "${RealityMldsa65Seed:-}" ]]; then
+        RealityMldsa65Verify="$(xray_agent_reality_mldsa65_verify_value || true)"
+        return 0
     fi
     if ! xray_agent_generate_mldsa65_material; then
         RealityMldsa65Seed=
