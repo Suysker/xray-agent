@@ -318,7 +318,11 @@ xray_agent_process_is_xray() {
             ;;
     esac
 
-    cmdline="$(tr '\0' ' ' <"/proc/${pid}/cmdline" 2>/dev/null || true)"
+    if [[ -r "/proc/${pid}/cmdline" ]]; then
+        cmdline="$(tr '\0' ' ' <"/proc/${pid}/cmdline" 2>/dev/null || true)"
+    else
+        cmdline=
+    fi
     case "${cmdline}" in
         *"/xray run "* | *"/xray/xray run "* | *"/etc/xray-agent/xray/xray "*)
             return 0
@@ -332,6 +336,7 @@ xray_agent_port_owner_label() {
     local command_name="$1"
     local pid="${2:-}"
     local user="${3:-}"
+    command_name="${command_name:-process}"
     if [[ -n "${pid}" && -n "${user}" ]]; then
         printf '%s/%s/%s\n' "${command_name}" "${pid}" "${user}"
     elif [[ -n "${pid}" ]]; then
@@ -344,24 +349,64 @@ xray_agent_port_owner_label() {
 xray_agent_lsof_port_rows() {
     local protocol="$1"
     local port="$2"
+    local lsof_output
     if ! command -v lsof >/dev/null 2>&1; then
         return 0
     fi
 
     if [[ "${protocol}" == "UDP" ]]; then
-        lsof -nP -iUDP:"${port}" 2>/dev/null | awk 'NR>1 {print $1 "|" $2 "|" $3}'
+        lsof_output="$(lsof -nP -iUDP:"${port}" -F pcL 2>/dev/null || true)"
     else
-        lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $1 "|" $2 "|" $3}'
+        lsof_output="$(lsof -nP -iTCP:"${port}" -sTCP:LISTEN -F pcL 2>/dev/null || true)"
     fi
+
+    if [[ "${lsof_output}" == p* || "${lsof_output}" == *$'\n'p* ]]; then
+        awk '
+            /^p/ {
+                if (pid != "") {
+                    print command_name "|" pid "|" user
+                }
+                pid = substr($0, 2)
+                command_name = ""
+                user = ""
+                next
+            }
+            /^c/ {
+                command_name = substr($0, 2)
+                next
+            }
+            /^L/ {
+                user = substr($0, 2)
+                next
+            }
+            END {
+                if (pid != "") {
+                    print command_name "|" pid "|" user
+                }
+            }
+        ' <<<"${lsof_output}"
+        return 0
+    fi
+
+    printf '%s\n' "${lsof_output}" | awk '
+        NR == 1 && $1 == "COMMAND" {next}
+        NF >= 4 {
+            if ($1 ~ /^[0-9]+$/ && $2 ~ /^[^[:space:]]+$/ && $3 ~ /^[0-9]+[a-zA-Z]*$/) {
+                print "" "|" $1 "|" $2
+            } else {
+                print $1 "|" $2 "|" $3
+            }
+        }
+    '
 }
 
 checkPort() {
     local port="$1"
     local command_name pid user blocked_owner xray_owner
     while IFS='|' read -r command_name pid user; do
-        [[ -n "${command_name}" ]] || continue
+        [[ -n "${command_name}${pid}" ]] || continue
         if xray_agent_process_is_xray "${command_name}" "${pid}"; then
-            xray_owner="$(xray_agent_port_owner_label "${command_name}" "${pid}" "${user}")"
+            xray_owner="$(xray_agent_port_owner_label "${command_name:-xray}" "${pid}" "${user}")"
             continue
         fi
         blocked_owner="$(xray_agent_port_owner_label "${command_name}" "${pid}" "${user}")"
@@ -388,9 +433,9 @@ checkUDPPort() {
     local port="$1"
     local command_name pid user blocked_owner xray_owner
     while IFS='|' read -r command_name pid user; do
-        [[ -n "${command_name}" ]] || continue
+        [[ -n "${command_name}${pid}" ]] || continue
         if xray_agent_process_is_xray "${command_name}" "${pid}"; then
-            xray_owner="$(xray_agent_port_owner_label "${command_name}" "${pid}" "${user}")"
+            xray_owner="$(xray_agent_port_owner_label "${command_name:-xray}" "${pid}" "${user}")"
             continue
         fi
         blocked_owner="$(xray_agent_port_owner_label "${command_name}" "${pid}" "${user}")"

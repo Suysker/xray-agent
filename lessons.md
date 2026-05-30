@@ -24,4 +24,4 @@
 ## Hysteria2 Port Reconfiguration
 
 - Root-cause pattern: Hysteria2 reconfiguration can misclassify UDP/443 as externally occupied when `lsof` does not report the Xray process name as exactly `xray`. The port may be held by the current `xray.service` MainPID and still be safe to reuse.
-- Preventive rule: UDP/TCP port preflight must identify Xray ownership by process name, `xray.service` MainPID, and process executable/cmdline before blocking. Only non-Xray owners should require manual shutdown.
+- Preventive rule: UDP/TCP port preflight must identify Xray ownership by process name, `xray.service` MainPID, and process executable/cmdline before blocking. Prefer `lsof -F` machine-readable output; if the local `lsof` output omits COMMAND and starts with PID/USER/FD, keep PID-based Xray detection instead of treating PID as a process name. Only non-Xray owners should require manual shutdown.

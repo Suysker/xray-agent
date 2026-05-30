@@ -1619,15 +1619,22 @@ xray_agent_hysteria2_show_accounts() {
 }
 
 xray_agent_hysteria2_manage_menu() {
-    local hysteria2_status
+    local hysteria2_status hysteria2_action_label hysteria2_action_description
     readInstallType
     readInstallProtocolType
     readConfigHostPathUUID
+    if xray_agent_hysteria2_installed; then
+        hysteria2_action_label="重配 Hysteria2"
+        hysteria2_action_description="重配会重写 Hysteria2 inbound，账号将复用当前 UUID/auth 列表。"
+    else
+        hysteria2_action_label="启用 Hysteria2"
+        hysteria2_action_description="启用会写入 Hysteria2 inbound，账号将复用当前 UUID/auth 列表。"
+    fi
     xray_agent_tool_status_header "Hysteria2管理"
     xray_agent_hysteria2_status_summary
     echoContent red "=============================================================="
     echoContent yellow "1.查看 Hysteria2 账号"
-    echoContent yellow "2.启用或重配 Hysteria2"
+    echoContent yellow "2.${hysteria2_action_label}"
     echoContent yellow "3.管理 Hysteria2 端口跳跃"
     echoContent yellow "4.卸载 Hysteria2"
     echoContent yellow "5.检查/修复 Hysteria2 端口跳跃 REDIRECT"
@@ -1636,7 +1643,7 @@ xray_agent_hysteria2_manage_menu() {
     case "${hysteria2_status}" in
         1) xray_agent_hysteria2_show_accounts ;;
         2)
-            echoContent yellow "启用/重配会重写 Hysteria2 inbound，账号将复用当前 UUID/auth 列表。"
+            echoContent yellow "${hysteria2_action_description}"
             xray_agent_confirm_action "确认继续？" "y" && xray_agent_hysteria2_enable_or_reconfigure
             ;;
         3) xray_agent_hysteria2_manage_port_hopping ;;
