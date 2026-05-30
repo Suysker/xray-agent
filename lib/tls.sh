@@ -781,8 +781,17 @@ xray_agent_reality_server_names_quote_csv() {
 }
 
 xray_agent_reality_tls_ping_allowed_domains_from_output() {
-    sed -n "s/.*allowed domains:[[:space:]]*\\[//Ip" <<<"$1" |
-        sed 's/\].*//' |
+    awk '
+        BEGIN { IGNORECASE = 1 }
+        /allowed domains:/ { line = $0 }
+        END {
+            if (line != "") {
+                sub(/^.*allowed domains:[[:space:]]*\[/, "", line)
+                sub(/\].*$/, "", line)
+                print line
+            }
+        }
+    ' <<<"$1" |
         tr ' ' '\n' |
         sed '/^$/d' |
         sort -u |
@@ -792,9 +801,16 @@ xray_agent_reality_tls_ping_allowed_domains_from_output() {
 xray_agent_reality_tls_ping_cert_length_from_output() {
     awk -F ':' '
         /Certificate chain.s total length/ {
-            gsub(/[^0-9]/, "", $2)
-            print $2
-            exit
+            value = $2
+            gsub(/[^0-9]/, "", value)
+            if (value != "") {
+                last = value
+            }
+        }
+        END {
+            if (last != "") {
+                print last
+            }
         }
     ' <<<"$1"
 }
@@ -814,8 +830,8 @@ xray_agent_reality_tls_ping_summary() {
     else
         handshake_status="未知"
     fi
-    tls_version="$(awk -F ':' '/TLS Version:/ {gsub(/^[[:space:]]+/, "", $2); print $2; exit}' <<<"${tls_ping_output}")"
-    pq_status="$(awk -F ':' '/TLS Post-Quantum key exchange:/ {gsub(/^[[:space:]]+/, "", $2); print $2; exit}' <<<"${tls_ping_output}")"
+    tls_version="$(awk -F ':' '/TLS Version:/ {value = $2; gsub(/^[[:space:]]+/, "", value); last = value} END {print last}' <<<"${tls_ping_output}")"
+    pq_status="$(awk -F ':' '/TLS Post-Quantum key exchange:/ {value = $2; gsub(/^[[:space:]]+/, "", value); last = value} END {print last}' <<<"${tls_ping_output}")"
     cert_length="$(xray_agent_reality_tls_ping_cert_length_from_output "${tls_ping_output}")"
     san_count="$(xray_agent_csv_to_lines "${XRAY_AGENT_REALITY_TLS_PING_ALLOWED_DOMAINS:-}" | awk 'END {print NR + 0}')"
 

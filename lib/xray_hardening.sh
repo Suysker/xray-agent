@@ -211,15 +211,30 @@ xray_agent_reality_tls_ping_certificate_length_from_output() {
             sub(/^.*total length[^0-9]*/, "", line)
             sub(/[^0-9].*$/, "", line)
             if (line != "") {
-                print line
-                exit
+                last = line
+            }
+        }
+        END {
+            if (last != "") {
+                print last
             }
         }
     '
 }
 
 xray_agent_reality_tls_ping_supports_mlkem_from_output() {
-    grep -Eqi 'X25519MLKEM768|X25519[[:space:]-]*ML[[:space:]-]*KEM[[:space:]-]*768|ML-KEM-768'
+    awk '
+        BEGIN { IGNORECASE = 1 }
+        /TLS Post-Quantum key exchange:/ { line = $0 }
+        END {
+            normalized = line
+            gsub(/[[:space:]-]/, "", normalized)
+            if (normalized ~ /X25519MLKEM768/ || normalized ~ /MLKEM768/) {
+                exit 0
+            }
+            exit 1
+        }
+    '
 }
 
 xray_agent_reality_target_pq_status_json() {
