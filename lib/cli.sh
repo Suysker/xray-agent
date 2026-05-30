@@ -35,19 +35,19 @@ xray_agent_print_management_menu_items() {
     echoContent yellow "3.账号管理"
     echoContent yellow "4.网站/反代管理"
     echoContent yellow "5.证书管理"
-    echoContent yellow "6.IPv4/IPv6出站策略"
-    echoContent yellow "7.阻止访问黑名单及中国大陆IP"
-    echoContent yellow "8.WARP分流及中国大陆域名+IP"
+    echoContent yellow "6.IPv4/IPv6 出站策略"
+    echoContent yellow "7.黑名单和中国大陆 IP 策略"
+    echoContent yellow "8.WARP 分流及中国大陆域名/IP"
     echoContent yellow "9.添加新端口"
     echoContent yellow "10.流量嗅探管理"
-    echoContent yellow "11.sockopt进阶管理"
-    echoContent yellow "12.Hysteria2管理"
+    echoContent yellow "11.sockopt 高级选项"
+    echoContent yellow "12.Hysteria2 管理"
 }
 
 xray_agent_print_version_menu_items() {
     echoContent skyBlue "-------------------------版本管理-----------------------------"
     echoContent yellow "13.订阅管理"
-    echoContent yellow "14.core管理"
+    echoContent yellow "14.Xray-core 管理"
     echoContent yellow "15.更新脚本"
 }
 
@@ -60,13 +60,13 @@ xray_agent_print_script_menu_items() {
 
 xray_agent_print_external_menu_items() {
     echoContent skyBlue "-------------------------其他功能-----------------------------"
-    echoContent yellow "19.AdGuardHome管理[$(xray_agent_adguard_status_label)]"
+    echoContent yellow "19.AdGuardHome 管理[$(xray_agent_adguard_status_label)]"
     echoContent yellow "20.WARP"
-    echoContent yellow "21.内核管理及BBR优化"
-    echoContent yellow "22.五网测速+IPV6"
+    echoContent yellow "21.内核管理及 BBR 优化"
+    echoContent yellow "22.五网测速 + IPv6"
     echoContent yellow "23.三网回程路由测试"
     echoContent yellow "24.流媒体解锁检测"
-    echoContent yellow "25.VPS基本信息"
+    echoContent yellow "25.VPS 基本信息"
     echoContent red "=============================================================="
 }
 

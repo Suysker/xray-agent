@@ -652,9 +652,9 @@ xray_agent_tool_status_header() {
     fi
     if [[ -f "$(xray_agent_hysteria2_inbound_file)" ]]; then
         if [[ -n "${Hysteria2HopPorts:-}" ]] && declare -F xray_agent_hysteria2_port_spec_valid >/dev/null 2>&1 && xray_agent_hysteria2_port_spec_valid "${Hysteria2HopPorts}"; then
-            echoContent yellow "Hysteria2: 已启用 UDP/${Hysteria2Port:-443}  跳跃=${Hysteria2HopPorts}  伪装: ${Hysteria2MasqueradeURL:-未检测}"
+            echoContent yellow "Hysteria2: 已启用 UDP/${Hysteria2Port:-443}  跳跃=${Hysteria2HopPorts}  回落URL: ${Hysteria2MasqueradeURL:-未检测}"
         else
-            echoContent yellow "Hysteria2: 已启用 UDP/${Hysteria2Port:-443}  伪装: ${Hysteria2MasqueradeURL:-未检测}"
+            echoContent yellow "Hysteria2: 已启用 UDP/${Hysteria2Port:-443}  回落URL: ${Hysteria2MasqueradeURL:-未检测}"
         fi
     else
         echoContent yellow "Hysteria2: 未启用"

@@ -170,17 +170,17 @@ xray_agent_outbound_status_label() {
 
 xray_agent_routing_status_summary() {
     echoContent skyBlue "-------------------------路由规则状态-----------------------------"
-    echoContent yellow "IPv6域名规则: $(xray_agent_routing_rule_count IPv6-out)"
-    echoContent yellow "WARP域名规则: $(xray_agent_routing_rule_count warp-out)"
+    echoContent yellow "IPv6 域名规则: $(xray_agent_routing_rule_count IPv6-out)"
+    echoContent yellow "WARP 域名规则: $(xray_agent_routing_rule_count warp-out)"
     echoContent yellow "黑名单规则: $(xray_agent_routing_rule_count blackhole-out)"
-    echoContent yellow "CN WARP规则: $(xray_agent_routing_rule_count cn-out)，outbound=$(xray_agent_outbound_status_label cn-out)"
-    echoContent yellow "CN 阻断规则: $(xray_agent_routing_rule_count cn-blackhole)，outbound=$(xray_agent_outbound_status_label cn-blackhole)"
+    echoContent yellow "中国大陆 WARP 规则: $(xray_agent_routing_rule_count cn-out)，出站=$(xray_agent_outbound_status_label cn-out)"
+    echoContent yellow "中国大陆阻断规则: $(xray_agent_routing_rule_count cn-blackhole)，出站=$(xray_agent_outbound_status_label cn-blackhole)"
 }
 
 ipv6Routing() {
     local selected action domainList
     local -a actions
-    xray_agent_tool_status_header "IPv4/IPv6出站策略"
+    xray_agent_tool_status_header "IPv4/IPv6 出站策略"
     xray_agent_network_summary
     xray_agent_routing_status_summary
 
@@ -194,21 +194,21 @@ ipv6Routing() {
 
     if [[ "${routeIPv6}" == "true" ]]; then
         actions+=("add_ipv6_domain")
-        echoContent yellow "${#actions[@]}.添加域名到IPv6出站"
+        echoContent yellow "${#actions[@]}.添加域名到 IPv6 出站"
     else
         echoContent yellow "提示: 当前没有 IPv6 默认路由，不显示 IPv6 新增/优先动作。"
     fi
 
     actions+=("remove_ipv6_domain")
-    echoContent yellow "${#actions[@]}.卸载IPv6域名出站"
+    echoContent yellow "${#actions[@]}.卸载 IPv6 域名出站"
     actions+=("show_ipv6_domain")
-    echoContent yellow "${#actions[@]}.查看IPv6出站域名"
+    echoContent yellow "${#actions[@]}.查看 IPv6 出站域名"
 
     if [[ "${routeIPv4}" == "true" && "${routeIPv6}" == "true" ]]; then
         actions+=("prefer_ipv6")
-        echoContent yellow "${#actions[@]}.全局IPv6优先"
+        echoContent yellow "${#actions[@]}.全局 IPv6 优先"
         actions+=("prefer_ipv4")
-        echoContent yellow "${#actions[@]}.全局IPv4优先"
+        echoContent yellow "${#actions[@]}.全局 IPv4 优先"
     elif [[ "${routeIPv6}" == "true" ]]; then
         echoContent yellow "提示: 当前为 IPv6-only，默认基线已使用 IPv6 出站。"
     fi
@@ -221,8 +221,8 @@ ipv6Routing() {
     action="${actions[$((selected - 1))]}"
 
     if [[ "${action}" == "add_ipv6_domain" ]]; then
-        read -r -p "请按照上面示例录入域名:" domainList
-        echoContent yellow "将把以下 geosite 域名路由到 IPv6-out: ${domainList}"
+        read -r -p "请输入要走 IPv6 出站的 geosite 域名，例如 geosite:netflix:" domainList
+        echoContent yellow "将把以下 geosite 域名路由到 IPv6 出站: ${domainList}"
         xray_agent_confirm_action "确认继续？" "y" || return 0
         if [[ -f "${configPath}09_routing.json" ]]; then
             unInstallRouting IPv6-out outboundTag
@@ -242,7 +242,7 @@ ipv6Routing() {
 
     if [[ "${action}" == "add_ipv6_domain" || "${action}" == "prefer_ipv6" || "${action}" == "prefer_ipv4" ]]; then
         if [[ "${action}" == "prefer_ipv6" || "${action}" == "prefer_ipv4" ]]; then
-            echoContent yellow "将重写基础 outbounds 为 $([[ "${action}" == "prefer_ipv6" ]] && printf 'IPv6优先' || printf 'IPv4优先')。"
+            echoContent yellow "将重写基础出站策略为 $([[ "${action}" == "prefer_ipv6" ]] && printf 'IPv6 优先' || printf 'IPv4 优先')。"
             xray_agent_confirm_action "确认继续？" "y" || return 0
         fi
         unInstallOutbounds IPv4-out
@@ -258,7 +258,7 @@ ipv6Routing() {
 }
 
 warpRouting() {
-    xray_agent_tool_status_header "WARP分流"
+    xray_agent_tool_status_header "WARP 分流"
     xray_agent_network_summary
     xray_agent_routing_status_summary
     warpinterface="$(xray_agent_detect_usable_warp_interface || true)"
@@ -271,26 +271,26 @@ warpRouting() {
             ;;
     esac
     if [[ "${warpHasIPv4}" == "true" && "${warpHasIPv6}" == "true" ]]; then
-        echoContent yellow "WARP出站能力: IPv4/IPv6 双栈，domainStrategy=UseIP"
+        echoContent yellow "WARP 出站能力: IPv4/IPv6 双栈，domainStrategy=UseIP"
     elif [[ "${warpHasIPv4}" == "true" ]]; then
-        echoContent yellow "WARP出站能力: IPv4-only，domainStrategy=UseIPv4"
+        echoContent yellow "WARP 出站能力: IPv4-only，domainStrategy=UseIPv4"
     elif [[ "${warpHasIPv6}" == "true" ]]; then
-        echoContent yellow "WARP出站能力: IPv6-only，domainStrategy=UseIPv6"
+        echoContent yellow "WARP 出站能力: IPv6-only，domainStrategy=UseIPv6"
     else
         xray_agent_error " ---> WARP接口没有可用 IPv4/IPv6 地址"
     fi
     echoContent yellow "1.添加域名"
-    echoContent yellow "2.卸载WARP分流"
+    echoContent yellow "2.卸载 WARP 分流"
     echoContent yellow "3.查看已分流域名"
-    echoContent yellow "4.分流CN的域名和IP"
-    echoContent yellow "5.卸载分流CN域名和IP"
+    echoContent yellow "4.分流中国大陆域名和 IP 到 WARP"
+    echoContent yellow "5.卸载中国大陆 WARP 分流"
     read -r -p "请选择:" warpStatus
     if [[ "${warpStatus}" == "3" ]]; then
         jq -r -c '.routing.rules[]|select (.outboundTag=="warp-out")|.domain' "${configPath}09_routing.json" | jq -r
         return 0
     elif [[ "${warpStatus}" != "2" && "${warpStatus}" != "5" ]]; then
         if [[ "${warpStatus}" == "1" ]]; then
-            echoContent yellow "将新增 WARP outbound，接口=${warpinterface}，domainStrategy=$(xray_agent_warp_domain_strategy)。"
+            echoContent yellow "将新增 WARP 出站，接口=${warpinterface}，domainStrategy=$(xray_agent_warp_domain_strategy)。"
             xray_agent_confirm_action "确认继续？" "y" || return 0
             unInstallOutbounds warp-out
             XRAY_WARP_INTERFACE="${warpinterface}"
@@ -305,7 +305,7 @@ warpRouting() {
             xray_agent_append_outbound_by_tag "${configPath}10_ipv4_outbounds.json" "cn-out"
         fi
         if [[ "${warpStatus}" == "1" ]]; then
-            read -r -p "请按照上面示例录入域名:" domainList
+            read -r -p "请输入要走 WARP 的 geosite 域名，例如 geosite:openai:" domainList
             if [[ -f "${configPath}09_routing.json" ]]; then
                 unInstallRouting warp-out outboundTag
                 export XRAY_ROUTING_DOMAINS_JSON
@@ -322,12 +322,12 @@ warpRouting() {
             unInstallOutbounds cn-blackhole
         fi
     elif [[ "${warpStatus}" == "2" ]]; then
-        echoContent yellow "将卸载 WARP 域名分流规则和 outbound。"
+        echoContent yellow "将卸载 WARP 域名分流规则和出站配置。"
         xray_agent_confirm_action "确认继续？" "n" || return 0
         unInstallRouting warp-out outboundTag
         unInstallOutbounds warp-out
     elif [[ "${warpStatus}" == "5" ]]; then
-        echoContent yellow "将卸载 CN WARP 分流规则和 outbound。"
+        echoContent yellow "将卸载中国大陆 WARP 分流规则和出站配置。"
         xray_agent_confirm_action "确认继续？" "n" || return 0
         unInstallRouting cn-out outboundTag
         unInstallOutbounds cn-out
@@ -336,19 +336,19 @@ warpRouting() {
 }
 
 blacklist() {
-    xray_agent_tool_status_header "黑名单与CN阻断"
+    xray_agent_tool_status_header "黑名单与中国大陆 IP 阻断"
     xray_agent_routing_status_summary
     echoContent yellow "1.添加域名"
     echoContent yellow "2.删除黑名单"
     echoContent yellow "3.查看已屏蔽域名"
-    echoContent yellow "4.启用阻止访问中国大陆IP"
-    echoContent yellow "5.卸载阻止访问中国大陆IP"
+    echoContent yellow "4.启用阻止访问中国大陆 IP"
+    echoContent yellow "5.卸载阻止访问中国大陆 IP"
     read -r -p "请选择:" blacklistStatus
     if [[ "${blacklistStatus}" == "3" ]]; then
         jq -r -c '.routing.rules[]|select (.outboundTag=="blackhole-out")|.domain' "${configPath}09_routing.json" | jq -r
         return 0
     elif [[ "${blacklistStatus}" == "1" ]]; then
-        read -r -p "请按照上面示例录入域名:" domainList
+        read -r -p "请输入要加入黑名单的 geosite 域名，例如 geosite:category-ads-all:" domainList
         echoContent yellow "将把以下 geosite 域名加入 blackhole-out: ${domainList}"
         xray_agent_confirm_action "确认继续？" "y" || return 0
         if [[ -f "${configPath}09_routing.json" ]]; then

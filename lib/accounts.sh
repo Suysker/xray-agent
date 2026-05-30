@@ -168,7 +168,7 @@ xray_agent_account_count_for_file() {
 }
 
 xray_agent_account_protocol_matrix() {
-    echoContent skyBlue "-------------------------账号矩阵-----------------------------"
+    echoContent skyBlue "-------------------------账号数量-----------------------------"
     echoContent yellow "VLESS TCP TLS: $(xray_agent_account_count_for_file "${configPath}${frontingType:-02_VLESS_TCP_inbounds}.json")"
     echoContent yellow "VLESS WS TLS: $(xray_agent_account_count_for_file "${configPath}03_VLESS_WS_inbounds.json")"
     echoContent yellow "VMess WS TLS: $(xray_agent_account_count_for_file "${configPath}05_VMess_WS_inbounds.json")"
@@ -502,14 +502,14 @@ defaultBase64Code() {
         vlesstcp)
             echoContent yellow " ---> 通用格式 (VLESS+TCP+TLS)"
             xray_agent_print_vless_profile_share "vless_tcp_tls" "${id}"
-            echoContent yellow " ---> 格式化明文 (VLESS+TCP+TLS)"
+            echoContent yellow " ---> 手动填写信息 (VLESS+TCP+TLS)"
             echoContent green "协议类型: VLESS，地址: ${domain}，端口: $(xray_agent_share_port_for_profile vless_tcp_tls)，用户ID: ${id}，安全: tls，传输方式: tcp，flow: xtls-rprx-vision，账户名: ${id}"
             ;;
         vlessws)
             echoContent yellow " ---> 通用格式 (VLESS+WS+TLS)"
             xray_agent_print_vless_profile_share "vless_ws_tls" "${id}"
-            echoContent yellow " ---> 格式化明文 (VLESS+WS+TLS)"
-            echoContent green "协议类型: VLESS，地址: ${domain}，伪装域名/SNI: ${domain}，端口: $(xray_agent_share_port_for_profile vless_ws_tls)，用户ID: ${id}，安全: tls，传输方式: ws，路径: /${path}ws，encryption: $(xray_agent_share_encryption_for_profile vless_ws_tls)，账户名: ${id}"
+            echoContent yellow " ---> 手动填写信息 (VLESS+WS+TLS)"
+            echoContent green "协议类型: VLESS，地址: ${domain}，Host/SNI: ${domain}，端口: $(xray_agent_share_port_for_profile vless_ws_tls)，用户ID: ${id}，安全: tls，传输方式: ws，路径: /${path}ws，encryption: $(xray_agent_share_encryption_for_profile vless_ws_tls)，账户名: ${id}"
             ;;
         vmessws)
             xray_agent_print_vmess_share "${id}"
@@ -519,15 +519,15 @@ defaultBase64Code() {
             if xray_agent_print_vless_profile_share "vless_reality_tcp" "${id}"; then
                 local reality_address
                 reality_address="$(xray_agent_reality_share_address_for_output)" || return 1
-                echoContent yellow " ---> 格式化明文 (VLESS+TCP+Reality)"
-                echoContent green "协议类型: VLESS Reality，地址: ${reality_address}，publicKey: ${RealityPublicKey}，pqv: ${RealityMldsa65Verify:-无}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_reality_tcp)，用户ID: ${id}，传输方式: tcp，账户名: ${id}"
+                echoContent yellow " ---> 手动填写信息 (VLESS+TCP+Reality)"
+                echoContent green "协议类型: VLESS Reality，地址: ${reality_address}，publicKey: ${RealityPublicKey}，pqv: ${RealityMldsa65Verify:-无}，serverNames/SNI: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_reality_tcp)，用户ID: ${id}，传输方式: tcp，账户名: ${id}"
             fi
             ;;
         vlessxhttp)
             if [[ "${coreInstallType}" == "1" || "${coreInstallType}" == "3" ]]; then
                 echoContent yellow " ---> 通用格式 (VLESS+XHTTP+TLS)"
                 xray_agent_print_vless_profile_share "vless_xhttp" "${id}" "tls"
-                echoContent yellow " ---> 格式化明文 (VLESS+XHTTP+TLS)"
+                echoContent yellow " ---> 手动填写信息 (VLESS+XHTTP+TLS)"
                 echoContent green "协议类型: VLESS，地址: ${domain}，端口: $(xray_agent_share_port_for_profile vless_xhttp tls)，用户ID: ${id}，安全: tls，传输方式: XHTTP，encryption: $(xray_agent_share_encryption_for_profile vless_xhttp)，账户名: ${id}"
             fi
             if [[ "${coreInstallType}" == "2" || "${coreInstallType}" == "3" ]]; then
@@ -535,15 +535,15 @@ defaultBase64Code() {
                 if xray_agent_print_vless_profile_share "vless_xhttp" "${id}" "reality"; then
                     local reality_address
                     reality_address="$(xray_agent_reality_share_address_for_output)" || return 1
-                    echoContent yellow " ---> 格式化明文 (VLESS+XHTTP+Reality)"
-                    echoContent green "协议类型: VLESS XHTTP，地址: ${reality_address}，publicKey: ${RealityPublicKey}，serverNames: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_xhttp reality)，用户ID: ${id}，传输方式: XHTTP，client-fingerprint: chrome，encryption: $(xray_agent_share_encryption_for_profile vless_xhttp)，账户名: ${id}"
+                    echoContent yellow " ---> 手动填写信息 (VLESS+XHTTP+Reality)"
+                    echoContent green "协议类型: VLESS XHTTP，地址: ${reality_address}，publicKey: ${RealityPublicKey}，serverNames/SNI: ${RealityServerNames}，端口: $(xray_agent_share_port_for_profile vless_xhttp reality)，用户ID: ${id}，传输方式: XHTTP，client-fingerprint: chrome，encryption: $(xray_agent_share_encryption_for_profile vless_xhttp)，账户名: ${id}"
                 fi
             fi
             ;;
         hysteria2)
             echoContent yellow " ---> 通用格式 (Hysteria2)"
             echoContent green "$(xray_agent_build_hysteria2_uri "${id}")"
-            echoContent yellow " ---> 格式化明文 (Hysteria2)"
+            echoContent yellow " ---> 手动填写信息 (Hysteria2)"
             echoContent green "协议类型: Hysteria2，地址: ${domain}，端口: $(xray_agent_hysteria2_display_ports)，SNI: ${domain}，auth: ${id}，账户名: ${id}"
             ;;
     esac
@@ -568,7 +568,7 @@ xray_agent_print_vmess_share() {
     local encoded_json rendered_json
     rendered_json="$(xray_agent_render_share_template_text "${XRAY_AGENT_PROTOCOL_SHARE_TEMPLATE}")"
     encoded_json="$(printf '%s' "${rendered_json}" | base64 -w 0)"
-    echoContent yellow " ---> 通用json (VMess+WS+TLS)"
+    echoContent yellow " ---> VMess JSON (VMess+WS+TLS)"
     echoContent green "    ${rendered_json}"
     echoContent green "vmess://${encoded_json}"
     echoContent yellow " ---> URI格式 (VMess+WS+TLS)"

@@ -417,7 +417,7 @@ checkPort() {
         xray_agent_blank
         if [[ "${port}" == "443" ]]; then
             echoContent red " ---> TCP/443 当前由 ${blocked_owner} 占用，不会静默覆盖现有前端/网站。"
-            echoContent yellow " ---> 请先迁移现有网站到本机 upstream 后注册到网站/反代管理，或为 Xray 选择非 443 后端端口。"
+            echoContent yellow " ---> 请先迁移现有网站到本机后端地址后注册到网站/反代管理，或为 Xray 选择非 443 后端端口。"
             if declare -F xray_agent_nginx_print_proxy_protocol_preflight >/dev/null 2>&1; then
                 xray_agent_nginx_print_proxy_protocol_preflight
             fi

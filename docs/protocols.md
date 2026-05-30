@@ -21,14 +21,14 @@ Reality 套餐默认包含：
 - `VLESS-TCP Reality Vision`
 - `VLESS-XHTTP Reality`
 
-Reality TCP 和 Reality XHTTP 都不依赖 Nginx、证书或镜像站。XHTTP 由 Reality inbound fallback 到本机 XHTTP inbound。Reality 主配置完成并 reload 成功后，可以选择继续启用 Hysteria2。Hysteria2 仍需要用户自己控制的域名和 TLS 证书，不使用 Reality 目标域名签发证书。
+Reality TCP 和 Reality XHTTP 都不依赖 Nginx、证书或外部回落站点。XHTTP 会通过 Reality 的回落规则转到本机 XHTTP 入口。Reality 主配置完成并重载成功后，可以选择继续启用 Hysteria2。Hysteria2 仍需要用户自己控制的域名和 TLS 证书，不使用 Reality 目标站点签发证书。
 
-Reality 分享链接会包含 `pbk`、`sid`、`spx`。当当前 Xray-core 支持并且目标站点预检合适时，也会包含 `pqv`。
+Reality 分享链接会包含 `pbk`、`sid`、`spx`。当当前 Xray-core 支持，并且目标站点通过检查时，也会包含 `pqv`。
 
-Reality target 预检分为基础 Reality 与 PQ 两条路径，并且优先使用 Xray 官方能力。基础 Reality 先用 Xray 自带 `tls ping` 检查 TCP 可连接、TLS 1.3 可握手和目标证书 SAN；PQ 完全以 `tls ping` 的 `TLS Post-Quantum key exchange` 字段为准。`openssl s_client -trace -tls1_3` 只补 Xray 当前未暴露的 certificate flight 缺口，用来过滤会触发 HelloRetryRequest 或看不到证书 record 的目标；不在 `lib/tls.sh` 中生成临时 Reality 客户端或服务端配置。Xray 当前 `tls ping` 不输出真实 Reality 客户端握手里的 `uConn.Verified`，所以安装主流程只能做 certificate flight 预检；需要 100% 读取 `uConn.Verified` 时，应放进专门 analyzer 或 Xray-core 上游命令，而不是混入证书管理逻辑。
+Reality 目标站点检查分为两层。第一层确认基础连接条件，例如 TCP 可连接、TLS 1.3 可握手、证书域名是否匹配。第二层只检查后量子增强条件，也就是目标站点是否支持 X25519MLKEM768，以及证书链长度是否足够。脚本会优先使用 Xray-core 自带的 `tls ping` 结果；只在 Xray 当前没有暴露的信息上，用 `openssl s_client` 做轻量补充检查。脚本不会为了检查目标站点而生成临时 Reality 客户端或服务端配置。
 
-Reality 的抗量子增强依赖目标站点实际 TLS 行为。脚本会检查证书链长度和 X25519MLKEM768 支持情况；证书链不足 3500 时不会启用 `pqv`。
-`pqv` 是服务端 `mldsa65Seed` 派生出的客户端验证值，不由 Reality target 域名直接派生。更换 target 时，如果新目标证书链仍适合隐藏 ML-DSA-65，脚本会保留既有 `mldsa65Seed/pqv`；如果新目标不适合，则清除 `pqv`。
+Reality 的后量子增强依赖目标站点实际 TLS 行为。脚本会检查证书链长度和 X25519MLKEM768 支持情况；证书链不足 3500 时不会启用 `pqv`。这只影响后量子增强，不代表基础 Reality 一定不可用。
+`pqv` 是服务端 `mldsa65Seed` 派生出的客户端验证值，不由 Reality 目标站点域名直接派生。更换目标站点时，如果新目标仍满足条件，脚本会保留既有 `mldsa65Seed/pqv`；如果新目标不满足条件，则清除 `pqv`，避免分享链接带着不适合当前目标站点的旧参数。
 
 ## Hysteria2
 
@@ -65,10 +65,10 @@ XHTTP 是适合配合 CDN 的 HTTP 类传输。当前 Xray-core 支持 VLESS Enc
 脚本会检测当前 Xray-core 是否支持相关命令和字段：
 
 - VLESS Encryption：默认用于无回落的 VLESS WS/XHTTP；XHTTP 会同步 Vision flow。
-- REALITY ML-DSA-65：目标站点证书链长度达到 3500 以上时才启用，分享链接输出 `pqv`。
+- REALITY ML-DSA-65：目标站点通过后量子增强检查时才启用，分享链接输出 `pqv`。
 - TLS ECH：当前内核和证书条件支持时启用，分享链接输出 `ech`；如果配置测试不通过，会清空 ECH 并回退。
-- Hysteria2 QUIC 参数：当前内核支持时启用，不支持时跳过。脚本默认只使用 `finalmask.quicParams` 承载 Brutal 和端口跳跃，不默认生成自定义握手、噪声或分片配置。
+- Hysteria2 QUIC 参数：当前内核支持时启用，不支持时跳过。脚本默认只使用 Xray-core 正式版支持的参数承载 Brutal 和端口跳跃，不默认生成自定义握手、噪声或分片配置。
 
 部分入口需要兼容浏览器回落或协议分流，脚本会自动选择是否启用 VLESS Encryption，避免生成无法启动的配置。
 
-预览版 Xray-core 中的未发布能力不会作为默认生产配置。需要测试预览版时，请从 core 管理菜单显式选择预览版升级。
+预览版 Xray-core 中的未发布能力不会作为默认生产配置。需要测试预览版时，请从 Xray-core 管理菜单显式选择预览版升级。

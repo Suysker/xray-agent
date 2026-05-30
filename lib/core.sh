@@ -353,13 +353,13 @@ xrayVersionManageMenu() {
     fi
     xray_agent_blank
     echoContent red "=============================================================="
-    echoContent yellow "1.升级Xray-core"
-    echoContent yellow "2.升级Xray-core 预览版"
-    echoContent yellow "3.回退Xray-core"
-    echoContent yellow "4.关闭Xray-core"
-    echoContent yellow "5.打开Xray-core"
-    echoContent yellow "6.重启Xray-core"
-    echoContent yellow "7.更新geosite、geoip"
+    echoContent yellow "1.升级 Xray-core 正式版"
+    echoContent yellow "2.升级 Xray-core 预览版"
+    echoContent yellow "3.回退 Xray-core"
+    echoContent yellow "4.关闭 Xray-core"
+    echoContent yellow "5.打开 Xray-core"
+    echoContent yellow "6.重启 Xray-core"
+    echoContent yellow "7.更新 geosite、geoip"
     echoContent red "=============================================================="
     read -r -p "请选择:" selectXrayType
     case "${selectXrayType}" in
@@ -374,9 +374,9 @@ xrayVersionManageMenu() {
         3)
             local rollback_versions=()
             local version_index
-            echoContent yellow "1.只可以回退最近的五个版本"
-            echoContent yellow "2.不保证回退后一定可以正常使用"
-            echoContent yellow "3.如果回退的版本不支持当前的config，则会无法连接，谨慎操作"
+            echoContent yellow "1.仅显示最近 5 个可回退版本"
+            echoContent yellow "2.回退后可能与当前配置不兼容"
+            echoContent yellow "3.回退前建议先通过菜单 16 创建备份"
             echoContent skyBlue "------------------------Version-------------------------------"
             mapfile -t rollback_versions < <(xray_agent_github_release_tags "XTLS/Xray-core" "false" 5)
             if [[ "${#rollback_versions[@]}" -eq 0 ]]; then

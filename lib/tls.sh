@@ -869,14 +869,14 @@ xray_agent_reality_tls_ping_summary() {
     cert_length="$(xray_agent_reality_tls_ping_cert_length_from_output "${tls_ping_output}")"
     san_count="$(xray_agent_csv_to_lines "${XRAY_AGENT_REALITY_TLS_PING_ALLOWED_DOMAINS:-}" | awk 'END {print NR + 0}')"
 
-    echoContent yellow " ---> TLS ping摘要:"
-    echoContent yellow "     目标: ${target:-未知}"
+    echoContent yellow " ---> Xray 官方 TLS 检查摘要:"
+    echoContent yellow "     目标站点: ${target:-未知}"
     echoContent yellow "     解析IP: ${resolved_ip:-未识别}"
     echoContent yellow "     握手: ${handshake_status}"
     echoContent yellow "     TLS版本: ${tls_version:-未识别}"
-    echoContent yellow "     PQ状态: ${pq_status:-未识别}"
+    echoContent yellow "     后量子状态: ${pq_status:-未识别}"
     echoContent yellow "     证书链长度: ${cert_length:-未识别}"
-    echoContent yellow "     证书SAN数量: ${san_count}"
+    echoContent yellow "     证书域名数量: ${san_count}"
 }
 
 xray_agent_print_reality_allowed_domains() {
@@ -884,7 +884,7 @@ xray_agent_print_reality_allowed_domains() {
     local allowed_count
     [[ -n "${allowed_domains}" ]] || return 0
     allowed_count="$(xray_agent_csv_to_lines "${allowed_domains}" | awk 'END {print NR + 0}')"
-    echoContent yellow " ---> TLS ping识别到目标证书SAN: ${allowed_count} 个"
+    echoContent yellow " ---> 目标证书允许的域名: ${allowed_count} 个"
     while IFS= read -r allowed_domain; do
         [[ -n "${allowed_domain}" ]] && echoContent yellow "     - ${allowed_domain}"
     done < <(xray_agent_csv_to_lines "${allowed_domains}")
@@ -929,22 +929,22 @@ xray_agent_reality_certificate_flight_probe() {
         XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_BYTES="${first_length}"
         case "${test_status}" in
             ok)
-                XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检正常，未触发 HelloRetryRequest，已看到证书 record"
+                XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality 目标站点握手检查通过"
                 return 0
                 ;;
             hrr | retry | short | block)
-                XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检失败: 目标触发 TLS 1.3 HelloRetryRequest，首个服务端 record 长度=${first_length}，不适合 Reality 替证"
+                XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality 目标站点不适合使用：TLS 握手触发 HelloRetryRequest，首个服务端握手包长度=${first_length}。请更换目标站点。"
                 return 1
                 ;;
             *)
-                XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检未完成，测试状态=${test_status}"
+                XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality 目标站点握手检查未完成，测试状态=${test_status}"
                 return 2
                 ;;
         esac
     fi
 
     if ! command -v openssl >/dev/null 2>&1; then
-        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="未检测到 openssl，跳过 Reality certificate flight 预检"
+        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="未检测到 openssl，无法完成 Reality 目标站点握手补充检查"
         return 2
     fi
 
@@ -1036,23 +1036,23 @@ xray_agent_reality_certificate_flight_probe() {
     XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_BYTES="${first_length}"
 
     if [[ "${protocol_alert}" == "1" ]]; then
-        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检失败: 目标拒绝 TLS 1.3，不适合 Reality target"
+        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality 目标站点不适合使用：目标站点拒绝 TLS 1.3。请更换目标站点。"
         return 1
     fi
     if [[ "${received_records:-0}" -eq 0 ]]; then
-        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检未完成，openssl 状态=${probe_status}"
+        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality 目标站点握手检查未完成，openssl 状态=${probe_status}"
         return 2
     fi
     if [[ "${hrr}" == "1" || "${second_client_hello}" == "1" ]]; then
-        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检失败: 目标触发 TLS 1.3 HelloRetryRequest，首个服务端 record=${first_type:-未知}/${first_length} bytes，不适合 Reality 替证"
+        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality 目标站点不适合使用：TLS 握手触发 HelloRetryRequest，首个服务端握手包=${first_type:-未知}/${first_length} bytes。请更换目标站点。"
         return 1
     fi
     if [[ "${certificate_seen}" != "1" ]]; then
-        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检未看到证书 record，首个服务端 record=${first_type:-未知}/${first_length} bytes"
+        XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality 目标站点握手检查未能确认收到证书，首个服务端握手包=${first_type:-未知}/${first_length} bytes"
         return 2
     fi
 
-    XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality certificate flight 预检正常，未触发 HelloRetryRequest，已看到证书 record"
+    XRAY_AGENT_REALITY_CERTIFICATE_FLIGHT_REASON="Reality 目标站点握手检查通过"
     return 0
 }
 
@@ -1060,16 +1060,16 @@ xray_agent_validate_reuse_reality_target() {
     local target="$1"
     local host="${target%%:*}"
     local target_port="${target##*:}"
-    local tls_ping_output tls_version pq_status cert_length certificate_flight_status status="ok" reason="Xray tls ping 官方预检通过，certificate flight 预检通过"
+    local tls_ping_output tls_version pq_status cert_length certificate_flight_status status="ok" reason="Reality 目标站点检查通过"
     XRAY_AGENT_REALITY_TLS_PING_OUTPUT=
     XRAY_AGENT_REALITY_TLS_PING_ALLOWED_DOMAINS=
 
     if [[ -z "${target}" || "${target}" != *:* ]]; then
-        xray_agent_reuse_result block "Reality target 必须是 host:port，例如 addons.mozilla.org:443"
+        xray_agent_reuse_result block "Reality 目标站点必须写成 域名:端口，例如 addons.mozilla.org:443"
         return 1
     fi
     if ! xray_agent_validate_domain "${host}" || ! xray_agent_validate_port "${target_port}"; then
-        xray_agent_reuse_result block "Reality target host 或 port 不合法"
+        xray_agent_reuse_result block "Reality 目标站点格式不正确，请检查域名和端口"
         return 1
     fi
 
@@ -1077,23 +1077,23 @@ xray_agent_validate_reuse_reality_target() {
     # certificate SAN, certificate chain, and official PQ detection.
     if ! xray_agent_reality_tls_ping_run "${target}"; then
         if [[ -z "${XRAY_AGENT_REALITY_TLS_PING_OUTPUT}" ]]; then
-            xray_agent_reuse_result warn "无法执行 xray tls ping，需确认 Xray 可执行文件是否存在"
+            xray_agent_reuse_result warn "无法运行 Xray 官方 TLS 检查，请确认 Xray-core 文件存在"
             return 0
         fi
     fi
 
     tls_ping_output="${XRAY_AGENT_REALITY_TLS_PING_OUTPUT}"
     if [[ -z "${tls_ping_output}" ]]; then
-        xray_agent_reuse_result block "TLS ping 无返回，无法确认目标可用"
+        xray_agent_reuse_result block "Xray 官方 TLS 检查没有返回结果，无法确认目标站点可用"
         return 1
     fi
     if ! grep -qi "Handshake succeeded" <<<"${tls_ping_output}"; then
-        xray_agent_reuse_result block "TLS ping 未握手成功"
+        xray_agent_reuse_result block "Xray 官方 TLS 检查未握手成功"
         return 1
     fi
     tls_version="$(xray_agent_reality_tls_ping_tls_version_from_output "${tls_ping_output}")"
     if [[ "${tls_version}" != "TLS 1.3" ]]; then
-        xray_agent_reuse_result block "Reality target 必须支持 TLS 1.3，当前 TLS ping 识别为 ${tls_version:-未知}"
+        xray_agent_reuse_result block "Reality 目标站点必须支持 TLS 1.3，当前识别为 ${tls_version:-未知}"
         return 1
     fi
 
@@ -1112,11 +1112,11 @@ xray_agent_validate_reuse_reality_target() {
     pq_status="$(xray_agent_reality_tls_ping_pq_from_output "${tls_ping_output}")"
     if [[ "${pq_status}" =~ ^false ]]; then
         status="warn"
-        reason="Xray tls ping 官方检测: 目标未检测到 Post-Quantum key exchange"
+        reason="目标站点未检测到后量子密钥交换；基础 Reality 可用性不由此决定，但不会启用完整 PQ 增强"
     fi
     if [[ -n "${cert_length}" && "${cert_length}" =~ ^[0-9]+$ && "${cert_length}" -lt 3500 ]]; then
         status="warn"
-        reason="Xray tls ping 官方检测: 证书链长度 ${cert_length} 低于 3500，Reality PQ 隐藏条件不理想"
+        reason="目标站点证书链较短（${cert_length}），基础 Reality 可用性不由此决定，但不会启用 pqv"
     fi
 
     xray_agent_reuse_result "${status}" "${reason}"
@@ -1143,18 +1143,18 @@ xray_agent_validate_reuse_server_names() {
 
     normalized_csv="$(printf '%s' "${server_names}" | tr -d '"' | tr -d '[:space:]')"
     if [[ -z "${normalized_csv}" ]]; then
-        xray_agent_reuse_result block "serverNames 为空"
+        xray_agent_reuse_result block "serverNames/SNI 不能为空"
         return 1
     fi
     while IFS= read -r server_name; do
         if ! xray_agent_validate_domain "${server_name}"; then
-            xray_agent_reuse_result block "serverName 不合法: ${server_name}"
+            xray_agent_reuse_result block "serverName/SNI 不合法: ${server_name}"
             return 1
         fi
     done < <(xray_agent_csv_to_lines "${normalized_csv}")
 
     if [[ -z "${allowed_domains_csv}" ]]; then
-        xray_agent_reuse_result warn "未能从 TLS ping 识别目标证书 SAN，无法自动核对 serverNames"
+        xray_agent_reuse_result warn "未能识别目标证书允许的域名，无法自动核对 serverNames/SNI"
         return 0
     fi
 
@@ -1167,12 +1167,12 @@ xray_agent_validate_reuse_server_names() {
             fi
         done < <(xray_agent_csv_to_lines "${allowed_domains_csv}")
         if [[ "${matched}" != "true" ]]; then
-            xray_agent_reuse_result block "serverName ${server_name} 不在目标证书 SAN 内: ${allowed_domains_csv}"
+            xray_agent_reuse_result block "serverName/SNI ${server_name} 不在目标证书允许的域名内: ${allowed_domains_csv}"
             return 1
         fi
     done < <(xray_agent_csv_to_lines "${normalized_csv}")
 
-    xray_agent_reuse_result ok "serverNames 与目标证书 SAN 匹配"
+    xray_agent_reuse_result ok "serverNames/SNI 与目标证书域名匹配"
 }
 
 xray_agent_reality_print_tls_ping() {
@@ -1181,14 +1181,14 @@ xray_agent_reality_print_tls_ping() {
     local target_port="${target##*:}"
     local tls_ping_result
 
-    echoContent yellow " ---> Reality target: ${target}"
+    echoContent yellow " ---> Reality 目标站点: ${target}"
     if ! xray_agent_validate_domain "${host}" || ! xray_agent_validate_port "${target_port}"; then
-        echoContent red " ---> Reality target 格式异常，示例: addons.mozilla.org:443"
+        echoContent red " ---> Reality 目标站点格式异常，示例: addons.mozilla.org:443"
         return 1
     fi
 
     if [[ -z "${ctlPath:-}" || ! -x "${ctlPath}" ]]; then
-        echoContent yellow " ---> Xray 可执行文件缺失，跳过 Reality target TLS ping"
+        echoContent yellow " ---> Xray-core 文件缺失，跳过 Reality 目标站点 TLS 检查"
         return 0
     fi
 
@@ -1199,7 +1199,7 @@ xray_agent_reality_print_tls_ping() {
 
     if [[ -n "${tls_ping_result}" ]]; then
         if [[ "${XRAY_AGENT_VERBOSE_TLS_PING:-false}" == "true" ]]; then
-            echoContent yellow " ---> TLS ping结果:"
+            echoContent yellow " ---> Xray 官方 TLS 检查结果:"
             while IFS= read -r line; do
                 [[ -n "${line}" ]] && echoContent yellow "     ${line}"
             done <<<"${tls_ping_result}"
@@ -1207,7 +1207,7 @@ xray_agent_reality_print_tls_ping() {
             xray_agent_reality_tls_ping_summary "${target}" "${tls_ping_result}"
         fi
     else
-        echoContent yellow " ---> TLS ping未返回结果，请确认目标站可从本机访问"
+        echoContent yellow " ---> Xray 官方 TLS 检查未返回结果，请确认目标站点可从本机访问"
     fi
 }
 
@@ -1229,24 +1229,24 @@ initTLSRealityConfig() {
             reuse_status="$(xray_agent_reuse_status)"
             reuse_reason="$(xray_agent_reuse_reason)"
             xray_agent_reality_print_tls_ping "${previous_reality_target}" || true
-            xray_agent_print_reuse_check_result "Reality target" "${previous_reality_target}" "${reuse_status}" "${reuse_reason}"
-            if xray_agent_reuse_can_prompt "${reuse_status}" && xray_agent_prompt_yes_no "是否继续使用上次Reality target？" "y"; then
+            xray_agent_print_reuse_check_result "Reality 目标站点" "${previous_reality_target}" "${reuse_status}" "${reuse_reason}"
+            if xray_agent_reuse_can_prompt "${reuse_status}" && xray_agent_prompt_yes_no "是否继续使用上次 Reality 目标站点？" "y"; then
                 RealityDestDomain="${previous_reality_target}"
                 historyDestStatus="y"
                 xray_agent_blank
-                echoContent green " ---> 使用上次Reality target: ${RealityDestDomain}"
+                echoContent green " ---> 使用上次 Reality 目标站点: ${RealityDestDomain}"
             else
                 previous_reality_target=
                 xray_agent_blank
-                echoContent yellow " ---> 上次Reality target不可用或未选择复用，下一步重新输入"
+                echoContent yellow " ---> 上次 Reality 目标站点未通过检查，或你选择重新填写"
                 continue
             fi
         else
             xray_agent_blank
             if [[ -n "${default_reality_target:-}" ]]; then
-                echoContent skyBlue " ---> 检测到已注册真实网站，Reality target 默认使用 ${default_reality_target}"
+                echoContent skyBlue " ---> 检测到已注册真实网站，Reality 目标站点默认使用 ${default_reality_target}"
             else
-                echoContent skyBlue " ---> 生成配置回落的域名 例如: addons.mozilla.org:443"
+                echoContent skyBlue " ---> 请输入 Reality 目标站点，例如: addons.mozilla.org:443"
             fi
             xray_agent_blank
             read -r -p '请输入:' inputRealityDestDomain
@@ -1259,8 +1259,8 @@ initTLSRealityConfig() {
             xray_agent_blank
             echoContent red " ---> 域名不合规范，请重新输入 (示例: addons.mozilla.org:443)"
         elif ! xray_agent_validate_reuse_reality_target "${RealityDestDomain}"; then
-            xray_agent_print_reuse_check_result "Reality target" "${RealityDestDomain}" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
-            echoContent yellow " ---> 下一步: 重新选择 Reality target"
+            xray_agent_print_reuse_check_result "Reality 目标站点" "${RealityDestDomain}" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
+            echoContent yellow " ---> 下一步: 重新选择 Reality 目标站点"
             RealityDestDomain=
         else
             break
@@ -1268,7 +1268,7 @@ initTLSRealityConfig() {
     done
 
     xray_agent_blank
-    echoContent skyBlue " >配置客户端可用的serverNames"
+    echoContent skyBlue " >配置客户端可用的 serverNames/SNI"
     xray_agent_blank
     allowed_domains="${XRAY_AGENT_REALITY_TLS_PING_ALLOWED_DOMAINS:-}"
     if [[ -n "${allowed_domains}" ]]; then
@@ -1279,29 +1279,29 @@ initTLSRealityConfig() {
             xray_agent_validate_reuse_server_names "${previous_reality_server_names}" "${allowed_domains}" || true
             reuse_status="$(xray_agent_reuse_status)"
             reuse_reason="$(xray_agent_reuse_reason)"
-            xray_agent_print_reuse_check_result "serverNames" "${previous_reality_server_names}" "${reuse_status}" "${reuse_reason}"
-            if xray_agent_reuse_can_prompt "${reuse_status}" && xray_agent_prompt_yes_no "是否继续使用上次serverNames？" "y"; then
+            xray_agent_print_reuse_check_result "serverNames/SNI" "${previous_reality_server_names}" "${reuse_status}" "${reuse_reason}"
+            if xray_agent_reuse_can_prompt "${reuse_status}" && xray_agent_prompt_yes_no "是否继续使用上次 serverNames/SNI？" "y"; then
                 RealityServerNames="$(xray_agent_reality_server_names_quote_csv "${previous_reality_server_names}")"
-                echoContent yellow " ---> 使用上次serverNames: ${previous_reality_server_names}"
+                echoContent yellow " ---> 使用上次 serverNames/SNI: ${previous_reality_server_names}"
                 break
             fi
-            echoContent yellow " ---> 下一步: 重新输入 serverNames"
+            echoContent yellow " ---> 下一步: 重新输入 serverNames/SNI"
             previous_reality_server_names=
         fi
 
         if [[ -n "${default_reality_server_name:-}" ]]; then
-            echoContent yellow " ---> 已注册真实网站默认 serverNames: ${default_reality_server_name}"
+            echoContent yellow " ---> 已注册真实网站默认 serverNames/SNI: ${default_reality_server_name}"
         fi
         xray_agent_blank
-        read -r -p "serverNames[回车使用 ${default_reality_server_name:-${RealityDestDomain%%:*}}]:" server_names_input
+        read -r -p "serverNames/SNI[回车使用 ${default_reality_server_name:-${RealityDestDomain%%:*}}]:" server_names_input
         server_names_input="${server_names_input:-${default_reality_server_name:-${RealityDestDomain%%:*}}}"
         if xray_agent_validate_reuse_server_names "${server_names_input}" "${allowed_domains}"; then
             RealityServerNames="$(xray_agent_reality_server_names_quote_csv "${server_names_input}")"
-            echoContent yellow " ---> serverNames: ${RealityServerNames//\"/}"
+            echoContent yellow " ---> serverNames/SNI: ${RealityServerNames//\"/}"
             break
         else
-            xray_agent_print_reuse_check_result "serverNames" "${server_names_input}" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
-            echoContent yellow " ---> 下一步: 重新输入 serverNames，必须与目标证书 SAN 匹配"
+            xray_agent_print_reuse_check_result "serverNames/SNI" "${server_names_input}" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
+            echoContent yellow " ---> 下一步: 重新输入 serverNames/SNI，必须与目标证书允许的域名匹配"
         fi
     done
 }

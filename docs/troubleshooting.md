@@ -44,9 +44,9 @@
 
 ## 访问网站间歇性卡顿
 
-如果服务器同时运行 AdGuardHome、dnsmasq、SmartDNS 等本机 DNS 服务，Xray 可以继续使用 `localhost` DNS 让代理流量也经过广告过滤。但广告/遥测规则可能把 `c.bing.com`、`*.events.data.microsoft.com`、`*.clients6.google.com` 等域名解析成 `0.0.0.0`、`::` 或本机地址，如果 Xray 继续按这个结果拨号，就会出现页面资源长时间等待、TLS 握手失败或连接超时。
+如果服务器同时运行 AdGuardHome、dnsmasq、SmartDNS 等本机 DNS 服务，Xray 可以继续使用 `localhost` DNS，让代理流量也经过广告过滤。但广告或遥测规则可能把部分域名解析成 `0.0.0.0`、`::` 或本机地址。如果 Xray 继续按这个结果拨号，就会出现页面资源长时间等待、TLS 握手失败或连接超时。
 
-默认安装会保留 `localhost` DNS 和 `UseIP`。为避免正常域名的 A 记录可用、AAAA 记录却被 AdGuardHome 返回为 `::` 时被误判为黑洞，建议把 AdGuardHome 的拦截响应模式设为 `nxdomain` 或 `refused`，让被过滤请求以 DNS 错误结束，而不是返回 fake IP。排查已有安装时可检查：
+默认安装会保留 `localhost` DNS 和 `UseIP`。为避免正常域名的 A 记录可用、AAAA 记录却被 AdGuardHome 返回为 `::` 时被误判为黑洞，建议把 AdGuardHome 的拦截响应模式设为 `nxdomain` 或 `refused`，让被过滤请求以 DNS 错误结束，而不是返回假 IP。排查已有安装时可检查：
 
 ```bash
 jq . /etc/xray-agent/xray/conf/11_dns.json
@@ -58,7 +58,7 @@ dig +short @127.0.0.1 www.bing.com AAAA
 
 如果这些域名在服务器上解析为 `0.0.0.0`、`127.0.0.1`、`::` 或 `::1`，应确认 `/etc/xray-agent/xray/conf/09_routing.json` 里存在把这些地址送到 `blackhole-out` 的规则。如果正常域名的 A 记录正常但 AAAA 记录被过滤为 `::`，优先调整 AdGuardHome 的 `blocking_mode`，不要为了规避误伤而绕过 `localhost` DNS 或改掉 `UseIP`。
 
-如果 AdGuardHome 管理菜单提示 `/etc/resolv.conf: Operation not permitted`，通常是该文件被 `chattr +i` 锁定、所在挂载只读，或由系统 DNS 服务接管。脚本会先尝试解除 immutable 标志；仍失败时不会再提示“已成功设置为DNS服务器”，应检查 `lsattr /etc/resolv.conf`、`ls -l /etc/resolv.conf` 和 `findmnt /etc/resolv.conf /etc`。
+如果 AdGuardHome 管理菜单提示 `/etc/resolv.conf: Operation not permitted`，通常是该文件被锁定、所在挂载只读，或由系统 DNS 服务接管。脚本会先尝试解除常见锁定；仍失败时不会再显示“系统 DNS 已指向 AdGuardHome”。可以检查 `lsattr /etc/resolv.conf`、`ls -l /etc/resolv.conf` 和 `findmnt /etc/resolv.conf /etc`。
 
 ## Xray-core 升级失败
 
@@ -66,11 +66,11 @@ dig +short @127.0.0.1 www.bing.com AAAA
 
 ## Nginx 启动失败
 
-修改伪装站、切换 PROXY protocol 或更新 Nginx 配置后，脚本会先检查配置。失败时检查：
+修改回落站点、切换 PROXY protocol 或更新 Nginx 配置后，脚本会先检查配置。失败时检查：
 
 - 是否安装了系统包管理器提供的 Nginx。
 - 是否已有其他站点配置占用 80/443。
-- 伪装站 URL 是否有效。
+- 回落站点 URL 是否有效。
 - Nginx 是否支持当前配置需要的模块。
 - 菜单中显示的 PROXY protocol 状态是否符合当前后端能力。
 

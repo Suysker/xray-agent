@@ -129,7 +129,7 @@ addCorePort() {
     fi
     xray_agent_tool_status_header "添加新端口"
     xray_agent_extra_port_summary
-    echoContent yellow "# 只给TLS+VISION添加新端口，永远不会支持Reality(Reality只建议用443)"
+    echoContent yellow "额外端口只用于 TLS Vision；Reality 建议固定使用 443，本菜单不会为 Reality 添加额外端口。"
     xray_agent_blank
     echoContent yellow "1.添加端口"
     echoContent yellow "2.删除端口"
@@ -192,7 +192,7 @@ xray_agent_prompt_inbound_config_file() {
     local selected_index
     mapfile -t inboundConfigFiles < <(xray_agent_inbound_config_files)
     if [[ "${#inboundConfigFiles[@]}" -eq 0 ]]; then
-        echoContent red " ---> 未找到 inbound 配置文件"
+        echoContent red " ---> 未找到协议入口配置文件"
         selectedInboundConfigFile=
         return 1
     fi
@@ -213,7 +213,7 @@ xray_agent_sniffing_status_matrix() {
     local configfile tag enabled route_only
     echoContent skyBlue "-------------------------嗅探状态-----------------------------"
     if ! xray_agent_inbound_config_files | grep -q .; then
-        echoContent yellow "未找到 inbound 配置文件"
+        echoContent yellow "未找到协议入口配置文件"
         return 0
     fi
     while IFS= read -r configfile; do
@@ -243,7 +243,7 @@ manageSniffing() {
     echoContent yellow "1.全部$( [[ "${current_sniffing}" == "true" ]] && echo "关闭" || echo "开启" )流量嗅探"
     echoContent yellow "2.全部$( [[ "${current_routeOnly}" == "true" ]] && echo "关闭" || echo "开启" )流量嗅探仅供路由"
     echoContent yellow "3.按协议切换流量嗅探"
-    read -r -p "请按照上面示例输入:" sniffingtype
+    read -r -p "请选择:" sniffingtype
     case ${sniffingtype} in
         1)
             find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do
@@ -303,7 +303,7 @@ xray_agent_sockopt_status_matrix() {
     local configfile tag mptcp nodelay fastopen
     echoContent skyBlue "-------------------------sockopt状态-----------------------------"
     if ! xray_agent_inbound_config_files | grep -q .; then
-        echoContent yellow "未找到 inbound 配置文件"
+        echoContent yellow "未找到协议入口配置文件"
         return 0
     fi
     while IFS= read -r configfile; do
@@ -319,7 +319,7 @@ manageSockopt() {
     if [[ -z "${coreInstallType}" ]]; then
         xray_agent_error " ---> 未安装，请使用脚本安装"
     fi
-    xray_agent_tool_status_header "sockopt进阶管理"
+    xray_agent_tool_status_header "sockopt 高级选项"
     xray_agent_sockopt_status_matrix
     if [[ "${coreInstallType}" == "1" ]]; then
         current_tcpMptcp=$(jq '.inbounds[].streamSettings.sockopt.tcpMptcp' "${configPath}${frontingType}.json")
@@ -338,7 +338,7 @@ manageSockopt() {
     echoContent yellow "2. $( [[ "${current_tcpNoDelay}" == "true" ]] && echo "关闭" || echo "开启" ) tcpNoDelay"
     echoContent yellow "3. $( [[ "${current_tcpFastOpen}" == "true" ]] && echo "关闭" || echo "开启" ) tcpFastOpen"
     echoContent yellow "4.按协议切换 tcpNoDelay"
-    read -r -p "请按照上面示例输入:" sockopttype
+    read -r -p "请选择:" sockopttype
     case ${sockopttype} in
         1)
             find "${configPath}" -name "*_inbounds.json" | while read -r configfile; do

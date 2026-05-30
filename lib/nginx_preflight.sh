@@ -163,7 +163,7 @@ xray_agent_nginx_proxy_protocol_recommendation_json() {
         elif $stream_total > 0 and $https_configs == 0 then
           $p + {recommended:"on", source:"registered-site", reason:"已注册 HTTPS 后端全部声明支持 PROXY protocol，默认开启"}
         elif $stream_total == 0 and $https_configs == 0 then
-          $p + {recommended:"on", source:"clean-or-http-fallback", reason:"未检测到普通 HTTPS 后端；纯净机或仅 HTTP fallback upstream 默认开启"}
+          $p + {recommended:"on", source:"clean-or-http-fallback", reason:"未检测到普通 HTTPS 后端；纯净机或仅 HTTP 回落后端默认开启"}
         else
           $p + {recommended:"off", source:"https-unknown", reason:"检测到普通 HTTPS 后端或第三方面板站点，但无法确认支持 PROXY protocol，默认关闭"}
         end'
@@ -204,14 +204,14 @@ xray_agent_nginx_print_proxy_protocol_preflight() {
     echoContent yellow "脚本 alone.stream: $(printf '%s\n' "${result_json}" | jq -r '.script_stream')"
     echoContent yellow "前置PROXY配置: $(printf '%s\n' "${result_json}" | jq -r '.configured')  推荐: $(printf '%s\n' "${result_json}" | jq -r '.recommended')  生效: $(printf '%s\n' "${result_json}" | jq -r '.resolved')"
     echoContent yellow "原因: $(printf '%s\n' "${result_json}" | jq -r '.resolved_reason')"
-    printf '%s\n' "${result_json}" | jq -r '.site_stats | "已注册站点: HTTP fallback=\(.http_total) HTTPS透传=\(.stream_total) HTTPS未知/不支持=\(.stream_unknown_or_unsupported)"' |
+    printf '%s\n' "${result_json}" | jq -r '.site_stats | "已注册站点: HTTP 回落=\(.http_total) HTTPS透传=\(.stream_total) HTTPS未知/不支持=\(.stream_unknown_or_unsupported)"' |
         while IFS= read -r line; do echoContent yellow "${line}"; done
     printf '%s\n' "${result_json}" | jq -r '.detected_frontends[]?' |
         while IFS= read -r panel; do echoContent yellow "检测到第三方前端: ${panel}（只输出接入建议，不自动改配置）"; done
     printf '%s\n' "${result_json}" | jq -r '.https_config_files[]?' |
         while IFS= read -r config_file; do echoContent yellow "HTTPS配置: ${config_file}"; done
     if [[ "$(printf '%s\n' "${result_json}" | jq -r '.source')" == "https-unknown" ]]; then
-        echoContent yellow "建议: 先把现有网站迁移到本机 HTTP upstream 后在菜单注册，或确认 HTTPS 后端支持 PROXY protocol 后再开启。"
+        echoContent yellow "建议: 先把现有网站迁移到本机 HTTP 后端地址后在菜单注册，或确认 HTTPS 后端支持 PROXY protocol 后再开启。"
     fi
 }
 
@@ -224,7 +224,7 @@ xray_agent_nginx_confirm_frontdoor_takeover() {
             ;;
     esac
     echoContent red " ---> TCP/443 当前由 ${port443_owner} 占用，不适合由脚本直接接管。"
-    echoContent yellow " ---> 请先把现有网站迁移到本机后端 upstream 后注册，或为 Xray 选择非 443 后端端口。"
+    echoContent yellow " ---> 请先把现有网站迁移到本机后端地址后注册，或为 Xray 选择非 443 后端端口。"
     return 1
 }
 

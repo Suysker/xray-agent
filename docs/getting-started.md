@@ -34,12 +34,12 @@ vasma
 4. 安装完成后查看脚本输出的分享链接。
 5. 使用客户端导入分享链接并连接测试。
 
-TLS 套餐适合希望使用同域名证书、Nginx 伪装站、XHTTP、Hysteria2 的场景。Reality 套餐适合使用 Reality 目标站点伪装的场景，Reality TCP/XHTTP 主配置完成后可选择继续启用 Hysteria2。
+TLS 套餐适合希望使用同域名证书、Nginx 网站回落、XHTTP、Hysteria2 的场景。Reality 套餐适合使用 Reality 目标站点的场景，Reality TCP/XHTTP 主配置完成后可选择继续启用 Hysteria2。
 
 ## 更新、卸载和重新打开菜单
 
 - 重新打开菜单：`vasma`
-- 更新 Xray-core：菜单 `14.core管理`
+- 更新 Xray-core：菜单 `14.Xray-core 管理`
 - 更新脚本：菜单 `15.更新脚本`
 - 创建/恢复备份：菜单 `16.备份与恢复管理`
 - 卸载脚本：菜单 `18.卸载脚本`

@@ -14,14 +14,14 @@ xray_agent_nginx_status_line() {
     if xray_agent_nginx_active_site_enabled; then
         site_mode="本机/自有站点"
     else
-        site_mode="外部伪装站"
+        site_mode="外部回落站点"
     fi
-    printf '网站fallback: %s  来源=%s  upstream=%s  Host=%s  HTTPS透传=%s  前置PROXY=%s\n' "${site_mode}" "${masquerade_source}" "${active_upstream}" "${host_header}" "${legacy_count}" "${proxy_mode}"
+    printf '网站回落: %s  来源=%s  后端=%s  Host=%s  HTTPS透传=%s  前置PROXY=%s\n' "${site_mode}" "${masquerade_source}" "${active_upstream}" "${host_header}" "${legacy_count}" "${proxy_mode}"
 }
 
 updateRedirectNginxConf() {
     xray_agent_blank
-    echoContent skyBlue "进度  $2/${totalProgress} : 配置镜像站点，默认使用huggingface官网"
+    echoContent skyBlue "进度  $2/${totalProgress} : 配置浏览器回落站点，默认使用 huggingface.co"
     local accept_proxy_protocol="false"
     rm -f "${nginxConfigPath}default.conf"
     if declare -F xray_agent_cleanup_default_nginx_site >/dev/null 2>&1; then
@@ -49,7 +49,7 @@ updateRedirectNginxConf() {
     if [[ "$1" == "Vision" && "${Port}" != "443" && "${reuse443}" != "y" ]]; then
         xray_agent_blank
         echoContent red "=============================================================="
-        echoContent yellow "检测到 TLS 后端端口不是 443。若已把现有网站迁到本机 upstream，可让 Nginx 前置接管公网 443 后转发到 Xray。"
+        echoContent yellow "检测到 TLS 后端端口不是 443。若已把现有网站迁到本机后端地址，可让 Nginx 前置接管公网 443 后转发到 Xray。"
         echoContent yellow "启用后 Xray 后端是否接收 PROXY protocol 将按上方 preflight 判定。"
         echoContent red "=============================================================="
         if xray_agent_nginx_prompt_enable_frontdoor "是否让 Nginx 前置接管公网 443？"; then
@@ -78,7 +78,7 @@ updateRedirectNginxConf() {
 xray_agent_nginx_update_stream_only() {
     xray_agent_blank
     echoContent skyBlue "进度  $1/${totalProgress} : 配置443前置分流"
-    echoContent yellow " ---> 仅配置 Nginx stream 分流；Reality/XHTTP 本身不使用镜像站。"
+    echoContent yellow " ---> 仅配置 Nginx stream 分流；Reality/XHTTP 本身不使用外部回落站点。"
     if declare -F xray_agent_ensure_nginx_tools >/dev/null 2>&1; then
         xray_agent_ensure_nginx_tools
     fi
@@ -110,7 +110,7 @@ xray_agent_nginx_update_stream_if_requested() {
 
 xray_agent_nginx_update_default_upstream() {
     local input_upstream mirror_url updated_json
-    read -r -p "请输入新的外部伪装站URL或域名[回车取消]:" input_upstream
+    read -r -p "请输入新的外部回落站点 URL 或域名[回车取消]:" input_upstream
     [[ -n "${input_upstream}" ]] || {
         echoContent yellow " ---> 已取消"
         return 0
@@ -120,7 +120,7 @@ xray_agent_nginx_update_default_upstream() {
         echoContent red " ---> URL 不合法，示例: https://www.example.com/"
         return 0
     fi
-    echoContent yellow "将使用外部伪装站 ${mirror_url}。真实同域站点通常比外部镜像更自然。"
+    echoContent yellow "将使用外部回落站点 ${mirror_url}。真实同域站点通常比外部站点更适合长期使用。"
     xray_agent_confirm_action "确认继续？" "y" || return 0
     updated_json="$(xray_agent_nginx_reverse_proxy_json | jq --arg url "${mirror_url}" '
       .default_upstream.url = $url
@@ -131,14 +131,14 @@ xray_agent_nginx_update_default_upstream() {
 
 xray_agent_nginx_register_site_upstream() {
     local input_upstream site_url host_header updated_json server_name
-    read -r -p "请输入本机/自有网站 upstream[例 http://127.0.0.1:8080，回车取消]:" input_upstream
+    read -r -p "请输入本机/自有网站后端地址[例 http://127.0.0.1:8080，回车取消]:" input_upstream
     [[ -n "${input_upstream}" ]] || {
         echoContent yellow " ---> 已取消"
         return 0
     }
     site_url="$(xray_agent_nginx_normalize_upstream_url "${input_upstream}")"
     if ! xray_agent_nginx_validate_upstream_url "${site_url}"; then
-        echoContent red " ---> upstream 不合法，示例: http://127.0.0.1:8080"
+        echoContent red " ---> 后端地址不合法，示例: http://127.0.0.1:8080"
         return 0
     fi
     read -r -p "请输入转发 Host[回车使用 ${domain}]:" host_header
@@ -148,8 +148,8 @@ xray_agent_nginx_register_site_upstream() {
         return 0
     fi
     server_name="${domain:-default}"
-    echoContent yellow "将把浏览器 fallback 转发到 ${site_url}，Host=${host_header}"
-    echoContent yellow "提示: 如果这是已有真实网站，建议让该 upstream 返回与 ${domain} 对齐的内容和证书行为。"
+    echoContent yellow "将把浏览器访问回落到 ${site_url}，Host=${host_header}"
+    echoContent yellow "提示: 如果这是已有真实网站，建议让该后端返回与 ${domain} 对齐的内容和证书行为。"
     xray_agent_confirm_action "确认继续？" "y" || return 0
     updated_json="$(xray_agent_nginx_reverse_proxy_json | jq --arg server "${server_name}" --arg url "${site_url}" --arg host "${host_header}" '
       .sites = ((.sites // []) | map(select(.mode != "http_fallback" or .server_name != $server)) + [{
@@ -207,7 +207,7 @@ xray_agent_nginx_add_legacy_https_backend() {
     ')"
     xray_agent_nginx_apply_reverse_proxy_update "${updated_json}" y || return 1
     legacy_count="$(xray_agent_nginx_legacy_backend_count)"
-    echoContent yellow " ---> legacy HTTPS 后端数量: ${legacy_count}"
+    echoContent yellow " ---> 高级 HTTPS 透传后端数量: ${legacy_count}"
 }
 
 xray_agent_nginx_remove_legacy_https_backend() {
@@ -215,7 +215,7 @@ xray_agent_nginx_remove_legacy_https_backend() {
     proxy_json="$(xray_agent_nginx_reverse_proxy_json)"
     count="$(printf '%s\n' "${proxy_json}" | jq -r '[.sites[]? | select(.enabled == true and .mode == "stream_tls")] | length')"
     if [[ "${count}" == "0" ]]; then
-        echoContent yellow " ---> 暂无 legacy HTTPS 后端"
+        echoContent yellow " ---> 暂无高级 HTTPS 透传后端"
         return 0
     fi
     printf '%s\n' "${proxy_json}" | jq -r '.sites[]? | select(.enabled == true and .mode == "stream_tls") | "\(.server_name) -> \(.upstream) proxy_protocol=\(.proxy_protocol)"' | awk '{print NR"."$0}'
@@ -250,8 +250,8 @@ xray_agent_nginx_print_proxy_protocol_affected() {
 xray_agent_nginx_preflight_guide() {
     xray_agent_nginx_print_proxy_protocol_preflight
     echoContent skyBlue "-------------------------接入建议-----------------------------"
-    echoContent yellow "脚本只维护 alone.conf、alone.stream 和 Xray inbound，不会自动重写宝塔、1Panel、OpenResty、Caddy、Apache 配置。"
-    echoContent yellow "已有真实网站建议迁移到本机 HTTP upstream，例如 http://127.0.0.1:8080，再在本菜单注册为 fallback。"
+    echoContent yellow "脚本只维护 alone.conf、alone.stream 和 Xray 协议入口，不会自动重写宝塔、1Panel、OpenResty、Caddy、Apache 配置。"
+    echoContent yellow "已有真实网站建议迁移到本机 HTTP 后端地址，例如 http://127.0.0.1:8080，再在本菜单注册为浏览器回落站点。"
     echoContent yellow "HTTPS SNI 透传后端只有在确认支持 PROXY protocol 时，才适合把全局前置 PROXY 开启。"
 }
 
@@ -281,7 +281,7 @@ xray_agent_nginx_switch_frontdoor_proxy_protocol() {
           . + {resolved:.recommended, resolved_reason:.reason}
         end')"
     echoContent yellow "将设置前置 PROXY: ${selected_mode}，当前生效: $(printf '%s\n' "${result_json}" | jq -r '.resolved')"
-    xray_agent_confirm_action "确认同步重渲染 Nginx stream 和 Xray inbound？" "y" || return 0
+    xray_agent_confirm_action "确认同步重渲染 Nginx stream 和 Xray 协议入口？" "y" || return 0
     updated_json="$(xray_agent_nginx_reverse_proxy_json | jq --arg mode "${selected_mode}" '
       .frontdoor.proxy_protocol = $mode
       | .frontdoor.last_reason = "menu"
@@ -305,9 +305,9 @@ xray_agent_nginx_status() {
       .sites[]?
       | select(.enabled == true)
       | if .mode == "http_fallback" then
-          "HTTP fallback: \(.server_name) -> \(.upstream) Host=\(.host)"
+          "HTTP 回落: \(.server_name) -> \(.upstream) Host=\(.host)"
         else
-          "legacy HTTPS: \(.server_name) -> \(.upstream) proxy_protocol=\(.proxy_protocol)"
+          "高级 HTTPS 透传: \(.server_name) -> \(.upstream) proxy_protocol=\(.proxy_protocol)"
         end' | while IFS= read -r line; do echoContent yellow "${line}"; done
 }
 
@@ -320,10 +320,10 @@ xray_agent_nginx_manage_menu() {
     xray_agent_nginx_status
     echoContent red "=============================================================="
     echoContent yellow "1.查看网站/反代状态"
-    echoContent yellow "2.注册本机/自有网站 upstream"
-    echoContent yellow "3.修改外部伪装站 upstream"
-    echoContent yellow "4.添加 legacy HTTPS SNI 后端"
-    echoContent yellow "5.删除 legacy HTTPS SNI 后端"
+    echoContent yellow "2.注册本机/自有网站后端"
+    echoContent yellow "3.修改外部回落站点"
+    echoContent yellow "4.添加高级 HTTPS SNI 透传后端"
+    echoContent yellow "5.删除高级 HTTPS SNI 透传后端"
     echoContent yellow "6.测试并重载 Nginx"
     echoContent yellow "7.检测现有网站/面板接入建议"
     echoContent yellow "8.切换前置 PROXY 模式"

@@ -257,7 +257,7 @@ xray_agent_render_nginx_stream_conf() {
     while IFS='|' read -r server_name target; do
         [[ -n "${server_name}" && -n "${target}" ]] || continue
         if ! xray_agent_validate_domain "${server_name}" || ! xray_agent_nginx_validate_stream_target "${target}"; then
-            echoContent yellow " ---> 跳过非法 legacy HTTPS 后端: ${server_name} -> ${target}" >&2
+            echoContent yellow " ---> 跳过不合法的高级 HTTPS 透传后端: ${server_name} -> ${target}" >&2
             continue
         fi
         legacy_index=$((legacy_index + 1))

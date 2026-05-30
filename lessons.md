@@ -1,31 +1,40 @@
-# Lessons
+# 维护经验
 
-## Xray DNS And Local Filtering
+本文件记录已经踩过的问题和后续维护规则。它面向公开用户和维护者，目的不是记录内部过程，而是解释脚本为什么这样处理。
 
-- Root-cause pattern: using `localhost` as Xray's server-side DNS couples proxy routing to whatever local resolver is installed. If that resolver is AdGuardHome or another filtering DNS, blocked domains can resolve to `0.0.0.0`, `127.0.0.1`, or `::1`; Xray then attempts to route or dial those addresses and user-facing requests appear to hang.
-- Preventive rule: when the operator expects proxy traffic to keep AdGuardHome filtering, keep Xray DNS on `localhost` and add an early routing rule that sends sinkhole addresses (`0.0.0.0`, loopback, `::`, `::1`) to `blackhole-out` so blocked requests fail fast instead of being dialed.
-- Root-cause pattern: some filtering DNS setups return a valid A record and a sinkhole AAAA record (`::`) for the same normal domain. With Xray DNS `queryStrategy=UseIP`, the sinkhole AAAA can win routing and send an otherwise reachable domain to `blackhole-out`.
-- Preventive rule: if the operator requires `UseIP`, keep Xray on `UseIP` and fix the filtering resolver instead: configure AdGuardHome blocked responses as `nxdomain` or `refused` so blocked domains produce DNS errors rather than fake sinkhole IPs.
-- Root-cause pattern: AdGuardHome runtime status used to print "DNS server configured successfully" even if writing `/etc/resolv.conf` failed with `Operation not permitted`, commonly because the file was immutable, read-only, or managed by another DNS service.
-- Preventive rule: DNS switching helpers must return failure on write errors, try `chattr -i` before direct `/etc/resolv.conf` writes, skip rewrites when the intended local nameserver is already present, and only print success after verifying the target nameserver is actually configured.
+## 文案与公开发布
 
-## WARP Public Source Rules
+- 问题模式：脚本提示和文档如果直接使用内部调试词，例如 `certificate flight`、`uConn.Verified`、`inbound`、`target`，普通用户很难判断自己应该做什么。
+- 维护规则：公开文案先说明用户能理解的结论和下一步，再把协议字段放在括号或高级说明中。错误提示必须说明“为什么不能继续”和“用户该怎么处理”。
+- 问题模式：文档如果承诺“不可识别”“一定可用”或过度强调对抗含义，会给用户错误预期，也不适合公开项目。
+- 维护规则：只描述脚本能验证的事实，例如兼容性、配置一致性、证书状态和端口状态；不要承诺任何网络环境中的长期可用性。
 
-- Root-cause pattern: WARP non-global mode relies on public-source `ip rule` entries in `/etc/wireguard/warp.conf` so server-originated/public-IP traffic returns through the VPS main route instead of the WARP table. Treating the generated public IPv4 value as a disposable probe value can break routing.
-- Preventive rule: do not edit `LAN4`/`USERIP4`-style WARP source rules during unrelated Xray or DNS debugging unless the current public IPv4, domain A record, file value, and live `ip rule` disagree and the intended replacement is explicit.
+## DNS 与本机过滤
 
-## Protocol Latency Isolation
+- 问题模式：Xray 服务端 DNS 使用 `localhost` 时，会跟随本机 AdGuardHome、dnsmasq 或 SmartDNS 的过滤结果。被拦截域名可能解析到 `0.0.0.0`、`127.0.0.1`、`::` 或 `::1`，导致用户看到页面资源长时间等待。
+- 维护规则：当用户希望代理流量继续经过 AdGuardHome 过滤时，保留 `localhost` DNS，并在路由中把这些黑洞地址尽早送到 `blackhole-out`，让被过滤请求快速失败。
+- 问题模式：有些过滤 DNS 会给同一个正常域名返回可用 A 记录和黑洞 AAAA 记录。Xray DNS 使用 `UseIP` 时，黑洞 AAAA 可能被选中，导致正常站点被误伤。
+- 维护规则：如果用户明确要求 `UseIP`，不要擅自改成 `UseIPv4`。优先调整 AdGuardHome 的拦截响应模式为 `nxdomain` 或 `refused`，避免返回假 IP。
+- 问题模式：AdGuardHome 管理菜单曾经在写入 `/etc/resolv.conf` 失败时仍显示“DNS 已设置成功”。
+- 维护规则：DNS 切换必须以实际验证为准。写入失败要返回失败；如果目标 nameserver 已存在则不重复写入；成功提示只能在确认系统 DNS 已指向目标后显示。
 
-- Root-cause pattern: VLESS Reality TCP long-tail latency can be misattributed to REALITY `mldsa65Verify` or VLESS ML-KEM parameters. The active client may not use ML-KEM at all, and removing `mldsa65Verify` does not prove improvement unless the same endpoint is tested side by side.
-- Preventive rule: isolate protocol transport before blaming cryptographic options. Run matched temporary clients with and without `mldsa65Verify`, then compare against Hysteria2/QUIC on the same server and URLs. If Hysteria2 removes the long tail while Reality TCP still shows it, prefer Hysteria2 for daily use and keep the post-quantum settings intact.
-- Root-cause pattern: Reality `pqv` is derived from `mldsa65Seed`, not from the target domain, but target suitability still depends on the current target certificate chain. Reusing an existing seed without rechecking the new target can leave stale `pqv` enabled after switching to an unsuitable target.
-- Preventive rule: always rerun the target PQ suitability check when Reality target changes or when rendering Reality configs. Keep the existing seed only if the current target still allows ML-DSA-65; otherwise clear seed/verify before rendering links.
-- Root-cause pattern: `xray tls ping` can report both no-SNI and SNI handshakes. Reading the first certificate length, PQ status, or SAN list can validate the wrong certificate when the target returns different certificates without SNI and with SNI.
-- Preventive rule: Reality target validation must prefer the final/SNI handshake values from `xray tls ping` for certificate length, PQ status, and allowed domains.
-- Root-cause pattern: a Reality target can pass ordinary TLS ping, SAN matching, and certificate-length checks while still failing real Reality verification. For example, `packages.microsoft.com` passes Xray `tls ping` but triggers a TLS 1.3 HelloRetryRequest/P-256 certificate-flight path that is unsuitable for Reality substitution.
-- Preventive rule: split Reality target checks into basic Reality and PQ, and use official Xray output first. Basic Reality uses `xray tls ping` for TCP/TLS 1.3/SAN/certificate-chain facts, while PQ uses only the official `TLS Post-Quantum key exchange` field for Post-Quantum and `pqv` suitability. Do not put temporary generated Reality server/client configs, embedded custom clients, or Python probes in `lib/tls.sh`; use `openssl s_client -trace -tls1_3` only as a lightweight certificate-flight gap check, and use a dedicated analyzer or upstream Xray-core command when exact `uConn.Verified` output is required.
+## WARP 公网源地址规则
 
-## Hysteria2 Port Reconfiguration
+- 问题模式：WARP 非全局模式依赖 `/etc/wireguard/warp.conf` 中的公网源地址规则，让服务器自己的公网入站流量继续从 VPS 主路由返回。把 `LAN4` 或 `USERIP4` 这类值当成临时探测结果随意修改，会破坏回程路由。
+- 维护规则：调试 Xray 或 DNS 时不要顺手修改 WARP 公网源地址规则。只有当前公网 IPv4、域名 A 记录、配置文件和实时 `ip rule` 明确不一致时，才按用户确认的目标值修正。
 
-- Root-cause pattern: Hysteria2 reconfiguration can misclassify UDP/443 as externally occupied when `lsof` does not report the Xray process name as exactly `xray`. The port may be held by the current `xray.service` MainPID and still be safe to reuse.
-- Preventive rule: UDP/TCP port preflight must identify Xray ownership by process name, `xray.service` MainPID, and process executable/cmdline before blocking. Prefer `lsof -F` machine-readable output; if the local `lsof` output omits COMMAND and starts with PID/USER/FD, keep PID-based Xray detection instead of treating PID as a process name. Only non-Xray owners should require manual shutdown.
+## Reality 延迟与目标站点
+
+- 问题模式：Reality TCP 的长尾延迟容易被误判为 `mldsa65Verify` 或 ML-KEM 参数导致。实际上客户端可能并未使用 ML-KEM，删除 `mldsa65Verify` 也不能单独证明问题来源。
+- 维护规则：先隔离传输协议，再判断加密参数。需要对比时，应在同一服务器和同一批网址上分别测试 Reality TCP 与 Hysteria2/QUIC，再决定推荐用户使用哪种协议。
+- 问题模式：`pqv` 来自服务端 `mldsa65Seed`，不是由 Reality 目标站点域名直接生成；但目标站点是否适合启用 `pqv`，仍取决于当前目标站点证书链和 TLS 行为。
+- 维护规则：Reality 目标站点变化时必须重新检查后量子增强条件。新目标合适时可以保留旧 seed；新目标不合适时必须清除 `pqv`，避免分享链接带着过期参数。
+- 问题模式：Xray `tls ping` 可能同时展示无 SNI 和带 SNI 的握手结果。读取第一段证书链、PQ 状态或 SAN 可能会验证错证书。
+- 维护规则：Reality 目标站点检查必须优先读取带 SNI 的最终结果，用它判断证书链长度、后量子状态和允许的域名。
+- 问题模式：有些站点能通过普通 TLS 1.3、证书域名和证书链检查，但实际 Reality 校验仍失败。例如目标触发 TLS 1.3 HelloRetryRequest 时，客户端可能收到真实证书并报错。
+- 维护规则：基础 Reality 检查和后量子增强检查要分开。基础检查优先使用 Xray 官方 `tls ping`，并用 `openssl s_client` 做轻量握手补充；后量子状态只以官方 `TLS Post-Quantum key exchange` 字段为准。不要在 `lib/tls.sh` 中生成临时 Reality 客户端或服务端配置。
+
+## Hysteria2 端口重配
+
+- 问题模式：重配 Hysteria2 时，如果 `lsof` 没有把 UDP/443 的进程名显示为精确的 `xray`，脚本可能误判当前 Xray 占用为外部进程占用。
+- 维护规则：端口检查必须同时识别进程名、`xray.service` 的 MainPID、进程可执行文件和命令行。只有确认不是当前 Xray 服务占用时，才要求用户手动释放端口。

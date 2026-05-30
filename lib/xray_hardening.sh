@@ -129,7 +129,7 @@ xray_agent_tls_ech_status_summary() {
     local count
     count="$(xray_agent_tls_ech_configured_count)"
     if [[ "${count}" -gt 0 ]]; then
-        printf 'TLS ECH: 已启用，覆盖 %s 个 TLS/QUIC inbound；客户端不支持 ech 时可使用不带 ech 的分享参数\n' "${count}"
+        printf 'TLS ECH: 已启用，覆盖 %s 个 TLS/QUIC 协议入口；客户端不支持 ech 时可使用不带 ech 的分享参数\n' "${count}"
     elif [[ "${XRAY_AGENT_TLS_ECH_DISABLED_FOR_CONFIG:-false}" == "true" ]]; then
         printf 'TLS ECH: 已回退，当前 Xray-core 未接受生成的 ECH 配置\n'
     elif declare -F xray_agent_xray_supports_tls_ech >/dev/null 2>&1 && xray_agent_xray_supports_tls_ech; then
@@ -241,7 +241,7 @@ xray_agent_reality_target_pq_status_json() {
     local target="$1"
     local output cert_length mlkem mldsa summary reason
     if ! output="$(xray_agent_reality_tls_ping_output "${target}")"; then
-        jq -nc '{tls_ping:"failed", certificate_length:null, x25519mlkem768:false, mldsa65_allowed:false, summary:"unknown", reason:"tls ping failed"}'
+        jq -nc '{tls_ping:"failed", certificate_length:null, x25519mlkem768:false, mldsa65_allowed:false, summary:"unknown", reason:"Xray 官方 TLS 检查失败"}'
         return 0
     fi
 
@@ -256,15 +256,15 @@ xray_agent_reality_target_pq_status_json() {
         mldsa=true
         if [[ "${mlkem}" == "true" ]]; then
             summary="complete"
-            reason="target supports X25519MLKEM768 and certificate chain length is 3500+"
+            reason="目标站点支持 X25519MLKEM768，且证书链长度达到 3500+"
         else
             summary="partial"
-            reason="certificate chain length is 3500+, but X25519MLKEM768 was not detected"
+            reason="证书链长度达到 3500+，但未检测到 X25519MLKEM768"
         fi
     elif [[ -n "${cert_length}" ]]; then
         mldsa=false
         summary="unsuitable"
-        reason="certificate chain is shorter than 3500 and cannot hide ML-DSA-65 signature"
+        reason="证书链长度低于 3500，不启用 pqv"
     else
         mldsa=false
         summary="unknown"
@@ -308,16 +308,16 @@ xray_agent_reality_target_pq_summary() {
     reason="$(printf '%s\n' "${status_json}" | jq -r '.reason')"
     case "${summary}" in
         complete)
-            printf 'Reality PQ: 完整条件满足，证书链长度=%s，支持 X25519MLKEM768，可启用 ML-DSA-65\n' "${cert_length}"
+            printf 'Reality 后量子增强: 完整条件满足，证书链长度=%s，支持 X25519MLKEM768，已启用 pqv\n' "${cert_length}"
             ;;
         partial)
-            printf 'Reality PQ: 部分增强，证书链长度=%s，可启用 ML-DSA-65；未检测到 X25519MLKEM768\n' "${cert_length}"
+            printf 'Reality 后量子增强: 部分可用，证书链长度=%s，已启用 pqv；未检测到 X25519MLKEM768\n' "${cert_length}"
             ;;
         unsuitable)
-            printf 'Reality PQ: 未启用 ML-DSA-65，证书链长度=%s，低于 3500，无法隐藏 ML-DSA-65 签名\n' "${cert_length}"
+            printf 'Reality 后量子增强: 未启用 pqv，证书链长度=%s，低于 3500；基础 Reality 不受影响\n' "${cert_length}"
             ;;
         *)
-            printf 'Reality PQ: 未完成目标预检，%s\n' "${reason}"
+            printf 'Reality 后量子增强: 未完成目标站点检查，%s\n' "${reason}"
             ;;
     esac
 }

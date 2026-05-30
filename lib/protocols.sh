@@ -386,16 +386,16 @@ xray_agent_prepare_reality_mldsa65() {
         RealityMldsa65Seed=
         RealityMldsa65Verify=
         cert_length="$(printf '%s\n' "${status_json}" | jq -r '.certificate_length // "未知"')"
-        echoContent yellow " ---> Reality 目标证书链太短或无法确认，已跳过 pqv。证书链长度=${cert_length}，需要 3500+ 才能隐藏 ML-DSA-65 签名。"
+        echoContent yellow " ---> 目标站点证书链较短或无法确认，脚本不会启用 pqv（后量子签名校验）。证书链长度=${cert_length}，基础 Reality 不受影响。"
         return 0
     fi
     summary="$(printf '%s\n' "${status_json}" | jq -r '.summary')"
     if [[ "${summary}" == "complete" ]]; then
         cert_length="$(printf '%s\n' "${status_json}" | jq -r '.certificate_length')"
-        echoContent green " ---> Reality PQ 预检完整: 证书链长度=${cert_length}，支持 X25519MLKEM768，启用 ML-DSA-65。"
+        echoContent green " ---> Reality 后量子增强检查通过：证书链长度=${cert_length}，支持 X25519MLKEM768，已启用 pqv。"
     elif [[ "${summary}" == "partial" ]]; then
         cert_length="$(printf '%s\n' "${status_json}" | jq -r '.certificate_length')"
-        echoContent yellow " ---> Reality PQ 预检部分满足: 证书链长度=${cert_length}，可启用 ML-DSA-65；未检测到 X25519MLKEM768。"
+        echoContent yellow " ---> Reality 后量子增强部分可用：证书链长度=${cert_length}，已启用 pqv；但未检测到 X25519MLKEM768。"
     fi
     if [[ -n "${RealityMldsa65Seed:-}" ]]; then
         RealityMldsa65Verify="$(xray_agent_reality_mldsa65_verify_value || true)"
@@ -404,7 +404,7 @@ xray_agent_prepare_reality_mldsa65() {
     if ! xray_agent_generate_mldsa65_material; then
         RealityMldsa65Seed=
         RealityMldsa65Verify=
-        echoContent yellow " ---> 当前 Xray-core 不支持或无法生成 ML-DSA-65，Reality 分享不会输出 pqv。"
+        echoContent yellow " ---> 当前 Xray-core 不支持或无法生成 pqv，Reality 分享链接不会包含 pqv；基础 Reality 不受影响。"
     fi
 }
 
@@ -535,14 +535,14 @@ xray_agent_hysteria2_default_masquerade_with_source() {
     candidate="$(xray_agent_hysteria2_nginx_masquerade_url)"
     if [[ -n "${candidate}" ]]; then
         XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_URL="${candidate}"
-        XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE="现有 Nginx 伪装站"
+        XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE="现有 Nginx 回落站点"
         return 0
     fi
 
     candidate="$(xray_agent_hysteria2_reality_masquerade_url)"
     if [[ -n "${candidate}" ]]; then
         XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_URL="${candidate}"
-        XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE="Reality target"
+        XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE="Reality 目标站点"
         return 0
     fi
 
@@ -1188,11 +1188,11 @@ xray_agent_validate_reuse_hysteria2_config() {
     local hop_interval="${5:-${Hysteria2HopInterval:-}}"
 
     if [[ -z "${masquerade_url}" ]]; then
-        xray_agent_reuse_result block "未检测到 Hysteria2 伪装站 URL"
+        xray_agent_reuse_result block "未检测到 Hysteria2 回落 URL"
         return 1
     fi
     if ! xray_agent_hysteria2_url_valid "${masquerade_url}"; then
-        xray_agent_reuse_result block "Hysteria2 伪装站 URL 不合法: ${masquerade_url}"
+        xray_agent_reuse_result block "Hysteria2 回落 URL 不合法: ${masquerade_url}"
         return 1
     fi
     if [[ -n "${up_mbps}" ]]; then
@@ -1219,7 +1219,7 @@ xray_agent_validate_reuse_hysteria2_config() {
             return 1
         fi
     fi
-    xray_agent_reuse_result ok "Hysteria2 伪装站、Brutal 和端口跳跃配置格式可用"
+    xray_agent_reuse_result ok "Hysteria2 回落 URL、带宽和端口跳跃配置格式可用"
 }
 
 xray_agent_hysteria2_reuse_summary() {
@@ -1235,9 +1235,9 @@ xray_agent_hysteria2_prepare_runtime() {
     local reuse_hysteria2_config="n"
     local default_masquerade_url default_masquerade_source input_masquerade_url
     xray_agent_hysteria2_prepare_tls_domain
-    echoContent yellow " ---> Hysteria2 需要当前 Xray-core 支持 protocol=hysteria；旧内核请先用菜单12升级"
+    echoContent yellow " ---> Hysteria2 需要当前 Xray-core 支持内置 Hysteria2；旧内核请先用菜单 14 升级"
     if ! xray_agent_xray_supports_hysteria2; then
-        echoContent red " ---> 当前 Xray-core 不支持内置 Hysteria2，请先通过菜单12升级到正式版 v26.3.27 或更新版本。"
+        echoContent red " ---> 当前 Xray-core 不支持内置 Hysteria2，请先通过菜单 14 升级到正式版 v26.3.27 或更新版本。"
         return 1
     fi
     if [[ "$(xray_agent_public_ip_total_count)" -gt 1 ]]; then
@@ -1248,11 +1248,11 @@ xray_agent_hysteria2_prepare_runtime() {
 
     if [[ -n "${Hysteria2MasqueradeURL:-}" ]]; then
         xray_agent_validate_reuse_hysteria2_config || true
-        xray_agent_print_reuse_check_result "Hysteria2旧配置" "$(xray_agent_hysteria2_reuse_summary)" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
+        xray_agent_print_reuse_check_result "Hysteria2 上次配置" "$(xray_agent_hysteria2_reuse_summary)" "$(xray_agent_reuse_status)" "$(xray_agent_reuse_reason)"
         if xray_agent_reuse_can_prompt && xray_agent_prompt_yes_no "是否继续使用上次 Hysteria2 配置？" "y"; then
             reuse_hysteria2_config="y"
         else
-            echoContent yellow " ---> 下一步: 重新填写 Hysteria2 伪装站、带宽和端口跳跃配置"
+            echoContent yellow " ---> 下一步: 重新填写 Hysteria2 回落 URL、带宽和端口跳跃配置"
             reuse_hysteria2_config="n"
         fi
     fi
@@ -1262,13 +1262,13 @@ xray_agent_hysteria2_prepare_runtime() {
         default_masquerade_url="${XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_URL:-}"
         default_masquerade_source="${XRAY_AGENT_HYSTERIA2_DEFAULT_MASQUERADE_SOURCE:-外部兜底}"
         if [[ -n "${default_masquerade_url}" ]]; then
-            echoContent yellow "请输入 Hysteria2 伪装站 URL，[回车使用 ${default_masquerade_url}，默认来源: ${default_masquerade_source}]:"
+            echoContent yellow "请输入 Hysteria2 回落 URL，[回车使用 ${default_masquerade_url}，默认来源: ${default_masquerade_source}]:"
         else
-            echoContent yellow "请输入 Hysteria2 伪装站 URL[例如 https://www.example.com/]:"
+            echoContent yellow "请输入 Hysteria2 回落 URL[例如 https://www.example.com/]:"
         fi
         read -r -p "URL:" input_masquerade_url
         Hysteria2MasqueradeURL="${input_masquerade_url:-${default_masquerade_url}}"
-        [[ -n "${Hysteria2MasqueradeURL}" ]] || xray_agent_error " ---> Hysteria2 伪装站 URL 不可为空"
+        [[ -n "${Hysteria2MasqueradeURL}" ]] || xray_agent_error " ---> Hysteria2 回落 URL 不可为空"
         echoContent yellow " ---> Hysteria2 Brutal 带宽按服务端视角填写：服务端上行≈客户端下载，服务端下行≈客户端上传。"
         echoContent yellow " ---> 填 0 或直接回车表示不写 Brutal 参数，不是自动测速；不确定就保持 0。"
         Hysteria2BrutalUpMbps="$(xray_agent_hysteria2_prompt_mbps "服务端上行带宽" "约等于客户端下载" "${Hysteria2BrutalUpMbps:-0}")"
@@ -1305,7 +1305,7 @@ xray_agent_hysteria2_finalmask_suffix() {
         return 0
     fi
     if ! xray_agent_xray_supports_finalmask; then
-        echoContent yellow " ---> 当前 Xray-core 不支持 finalmask.quicParams，Hysteria2 Brutal/端口跳跃参数已跳过。" >&2
+        echoContent yellow " ---> 当前 Xray-core 不支持 Hysteria2 高级参数，Brutal/端口跳跃参数已跳过。请通过菜单 14 升级 Xray-core 后再启用。" >&2
         printf ''
         return 0
     fi
@@ -1380,7 +1380,7 @@ xray_agent_hysteria2_uninstall() {
     local hysteria2_file="${configPath}09_Hysteria2_inbounds.json"
     if [[ -f "${hysteria2_file}" ]]; then
         xray_agent_hysteria2_status_summary
-        xray_agent_confirm_action "确认卸载 Hysteria2 inbound？" "n" || return 0
+        xray_agent_confirm_action "确认卸载 Hysteria2 协议入口？" "n" || return 0
         rm -f "${hysteria2_file}"
         reloadCore
         echoContent green " ---> Hysteria2 已卸载"
@@ -1519,7 +1519,7 @@ xray_agent_hysteria2_manage_port_hopping() {
         return 0
     fi
     if ! xray_agent_xray_supports_finalmask; then
-        echoContent red " ---> 当前 Xray-core 不支持 finalmask.quicParams，不能启用 Hysteria2 端口跳跃。请先升级 Xray-core。"
+        echoContent red " ---> 当前 Xray-core 不支持 Hysteria2 端口跳跃所需参数，请先通过菜单 14 升级 Xray-core。"
         return 1
     fi
 
@@ -1596,7 +1596,7 @@ xray_agent_hysteria2_status_summary() {
         echoContent yellow "端口跳跃: 未启用"
     fi
     echoContent yellow "证书域名: ${TLSDomain:-未检测}"
-    echoContent yellow "伪装站: ${Hysteria2MasqueradeURL:-未检测}"
+    echoContent yellow "回落 URL: ${Hysteria2MasqueradeURL:-未检测}"
     echoContent yellow "Brutal上行: ${Hysteria2BrutalUpMbps:-0} Mbps"
     echoContent yellow "Brutal下行: ${Hysteria2BrutalDownMbps:-0} Mbps"
     echoContent yellow "账号数量: $(xray_agent_hysteria2_client_count)"
@@ -1625,10 +1625,10 @@ xray_agent_hysteria2_manage_menu() {
     readConfigHostPathUUID
     if xray_agent_hysteria2_installed; then
         hysteria2_action_label="重配 Hysteria2"
-        hysteria2_action_description="重配会重写 Hysteria2 inbound，账号将复用当前 UUID/auth 列表。"
+        hysteria2_action_description="重配会重写 Hysteria2 协议入口，账号将复用当前 UUID/auth 列表。"
     else
         hysteria2_action_label="启用 Hysteria2"
-        hysteria2_action_description="启用会写入 Hysteria2 inbound，账号将复用当前 UUID/auth 列表。"
+        hysteria2_action_description="启用会写入 Hysteria2 协议入口，账号将复用当前 UUID/auth 列表。"
     fi
     xray_agent_tool_status_header "Hysteria2管理"
     xray_agent_hysteria2_status_summary

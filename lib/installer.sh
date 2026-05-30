@@ -320,7 +320,7 @@ xray_agent_install_step_title() {
     local step_name="$1"
     case "${step_name}" in
         stop_xray) printf '停止Xray服务\n' ;;
-        warning_reality_target) printf '检查Reality目标兼容性\n' ;;
+        warning_reality_target) printf '检查 Reality 目标站点兼容性\n' ;;
         custom_port_vision) printf '检查TLS监听端口\n' ;;
         custom_port_reality) printf '检查Reality监听端口\n' ;;
         warning_xhttp_port) printf '检查XHTTP/Reality端口兼容性\n' ;;
@@ -363,7 +363,7 @@ xray_agent_offer_optional_hysteria2() {
     xray_agent_blank
     echoContent skyBlue "进度 ${progress_index}/${totalProgress} : Reality完成后可选安装Hysteria2"
     echoContent yellow " ---> Reality TCP/XHTTP 主配置已完成并 reload 成功。"
-    echoContent yellow " ---> Hysteria2 使用 Xray-core 内置 UDP 协议，需要你自己的 TLS 域名和证书；不使用 Reality target。"
+    echoContent yellow " ---> Hysteria2 使用 Xray-core 内置 UDP 协议，需要你自己的 TLS 域名和证书；不使用 Reality 目标站点。"
     if [[ -f "${configPath}09_Hysteria2_inbounds.json" ]]; then
         prompt="检测到已有 Hysteria2 配置，是否进入 Hysteria2 重配流程？"
     else

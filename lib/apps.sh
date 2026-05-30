@@ -92,18 +92,18 @@ xray_agent_adguard_print_menu() {
     xray_agent_blank
     echoContent red "=============================================================="
     if xray_agent_adguard_installed; then
-        echoContent yellow "1.重新安装/修复AdGuardHome"
-        echoContent yellow "2.升级AdGuardHome"
-        echoContent yellow "3.卸载AdGuardHome"
+        echoContent yellow "1.重新安装/修复 AdGuardHome"
+        echoContent yellow "2.升级 AdGuardHome"
+        echoContent yellow "3.卸载 AdGuardHome"
         if xray_agent_adguard_running; then
-            echoContent yellow "4.关闭AdGuardHome"
-            echoContent yellow "6.重启AdGuardHome"
+            echoContent yellow "4.关闭 AdGuardHome"
+            echoContent yellow "6.重启 AdGuardHome"
         else
-            echoContent yellow "5.打开AdGuardHome"
-            echoContent yellow "6.重启AdGuardHome"
+            echoContent yellow "5.打开 AdGuardHome"
+            echoContent yellow "6.重启 AdGuardHome"
         fi
     else
-        echoContent yellow "1.安装AdGuardHome"
+        echoContent yellow "1.安装 AdGuardHome"
     fi
     echoContent yellow "0.返回"
     echoContent red "=============================================================="
@@ -113,22 +113,22 @@ xray_agent_adguard_apply_runtime_status() {
     sleep 0.8
     xray_agent_adguard_installed || return 0
     if xray_agent_adguard_running; then
-        echoContent green " ---> AdGuardHome运行中"
+        echoContent green " ---> AdGuardHome 正在运行"
         if xray_agent_adguard_configured; then
             if xray_agent_adguard_use_local_dns; then
-                echoContent green " ---> AdGuardHome已成功设置为DNS服务器"
+                echoContent green " ---> 系统 DNS 已指向 AdGuardHome"
             else
-                echoContent red " ---> AdGuardHome运行中，但设置系统DNS失败，请检查 /etc/resolv.conf 是否被锁定、只读挂载或由系统DNS服务管理"
+                echoContent red " ---> AdGuardHome 正在运行，但脚本未能修改系统 DNS。请检查 /etc/resolv.conf 是否被锁定、只读挂载或由系统 DNS 服务管理"
             fi
         else
-            echoContent red " ---> 未检测到AdGuardHome配置文件，请完成初始化配置后再设为系统DNS"
+            echoContent red " ---> 未检测到 AdGuardHome 配置文件，请先完成初始化配置，再设置为系统 DNS"
         fi
     else
-        echoContent red " ---> AdGuardHome未运行"
+        echoContent red " ---> AdGuardHome 未运行"
         if xray_agent_adguard_restore_dns; then
-            echoContent green " ---> 已恢复原始DNS配置"
+            echoContent green " ---> 已恢复原始 DNS 配置"
         else
-            echoContent red " ---> 恢复原始DNS配置失败，请检查 /etc/resolv.conf 权限"
+            echoContent red " ---> 恢复原始 DNS 配置失败，请检查 /etc/resolv.conf 权限"
         fi
     fi
 }
