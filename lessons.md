@@ -6,6 +6,8 @@
 - Preventive rule: when the operator expects proxy traffic to keep AdGuardHome filtering, keep Xray DNS on `localhost` and add an early routing rule that sends sinkhole addresses (`0.0.0.0`, loopback, `::`, `::1`) to `blackhole-out` so blocked requests fail fast instead of being dialed.
 - Root-cause pattern: some filtering DNS setups return a valid A record and a sinkhole AAAA record (`::`) for the same normal domain. With Xray DNS `queryStrategy=UseIP`, the sinkhole AAAA can win routing and send an otherwise reachable domain to `blackhole-out`.
 - Preventive rule: if the operator requires `UseIP`, keep Xray on `UseIP` and fix the filtering resolver instead: configure AdGuardHome blocked responses as `nxdomain` or `refused` so blocked domains produce DNS errors rather than fake sinkhole IPs.
+- Root-cause pattern: AdGuardHome runtime status used to print "DNS server configured successfully" even if writing `/etc/resolv.conf` failed with `Operation not permitted`, commonly because the file was immutable, read-only, or managed by another DNS service.
+- Preventive rule: DNS switching helpers must return failure on write errors, try `chattr -i` before direct `/etc/resolv.conf` writes, skip rewrites when the intended local nameserver is already present, and only print success after verifying the target nameserver is actually configured.
 
 ## WARP Public Source Rules
 

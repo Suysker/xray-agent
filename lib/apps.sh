@@ -6,38 +6,52 @@ fi
 
 xray_agent_adguard_restore_dns() {
     if [[ -d /etc/resolvconf/resolv.conf.d ]]; then
-        sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head
-        sudo sed -i '/^nameserver ::1/d' /etc/resolvconf/resolv.conf.d/head
-        sudo resolvconf -u
+        sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head || return 1
+        sudo sed -i '/^nameserver ::1/d' /etc/resolvconf/resolv.conf.d/head || return 1
+        sudo resolvconf -u || return 1
     else
         sudo chattr -i /etc/resolv.conf 2>/dev/null || true
         if [[ -f /etc/resolv.conf.bak ]]; then
-            sudo mv /etc/resolv.conf.bak /etc/resolv.conf
+            sudo mv /etc/resolv.conf.bak /etc/resolv.conf || return 1
         else
-            printf 'nameserver %s\n' "$(xray_agent_fallback_public_dns)" | sudo tee /etc/resolv.conf >/dev/null
+            printf 'nameserver %s\n' "$(xray_agent_fallback_public_dns)" | sudo tee /etc/resolv.conf >/dev/null || return 1
         fi
     fi
+}
+
+xray_agent_adguard_resolv_conf_uses_nameserver() {
+    local nameserver="$1"
+    [[ -r /etc/resolv.conf ]] || return 1
+    grep -q "^nameserver ${nameserver}$" /etc/resolv.conf
 }
 
 xray_agent_adguard_use_local_dns() {
     local nameserver
     nameserver="$(xray_agent_adguard_nameserver)"
     if [[ -d /etc/resolvconf/resolv.conf.d ]]; then
-        sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head
-        sudo sed -i '/^nameserver ::1/d' /etc/resolvconf/resolv.conf.d/head
+        sudo sed -i '/^nameserver 127.0.0.1/d' /etc/resolvconf/resolv.conf.d/head || return 1
+        sudo sed -i '/^nameserver ::1/d' /etc/resolvconf/resolv.conf.d/head || return 1
         if ! grep -q "^nameserver ${nameserver}$" /etc/resolvconf/resolv.conf.d/head; then
-            sudo sed -i "1inameserver ${nameserver}" /etc/resolvconf/resolv.conf.d/head
+            sudo sed -i "1inameserver ${nameserver}" /etc/resolvconf/resolv.conf.d/head || return 1
         fi
-        sudo resolvconf -u
+        sudo resolvconf -u || return 1
     else
+        if xray_agent_adguard_resolv_conf_uses_nameserver "${nameserver}"; then
+            return 0
+        fi
+        sudo chattr -i /etc/resolv.conf 2>/dev/null || true
+        if [[ ! -f /etc/resolv.conf.bak && -e /etc/resolv.conf ]]; then
+            sudo cp -L /etc/resolv.conf /etc/resolv.conf.bak 2>/dev/null || true
+        fi
         if [[ -L /etc/resolv.conf ]]; then
-            sudo rm -f /etc/resolv.conf
+            sudo rm -f /etc/resolv.conf || return 1
         fi
         if [[ ! -f /etc/resolv.conf.bak ]]; then
-            sudo cp /etc/resolv.conf /etc/resolv.conf.bak
+            sudo cp /etc/resolv.conf /etc/resolv.conf.bak 2>/dev/null || true
         fi
-        printf 'nameserver %s\n' "${nameserver}" | sudo tee /etc/resolv.conf >/dev/null
+        printf 'nameserver %s\n' "${nameserver}" | sudo tee /etc/resolv.conf >/dev/null || return 1
         sudo chattr +i /etc/resolv.conf 2>/dev/null || true
+        xray_agent_adguard_resolv_conf_uses_nameserver "${nameserver}" || return 1
     fi
 }
 
@@ -101,15 +115,21 @@ xray_agent_adguard_apply_runtime_status() {
     if xray_agent_adguard_running; then
         echoContent green " ---> AdGuardHome运行中"
         if xray_agent_adguard_configured; then
-            xray_agent_adguard_use_local_dns
-            echoContent green " ---> AdGuardHome已成功设置为DNS服务器"
+            if xray_agent_adguard_use_local_dns; then
+                echoContent green " ---> AdGuardHome已成功设置为DNS服务器"
+            else
+                echoContent red " ---> AdGuardHome运行中，但设置系统DNS失败，请检查 /etc/resolv.conf 是否被锁定、只读挂载或由系统DNS服务管理"
+            fi
         else
             echoContent red " ---> 未检测到AdGuardHome配置文件，请完成初始化配置后再设为系统DNS"
         fi
     else
         echoContent red " ---> AdGuardHome未运行"
-        xray_agent_adguard_restore_dns
-        echoContent green " ---> 已恢复原始DNS配置"
+        if xray_agent_adguard_restore_dns; then
+            echoContent green " ---> 已恢复原始DNS配置"
+        else
+            echoContent red " ---> 恢复原始DNS配置失败，请检查 /etc/resolv.conf 权限"
+        fi
     fi
 }
 

@@ -58,6 +58,8 @@ dig +short @127.0.0.1 www.bing.com AAAA
 
 如果这些域名在服务器上解析为 `0.0.0.0`、`127.0.0.1`、`::` 或 `::1`，应确认 `/etc/xray-agent/xray/conf/09_routing.json` 里存在把这些地址送到 `blackhole-out` 的规则。如果正常域名的 A 记录正常但 AAAA 记录被过滤为 `::`，优先调整 AdGuardHome 的 `blocking_mode`，不要为了规避误伤而绕过 `localhost` DNS 或改掉 `UseIP`。
 
+如果 AdGuardHome 管理菜单提示 `/etc/resolv.conf: Operation not permitted`，通常是该文件被 `chattr +i` 锁定、所在挂载只读，或由系统 DNS 服务接管。脚本会先尝试解除 immutable 标志；仍失败时不会再提示“已成功设置为DNS服务器”，应检查 `lsattr /etc/resolv.conf`、`ls -l /etc/resolv.conf` 和 `findmnt /etc/resolv.conf /etc`。
+
 ## Xray-core 升级失败
 
 如果 GitHub Release API 被限流或网络返回异常，脚本会停止升级并保留当前 Xray-core。稍后重试，或先确认服务器可以稳定访问 `api.github.com` 和 `github.com/XTLS/Xray-core/releases`。
