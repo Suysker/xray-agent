@@ -18,6 +18,15 @@
 - 问题模式：AdGuardHome 管理菜单曾经在写入 `/etc/resolv.conf` 失败时仍显示“DNS 已设置成功”。
 - 维护规则：DNS 切换必须以实际验证为准。写入失败要返回失败；如果目标 nameserver 已存在则不重复写入；成功提示只能在确认系统 DNS 已指向目标后显示。
 
+## IPv4/IPv6 出站优先
+
+- 问题模式：仅通过调整出站数组顺序，再把 Freedom 的 `domainStrategy` 设为 `UseIPv4` 或 `UseIPv6`，实际是强制单地址族；另一地址族不会在首选地址族连接失败时接管。
+- 维护规则：双栈“优先”必须使用 Xray-core `v25.6.8+` 的 Happy Eyeballs：Freedom 保持 `AsIs`，由 `sockopt.domainStrategy=UseIP` 和 `happyEyeballs` 处理 TCP 连接竞速；DNS 查询策略同时保持 `UseIP`。文案必须说明 UDP 不属于该保证范围。
+- 问题模式：重写基础出站文件会顺带删除 WARP、CN 等附加出站；添加单个 IPv6 域名规则也不应改变用户已经选择的全局地址族策略。
+- 维护规则：切换优先级时只替换基础 IPv4、IPv6 和黑洞出站，并保留其他 tag；域名分流操作只增删对应规则和必要出站，不重置全局策略。
+- 问题模式：路由 profile 以 CRLF 结尾时，最后一个出站 tag 和策略值会携带 `\r`，导致模板匹配失败或生成无效的 DNS 策略。
+- 维护规则：读取 key/value profile 时先剥离行尾 `\r`；回归测试必须从 Linux shell 读取实际 checkout 中的 profile 文件。
+
 ## WARP 公网源地址规则
 
 - 问题模式：WARP 非全局模式依赖 `/etc/wireguard/warp.conf` 中的公网源地址规则，让服务器自己的公网入站流量继续从 VPS 主路由返回。把 `LAN4` 或 `USERIP4` 这类值当成临时探测结果随意修改，会破坏回程路由。

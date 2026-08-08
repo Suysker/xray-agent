@@ -21,6 +21,7 @@ xray_agent_load_routing_profile() {
 
     xray_agent_reset_routing_profile
     while IFS= read -r line || [[ -n "${line}" ]]; do
+        line="${line%$'\r'}"
         [[ -z "${line}" || "${line}" == \#* ]] && continue
         key="${line%%=*}"
         value="${line#*=}"
@@ -42,10 +43,27 @@ xray_agent_render_outbound_template() {
     xray_agent_render_template_stdout "${template_path}"
 }
 
+xray_agent_routing_supports_happy_eyeballs() {
+    declare -F xray_agent_xray_supports_happy_eyeballs >/dev/null 2>&1 || return 1
+    xray_agent_xray_supports_happy_eyeballs
+}
+
 xray_agent_render_outbound_by_tag() {
     case "$1" in
-        IPv4-out) xray_agent_render_outbound_template "freedom_ipv4.json.tpl" ;;
-        IPv6-out) xray_agent_render_outbound_template "freedom_ipv6.json.tpl" ;;
+        IPv4-out)
+            if xray_agent_routing_supports_happy_eyeballs; then
+                xray_agent_render_outbound_template "freedom_ipv4.json.tpl"
+            else
+                xray_agent_render_outbound_template "freedom_ipv4_legacy.json.tpl"
+            fi
+            ;;
+        IPv6-out)
+            if xray_agent_routing_supports_happy_eyeballs; then
+                xray_agent_render_outbound_template "freedom_ipv6.json.tpl"
+            else
+                xray_agent_render_outbound_template "freedom_ipv6_legacy.json.tpl"
+            fi
+            ;;
         blackhole-out) xray_agent_render_outbound_template "blackhole.json.tpl" ;;
         warp-out) xray_agent_render_outbound_template "warp_out.json.tpl" ;;
         cn-out) xray_agent_render_outbound_template "cn_out.json.tpl" ;;
@@ -85,12 +103,8 @@ xray_agent_default_routing_domain_strategy() {
 xray_agent_default_dns_query_strategy() {
     local profile_name
     profile_name="$(xray_agent_default_routing_profile_name)"
-    if [[ "${profile_name}" == "ipv6_first" ]]; then
-        printf 'UseIPv6\n'
-    else
-        xray_agent_load_routing_profile "${profile_name}"
-        printf '%s\n' "${XRAY_AGENT_ROUTING_DNS_QUERY_STRATEGY:-UseIP}"
-    fi
+    xray_agent_load_routing_profile "${profile_name}" || return 1
+    printf '%s\n' "${XRAY_AGENT_ROUTING_DNS_QUERY_STRATEGY:-UseIP}"
 }
 
 xray_agent_default_routing_rules_json() {
@@ -134,15 +148,56 @@ xray_agent_append_outbound_by_tag() {
     xray_agent_json_update_file "${target_file}" '.outbounds += [$outbound]' --argjson outbound "${outbound_json}"
 }
 
+xray_agent_base_outbound_tags_json() {
+    jq -nc '["IPv4-out", "IPv6-out", "blackhole-out"]'
+}
+
 xray_agent_apply_routing_profile() {
     local profile_name="$1"
+    local outbounds_path="${configPath}10_ipv4_outbounds.json"
+    local dns_path="${configPath}11_dns.json"
+    local outbounds_temp="${outbounds_path}.tmp"
+    local dns_temp="${dns_path}.tmp"
+    local dns_updated=false
+    local base_tags_json base_outbounds_json preserved_outbounds_json
+
+    if ! xray_agent_routing_supports_happy_eyeballs; then
+        echoContent red " ---> 全局 IPv4/IPv6 优先需要 Xray-core v25.6.8 或更高版本。"
+        return 1
+    fi
     xray_agent_load_routing_profile "${profile_name}" || return 1
-    local outbound_jsons=()
-    local outbound_tag
-    while IFS= read -r outbound_tag; do
-        outbound_jsons+=("$(xray_agent_render_outbound_by_tag "${outbound_tag}")")
-    done < <(echo "${XRAY_AGENT_ROUTING_OUTBOUND_ORDER}" | tr ',' '\n')
-    printf '%s\n' "${outbound_jsons[@]}" | jq -sc '{"outbounds": .}' >"${configPath}10_ipv4_outbounds.json"
+    base_tags_json="$(xray_agent_base_outbound_tags_json)" || return 1
+    base_outbounds_json="$(xray_agent_outbounds_json_for_profile "${profile_name}")" || return 1
+
+    if [[ -f "${outbounds_path}" ]]; then
+        preserved_outbounds_json="$(jq -c --argjson baseTags "${base_tags_json}" '
+          [.outbounds[]? | select(.tag as $tag | ($baseTags | index($tag) | not))]
+        ' "${outbounds_path}")" || return 1
+    else
+        preserved_outbounds_json='[]'
+    fi
+
+    if ! jq -nc --argjson baseOutbounds "${base_outbounds_json}" --argjson preservedOutbounds "${preserved_outbounds_json}" '
+      {outbounds: ($baseOutbounds + $preservedOutbounds)}
+    ' >"${outbounds_temp}"; then
+        rm -f -- "${outbounds_temp}"
+        return 1
+    fi
+
+    if [[ -f "${dns_path}" ]]; then
+        if ! jq --arg queryStrategy "${XRAY_AGENT_ROUTING_DNS_QUERY_STRATEGY:-UseIP}" '
+          .dns = ((.dns // {}) + {queryStrategy:$queryStrategy})
+        ' "${dns_path}" >"${dns_temp}"; then
+            rm -f -- "${outbounds_temp}" "${dns_temp}"
+            return 1
+        fi
+        dns_updated=true
+    fi
+
+    mv "${outbounds_temp}" "${outbounds_path}" || return 1
+    if [[ "${dns_updated}" == "true" ]]; then
+        mv "${dns_temp}" "${dns_path}" || return 1
+    fi
 }
 
 xray_agent_routing_rule_count() {
@@ -194,7 +249,11 @@ ipv6Routing() {
 
     if [[ "${routeIPv6}" == "true" ]]; then
         actions+=("add_ipv6_domain")
-        echoContent yellow "${#actions[@]}.添加域名到 IPv6 出站"
+        if xray_agent_routing_supports_happy_eyeballs; then
+            echoContent yellow "${#actions[@]}.添加域名到 IPv6 优先出站（TCP 自动回退）"
+        else
+            echoContent yellow "${#actions[@]}.添加域名到 IPv6 出站"
+        fi
     else
         echoContent yellow "提示: 当前没有 IPv6 默认路由，不显示 IPv6 新增/优先动作。"
     fi
@@ -205,10 +264,15 @@ ipv6Routing() {
     echoContent yellow "${#actions[@]}.查看 IPv6 出站域名"
 
     if [[ "${routeIPv4}" == "true" && "${routeIPv6}" == "true" ]]; then
-        actions+=("prefer_ipv6")
-        echoContent yellow "${#actions[@]}.全局 IPv6 优先"
-        actions+=("prefer_ipv4")
-        echoContent yellow "${#actions[@]}.全局 IPv4 优先"
+        if xray_agent_routing_supports_happy_eyeballs; then
+            actions+=("prefer_ipv6")
+            echoContent yellow "${#actions[@]}.全局 IPv6 优先（TCP 自动回退）"
+            actions+=("prefer_ipv4")
+            echoContent yellow "${#actions[@]}.全局 IPv4 优先（TCP 自动回退）"
+            echoContent yellow "说明: 优先策略仅作用于 TCP；UDP 仍遵循 Xray-core 的地址族选择。"
+        else
+            echoContent yellow "提示: 全局 IPv4/IPv6 优先需要 Xray-core v25.6.8+，请通过菜单14升级。"
+        fi
     elif [[ "${routeIPv6}" == "true" ]]; then
         echoContent yellow "提示: 当前为 IPv6-only，默认基线已使用 IPv6 出站。"
     fi
@@ -222,8 +286,15 @@ ipv6Routing() {
 
     if [[ "${action}" == "add_ipv6_domain" ]]; then
         read -r -p "请输入要走 IPv6 出站的 geosite 域名，例如 geosite:netflix:" domainList
-        echoContent yellow "将把以下 geosite 域名路由到 IPv6 出站: ${domainList}"
+        if xray_agent_routing_supports_happy_eyeballs; then
+            echoContent yellow "将把以下 geosite 域名路由到 IPv6 优先出站: ${domainList}"
+        else
+            echoContent yellow "将把以下 geosite 域名路由到 IPv6 出站: ${domainList}"
+        fi
         xray_agent_confirm_action "确认继续？" "y" || return 0
+        if ! xray_agent_outbound_exists "IPv6-out"; then
+            xray_agent_append_outbound_by_tag "${configPath}10_ipv4_outbounds.json" "IPv6-out" || return 1
+        fi
         if [[ -f "${configPath}09_routing.json" ]]; then
             unInstallRouting IPv6-out outboundTag
             export XRAY_ROUTING_DOMAINS_JSON
@@ -240,18 +311,13 @@ ipv6Routing() {
         return 0
     fi
 
-    if [[ "${action}" == "add_ipv6_domain" || "${action}" == "prefer_ipv6" || "${action}" == "prefer_ipv4" ]]; then
-        if [[ "${action}" == "prefer_ipv6" || "${action}" == "prefer_ipv4" ]]; then
-            echoContent yellow "将重写基础出站策略为 $([[ "${action}" == "prefer_ipv6" ]] && printf 'IPv6 优先' || printf 'IPv4 优先')。"
-            xray_agent_confirm_action "确认继续？" "y" || return 0
-        fi
-        unInstallOutbounds IPv4-out
-        unInstallOutbounds IPv6-out
-        unInstallOutbounds blackhole-out
+    if [[ "${action}" == "prefer_ipv6" || "${action}" == "prefer_ipv4" ]]; then
+        echoContent yellow "将更新基础出站策略为 $([[ "${action}" == "prefer_ipv6" ]] && printf 'IPv6 优先（TCP 自动回退）' || printf 'IPv4 优先（TCP 自动回退）')，并保留已有 WARP/CN 出站。"
+        xray_agent_confirm_action "确认继续？" "y" || return 0
         if [[ "${action}" == "prefer_ipv6" ]]; then
-            xray_agent_apply_routing_profile "ipv6_first"
+            xray_agent_apply_routing_profile "ipv6_first" || return 1
         else
-            xray_agent_apply_routing_profile "ipv4_first"
+            xray_agent_apply_routing_profile "ipv4_first" || return 1
         fi
     fi
     reloadCore
