@@ -394,6 +394,9 @@ unInstall() {
         handleXray stop
         rm -rf /etc/systemd/system/xray.service
     fi
+    if declare -F xray_agent_network_policy_cleanup >/dev/null 2>&1; then
+        xray_agent_network_policy_cleanup || echoContent yellow " ---> 项目网络策略清理失败，请检查 network-ownership.json"
+    fi
     crontab -l | grep -v 'auto_update_geodata.sh' | crontab -
     crontab -l | grep -v 'install.sh RenewTLS' | crontab -
     /bin/bash "${XRAY_AGENT_PROJECT_ROOT}/packaging/uninstall.sh"

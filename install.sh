@@ -66,10 +66,12 @@ xray_agent_runtime_layout_complete() {
     for required_path in \
         "${SCRIPT_DIR}/lib/common.sh" \
         "${SCRIPT_DIR}/lib/network.sh" \
+        "${SCRIPT_DIR}/lib/network_policy.sh" \
         "${SCRIPT_DIR}/lib/runtime.sh" \
         "${SCRIPT_DIR}/lib/system.sh" \
         "${SCRIPT_DIR}/lib/tls.sh" \
         "${SCRIPT_DIR}/lib/core.sh" \
+        "${SCRIPT_DIR}/lib/egress.sh" \
         "${SCRIPT_DIR}/lib/xray_hardening.sh" \
         "${SCRIPT_DIR}/lib/nginx_state.sh" \
         "${SCRIPT_DIR}/lib/nginx_preflight.sh" \
@@ -87,11 +89,9 @@ xray_agent_runtime_layout_complete() {
         "${SCRIPT_DIR}/lib/cli.sh" \
         "${SCRIPT_DIR}/profiles/install" \
         "${SCRIPT_DIR}/profiles/protocol" \
-        "${SCRIPT_DIR}/profiles/routing" \
         "${SCRIPT_DIR}/profiles/subscription/rules.json" \
         "${SCRIPT_DIR}/templates/xray/base" \
         "${SCRIPT_DIR}/templates/xray/inbounds" \
-        "${SCRIPT_DIR}/templates/xray/outbounds" \
         "${SCRIPT_DIR}/templates/nginx" \
         "${SCRIPT_DIR}/templates/systemd" \
         "${SCRIPT_DIR}/templates/share" \
@@ -157,10 +157,12 @@ xray_agent_ensure_jq_on_path
 for module_file in \
     "${SCRIPT_DIR}/lib/common.sh" \
     "${SCRIPT_DIR}/lib/network.sh" \
+    "${SCRIPT_DIR}/lib/network_policy.sh" \
     "${SCRIPT_DIR}/lib/runtime.sh" \
     "${SCRIPT_DIR}/lib/system.sh" \
     "${SCRIPT_DIR}/lib/tls.sh" \
     "${SCRIPT_DIR}/lib/core.sh" \
+    "${SCRIPT_DIR}/lib/egress.sh" \
     "${SCRIPT_DIR}/lib/xray_hardening.sh" \
     "${SCRIPT_DIR}/lib/nginx_state.sh" \
     "${SCRIPT_DIR}/lib/nginx_preflight.sh" \

@@ -7,18 +7,17 @@ mkdir -p \
     "${TARGET_ROOT}/lib" \
     "${TARGET_ROOT}/templates/xray/base" \
     "${TARGET_ROOT}/templates/xray/inbounds" \
-    "${TARGET_ROOT}/templates/xray/outbounds" \
     "${TARGET_ROOT}/templates/xray/extras" \
     "${TARGET_ROOT}/templates/nginx" \
     "${TARGET_ROOT}/templates/share" \
     "${TARGET_ROOT}/templates/systemd" \
     "${TARGET_ROOT}/profiles/install" \
     "${TARGET_ROOT}/profiles/protocol" \
-    "${TARGET_ROOT}/profiles/routing" \
     "${TARGET_ROOT}/profiles/nginx" \
     "${TARGET_ROOT}/profiles/subscription" \
     "${TARGET_ROOT}/docs" \
-    "${TARGET_ROOT}/packaging"
+    "${TARGET_ROOT}/packaging" \
+    "${TARGET_ROOT}/state"
 
 move_if_missing() {
     local old_path="$1"

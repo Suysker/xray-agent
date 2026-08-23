@@ -164,12 +164,57 @@ xray_agent_curl_public_ip() {
     local family="$1"
     local url="$2"
     local response
-    response="$(curl -fsS --connect-timeout 3 --max-time 5 -"${family}" "${url}" 2>/dev/null || true)"
+    response="$(curl -fsS --noproxy '*' --connect-timeout 3 --max-time 5 -"${family}" "${url}" 2>/dev/null || true)"
     if [[ "${url}" == *cdn-cgi/trace* ]]; then
         printf '%s\n' "${response}" | awk -F= '$1 == "ip" {print $2; exit}'
     else
         printf '%s\n' "${response}" | head -1 | tr -d '\r'
     fi
+}
+
+xray_agent_interface_trace_response() {
+    local family="$1"
+    local interface_name="$2"
+    command -v curl >/dev/null 2>&1 || return 1
+    curl -fsS --noproxy '*' --connect-timeout 3 --max-time 5 --interface "${interface_name}" -"${family}" https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null
+}
+
+xray_agent_trace_public_ip_for_family() {
+    local family="$1"
+    local response="$2"
+    local public_ip
+    public_ip="$(printf '%s\n' "${response}" | awk -F= '$1 == "ip" {print $2; exit}')"
+    if [[ "${family}" == "4" ]]; then
+        printf '%s\n' "${public_ip}" | xray_agent_parse_public_ipv4
+    else
+        printf '%s\n' "${public_ip}" | xray_agent_parse_public_ipv6
+    fi
+}
+
+xray_agent_trace_matches_provider() {
+    local provider="$1"
+    local response="$2"
+    local warp_status
+    warp_status="$(printf '%s\n' "${response}" | awk -F= '$1 == "warp" {print $2; exit}')"
+    case "${provider}" in
+        native) [[ "${warp_status}" == "off" ]] ;;
+        warp) [[ "${warp_status}" == "on" || "${warp_status}" == "plus" ]] ;;
+        *) return 1 ;;
+    esac
+}
+
+xray_agent_interface_provider_egress_usable() {
+    local family="$1"
+    local interface_name="$2"
+    local source_address="$3"
+    local provider="$4"
+    local response public_ip
+    [[ -n "${interface_name}" && -n "${source_address}" ]] || return 1
+    response="$(xray_agent_interface_trace_response "${family}" "${interface_name}" || true)"
+    [[ -n "${response}" ]] || return 1
+    public_ip="$(xray_agent_trace_public_ip_for_family "${family}" "${response}")"
+    [[ -n "${public_ip}" ]] || return 1
+    xray_agent_trace_matches_provider "${provider}" "${response}"
 }
 
 xray_agent_public_ips_for_family() {
@@ -190,11 +235,55 @@ xray_agent_public_ips_for_family() {
     } | "${parser}" | xray_agent_unique_nonempty_lines
 }
 
+xray_agent_wireguard_interfaces() {
+    {
+        if command -v wg >/dev/null 2>&1; then
+            wg show interfaces 2>/dev/null | tr ' ' '\n'
+        fi
+        if command -v ip >/dev/null 2>&1; then
+            ip -o link show type wireguard 2>/dev/null | awk -F': ' '{split($2, name, "@"); print name[1]}'
+        fi
+    } | xray_agent_unique_nonempty_lines
+}
+
+xray_agent_warp_provider_state_path() {
+    printf '%s/state/warp-provider.json\n' "${XRAY_AGENT_ETC_DIR:-/etc/xray-agent}"
+}
+
+xray_agent_recorded_warp_interface() {
+    local state_path
+    state_path="$(xray_agent_warp_provider_state_path)"
+    [[ -r "${state_path}" ]] || return 0
+    jq -r '.interface // empty' "${state_path}" 2>/dev/null | tr -d '\r'
+}
+
+xray_agent_warp_trace_status() {
+    local interface_name="$1"
+    local family response
+    for family in 4 6; do
+        response="$(xray_agent_interface_trace_response "${family}" "${interface_name}" || true)"
+        if xray_agent_trace_matches_provider warp "${response}"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+xray_agent_interface_is_recorded_warp() {
+    local interface_name="$1"
+    [[ -n "${interface_name}" && "${interface_name}" == "$(xray_agent_recorded_warp_interface)" ]]
+}
+
+xray_agent_interface_is_warp() {
+    local interface_name="$1"
+    xray_agent_interface_is_recorded_warp "${interface_name}" || xray_agent_warp_trace_status "${interface_name}"
+}
+
 xray_agent_warp_interface_candidates() {
-    command -v ip >/dev/null 2>&1 || return 0
-    ip -o link show 2>/dev/null |
-        awk -F': ' '{split($2, name, "@"); print name[1]}' |
-        awk '$0 == "WARP" || $0 == "wgcf" || $0 == "warp" || $0 ~ /^warp[0-9]+$/'
+    {
+        xray_agent_recorded_warp_interface
+        xray_agent_wireguard_interfaces
+    } | xray_agent_unique_nonempty_lines
 }
 
 xray_agent_detect_warp_interface() {
@@ -203,7 +292,7 @@ xray_agent_detect_warp_interface() {
         [[ -n "${candidate}" ]] || continue
         ipv4_list="$(xray_agent_interface_addresses 4 "${candidate}" | xray_agent_csv_from_lines)"
         ipv6_list="$(xray_agent_interface_addresses 6 "${candidate}" | xray_agent_csv_from_lines)"
-        if [[ -n "${ipv4_list}${ipv6_list}" ]]; then
+        if [[ -n "${ipv4_list}${ipv6_list}" ]] && xray_agent_interface_is_warp "${candidate}"; then
             warpInterface="${candidate}"
             warpIPv4CSV="${ipv4_list}"
             warpIPv6CSV="${ipv6_list}"
@@ -215,6 +304,85 @@ xray_agent_detect_warp_interface() {
     warpIPv4CSV=
     warpIPv6CSV=
     return 1
+}
+
+xray_agent_main_default_interfaces_for_family() {
+    local family="$1"
+    command -v ip >/dev/null 2>&1 || return 0
+    ip -"${family}" route show table main default 2>/dev/null | awk '
+        {
+            for (i = 1; i <= NF; i++) {
+                if ($i == "dev") {
+                    print $(i + 1)
+                    break
+                }
+            }
+        }
+    ' | xray_agent_unique_nonempty_lines
+}
+
+xray_agent_native_interface_for_family() {
+    local family="$1"
+    local effective_interface candidate
+    if [[ "${family}" == "4" ]]; then
+        effective_interface="${defaultIPv4Interface}"
+    else
+        effective_interface="${defaultIPv6Interface}"
+    fi
+    if [[ -n "${effective_interface}" && "${effective_interface}" != "${warpInterface}" ]] &&
+        [[ -n "$(xray_agent_interface_addresses "${family}" "${effective_interface}" | head -1)" ]]; then
+        printf '%s\n' "${effective_interface}"
+        return 0
+    fi
+    while IFS= read -r candidate; do
+        [[ -n "${candidate}" && "${candidate}" != "${warpInterface}" ]] || continue
+        if [[ -n "$(xray_agent_interface_addresses "${family}" "${candidate}" | head -1)" ]]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    done < <(xray_agent_main_default_interfaces_for_family "${family}")
+}
+
+xray_agent_interface_source_address() {
+    local family="$1"
+    local interface_name="$2"
+    local probe_target source_address
+    [[ -n "${interface_name}" ]] || return 0
+    if [[ "${family}" == "4" ]]; then
+        probe_target="1.1.1.1"
+    else
+        probe_target="2606:4700:4700::1111"
+    fi
+    source_address="$(ip -"${family}" route get "${probe_target}" oif "${interface_name}" 2>/dev/null | awk '
+        {
+            for (i = 1; i <= NF; i++) {
+                if ($i == "src") {
+                    print $(i + 1)
+                    exit
+                }
+            }
+        }
+    ')"
+    if [[ -n "${source_address}" ]]; then
+        printf '%s\n' "${source_address}"
+    else
+        xray_agent_interface_addresses "${family}" "${interface_name}" | head -1
+    fi
+}
+
+xray_agent_detect_native_routes() {
+    nativeIPv4Interface="$(xray_agent_native_interface_for_family 4)"
+    nativeIPv6Interface="$(xray_agent_native_interface_for_family 6)"
+    nativeIPv4Address="$(xray_agent_interface_source_address 4 "${nativeIPv4Interface}")"
+    nativeIPv6Address="$(xray_agent_interface_source_address 6 "${nativeIPv6Interface}")"
+    nativeHasIPv4=false
+    nativeHasIPv6=false
+    [[ -n "${nativeIPv4Interface}" && -n "${nativeIPv4Address}" ]] && nativeHasIPv4=true
+    [[ -n "${nativeIPv6Interface}" && -n "${nativeIPv6Address}" ]] && nativeHasIPv6=true
+    nativeRouteIPv4=false
+    nativeRouteIPv6=false
+    [[ "${nativeHasIPv4}" == "true" ]] && xray_agent_interface_provider_egress_usable 4 "${nativeIPv4Interface}" "${nativeIPv4Address}" native && nativeRouteIPv4=true
+    [[ "${nativeHasIPv6}" == "true" ]] && xray_agent_interface_provider_egress_usable 6 "${nativeIPv6Interface}" "${nativeIPv6Address}" native && nativeRouteIPv6=true
 }
 
 xray_agent_detect_warp_route_mode() {
@@ -368,19 +536,26 @@ xray_agent_detect_network_capabilities() {
     loopbackIPv4Address="$(xray_agent_loopback_address_for_family 4 | head -1)"
     loopbackIPv6Address="$(xray_agent_loopback_address_for_family 6 | head -1)"
 
-    routeIPv4="$(xray_agent_truthy_from_value "${defaultIPv4Interface}")"
-    routeIPv6="$(xray_agent_truthy_from_value "${defaultIPv6Interface}")"
     publicIPv4="$(xray_agent_truthy_from_value "${publicIPv4CSV}")"
     publicIPv6="$(xray_agent_truthy_from_value "${publicIPv6CSV}")"
+    routeIPv4=false
+    routeIPv6=false
+    [[ -n "${defaultIPv4Interface}" && "${publicIPv4}" == "true" ]] && routeIPv4=true
+    [[ -n "${defaultIPv6Interface}" && "${publicIPv6}" == "true" ]] && routeIPv6=true
     loopbackIPv4="$(xray_agent_truthy_from_value "${loopbackIPv4Address}")"
     loopbackIPv6="$(xray_agent_truthy_from_value "${loopbackIPv6Address}")"
     hasIPv4="${routeIPv4}"
     hasIPv6="${routeIPv6}"
     xray_agent_detect_warp_interface || true
     xray_agent_detect_warp_route_mode
+    xray_agent_detect_native_routes
     hasWarp="$(xray_agent_truthy_from_value "${warpInterface}")"
     warpHasIPv4="$(xray_agent_truthy_from_value "${warpIPv4CSV}")"
     warpHasIPv6="$(xray_agent_truthy_from_value "${warpIPv6CSV}")"
+    warpRouteIPv4=false
+    warpRouteIPv6=false
+    [[ "${warpHasIPv4}" == "true" ]] && xray_agent_interface_provider_egress_usable 4 "${warpInterface}" "$(xray_agent_csv_first "${warpIPv4CSV}")" warp && warpRouteIPv4=true
+    [[ "${warpHasIPv6}" == "true" ]] && xray_agent_interface_provider_egress_usable 6 "${warpInterface}" "$(xray_agent_csv_first "${warpIPv6CSV}")" warp && warpRouteIPv6=true
 
     if command -v jq >/dev/null 2>&1; then
         networkJSON="$(jq -nc \
@@ -404,6 +579,16 @@ xray_agent_detect_network_capabilities() {
             --arg warpDefaultIPv4 "${warpDefaultIPv4}" \
             --arg warpDefaultIPv6 "${warpDefaultIPv6}" \
             --arg warpMode "${warpMode}" \
+            --arg nativeIPv4Interface "${nativeIPv4Interface}" \
+            --arg nativeIPv6Interface "${nativeIPv6Interface}" \
+            --arg nativeIPv4Address "${nativeIPv4Address}" \
+            --arg nativeIPv6Address "${nativeIPv6Address}" \
+            --arg nativeHasIPv4 "${nativeHasIPv4}" \
+            --arg nativeHasIPv6 "${nativeHasIPv6}" \
+            --arg nativeRouteIPv4 "${nativeRouteIPv4}" \
+            --arg nativeRouteIPv6 "${nativeRouteIPv6}" \
+            --arg warpRouteIPv4 "${warpRouteIPv4}" \
+            --arg warpRouteIPv6 "${warpRouteIPv6}" \
             '{
               hasIPv4: ($hasIPv4 == "true"),
               hasIPv6: ($hasIPv6 == "true"),
@@ -419,12 +604,28 @@ xray_agent_detect_network_capabilities() {
               loopbackIPv6Address: $loopbackIPv6Address,
               publicIPv4: ($publicIPv4Csv | split(",") | map(select(length > 0))),
               publicIPv6: ($publicIPv6Csv | split(",") | map(select(length > 0))),
+              native: {
+                ipv4: {
+                  interface: $nativeIPv4Interface,
+                  sourceAddress: $nativeIPv4Address,
+                  addressAvailable: ($nativeHasIPv4 == "true"),
+                  routeUsable: ($nativeRouteIPv4 == "true")
+                },
+                ipv6: {
+                  interface: $nativeIPv6Interface,
+                  sourceAddress: $nativeIPv6Address,
+                  addressAvailable: ($nativeHasIPv6 == "true"),
+                  routeUsable: ($nativeRouteIPv6 == "true")
+                }
+              },
               warp: {
                 interface: $warpInterface,
                 ipv4: ($warpIPv4Csv | split(",") | map(select(length > 0))),
                 ipv6: ($warpIPv6Csv | split(",") | map(select(length > 0))),
                 defaultIPv4: ($warpDefaultIPv4 == "true"),
                 defaultIPv6: ($warpDefaultIPv6 == "true"),
+                routeIPv4Usable: ($warpRouteIPv4 == "true"),
+                routeIPv6Usable: ($warpRouteIPv6 == "true"),
                 mode: $warpMode
               }
             }')"

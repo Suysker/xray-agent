@@ -293,6 +293,14 @@ xray_agent_xray_supports_happy_eyeballs() {
     xray_agent_xray_version_at_least "25.6.8"
 }
 
+xray_agent_xray_supports_freedom_final_rules() {
+    xray_agent_xray_version_at_least "26.5.3"
+}
+
+xray_agent_xray_supports_safe_happy_eyeballs() {
+    xray_agent_xray_supports_happy_eyeballs
+}
+
 xray_agent_xray_supports_finalmask() {
     xray_agent_xray_version_at_least "26.3.27"
 }

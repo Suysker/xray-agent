@@ -256,7 +256,7 @@ xray_agent_backup_restore_payload() {
     local entry source_path target_path
 
     mkdir -p "${XRAY_AGENT_ETC_DIR}"
-    for entry in install.sh README.md VERSION LICENSE lib profiles templates docs packaging tls xray; do
+    for entry in install.sh README.md VERSION LICENSE lib profiles templates docs packaging state tls xray; do
         source_path="${payload_etc_dir}/${entry}"
         target_path="${XRAY_AGENT_ETC_DIR}/${entry}"
         xray_agent_backup_safe_replace_path "${source_path}" "${target_path}"

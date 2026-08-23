@@ -342,6 +342,16 @@ initVar() {
     warpDefaultIPv4=false
     warpDefaultIPv6=false
     warpMode=none
+    nativeIPv4Interface=
+    nativeIPv6Interface=
+    nativeIPv4Address=
+    nativeIPv6Address=
+    nativeHasIPv4=false
+    nativeHasIPv6=false
+    nativeRouteIPv4=false
+    nativeRouteIPv6=false
+    warpRouteIPv4=false
+    warpRouteIPv6=false
     networkJSON=
     networkDetected=false
     selectedRealityPublicIP=
@@ -393,9 +403,6 @@ checkCPUVendor() {
 
 xray_agent_run_legacy_migrations() {
     mkdir -p "${XRAY_AGENT_TLS_DIR}" "${XRAY_AGENT_XRAY_CONF_DIR}"
-    if [[ -f "$(xray_agent_xray_conf_file "10_outbounds.json")" ]] && [[ ! -f "$(xray_agent_xray_conf_file "10_ipv4_outbounds.json")" ]]; then
-        mv "$(xray_agent_xray_conf_file "10_outbounds.json")" "$(xray_agent_xray_conf_file "10_ipv4_outbounds.json")"
-    fi
 }
 
 readInstallType() {
@@ -675,6 +682,9 @@ xray_agent_bootstrap_state() {
     checkBTPanel
     if declare -F xray_agent_run_legacy_migrations >/dev/null 2>&1; then
         xray_agent_run_legacy_migrations
+    fi
+    if declare -F xray_agent_egress_reconcile_current_policy >/dev/null 2>&1; then
+        xray_agent_egress_reconcile_current_policy true || echoContent yellow " ---> 当前出口策略未能完成重新生成或服务刷新；请检查备份和 Xray 日志"
     fi
     readInstallType
     readInstallProtocolType

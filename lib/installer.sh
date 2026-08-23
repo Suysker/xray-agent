@@ -506,14 +506,16 @@ xray_agent_rollback_hysteria2_install_hop_config() {
 
 xray_agent_render_common_xray_configs() {
     local keepconfigstatus="n"
-    if [[ -f "${configPath}10_ipv4_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]]; then
+    if [[ -f "${configPath}10_outbounds.json" ]] || [[ -f "${configPath}09_routing.json" ]] || [[ -f "$(xray_agent_egress_policy_path)" ]]; then
         if xray_agent_prompt_yes_no "是否保留路由和分流规则？" "y"; then
             keepconfigstatus="y"
         fi
     fi
     if [[ "${keepconfigstatus}" == "y" ]]; then
+        xray_agent_egress_ensure_policy || return 1
         return 0
     fi
+    rm -f -- "$(xray_agent_egress_policy_path)"
     export XRAY_LOG_ERROR_PATH="/etc/xray-agent/xray/error.log"
     export XRAY_LOG_LEVEL="warning"
     export XRAY_POLICY_HANDSHAKE=$((RANDOM % 4 + 2))
@@ -531,7 +533,7 @@ xray_agent_render_common_xray_configs() {
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/base/00_log.json.tpl" "${configPath}00_log.json"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/base/01_policy.json.tpl" "${configPath}01_policy.json"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/base/09_routing.json.tpl" "${configPath}09_routing.json"
-    xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/base/10_outbounds.json.tpl" "${configPath}10_ipv4_outbounds.json"
+    xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/base/10_outbounds.json.tpl" "${configPath}10_outbounds.json"
     xray_agent_render_template "${XRAY_AGENT_TEMPLATE_DIR}/xray/base/11_dns.json.tpl" "${configPath}11_dns.json"
 }
 

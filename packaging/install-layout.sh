@@ -26,7 +26,7 @@ rm -rf \
     "${TARGET_ROOT}/verify" \
     "${TARGET_ROOT}/scripts"
 
-mkdir -p "${TARGET_ROOT}"/{lib,templates,profiles,docs,packaging}
+mkdir -p "${TARGET_ROOT}"/{lib,templates,profiles,docs,packaging,state}
 
 cp -R "${PROJECT_ROOT}/lib/." "${TARGET_ROOT}/lib/"
 cp -R "${PROJECT_ROOT}/templates/." "${TARGET_ROOT}/templates/"

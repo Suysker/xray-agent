@@ -14,6 +14,7 @@
 | `/etc/xray-agent/lib` | 脚本运行模块 |
 | `/etc/xray-agent/profiles` | 安装组合和协议选项 |
 | `/etc/xray-agent/templates` | 脚本生成配置时使用的基础文件 |
+| `/etc/xray-agent/state` | 出口策略、项目网络资源所有权和外部 WARP Provider 记录 |
 | `/etc/xray-agent/backups` | 菜单生成的本机离线备份 |
 | `/etc/xray-agent/tls` | TLS 证书和 acme 日志 |
 | `/etc/xray-agent/xray` | Xray-core、geosite、geoip |
@@ -25,6 +26,14 @@
 脚本会管理自己的运行目录、证书、Xray 配置和脚本托管的 Nginx 配置。一般用户不需要手动编辑这些文件；通过菜单修改会更安全，脚本也会在关键操作前做检查。
 
 宝塔、1Panel、OpenResty、Caddy、Apache 等第三方站点配置不会被脚本自动改写。脚本只会检测它们是否存在，并给出接入建议。
+
+WARP 上游脚本生成的 WireGuard 配置和基础路由不属于 xray-agent。xray-agent 只维护自己的出口策略和补充路由；遇到同优先级外部规则时拒绝应用。
+
+## 出口策略文件
+
+`/etc/xray-agent/state/egress-policy.json` 是菜单管理网络出口的唯一策略源。`09_routing.json`、`10_outbounds.json` 和 `11_dns.json` 由它生成，启动时发现漂移会重新生成。
+
+`/etc/xray-agent/state/network-ownership.json` 只记录 xray-agent 创建的 Linux 策略路由资源，不是第二份用户策略。卸载和策略切换只清理这里记录的资源。
 
 ## 备份建议
 
@@ -62,4 +71,4 @@ HTTPS SNI 透传后端只适合高级场景。PROXY protocol 是 443 入口的�
 
 ## 手动修改提醒
 
-不建议直接编辑 `/etc/xray-agent/xray/conf` 下的配置文件。菜单重新生成配置时，手工改动可能被覆盖。需要长期保留的改动应优先通过菜单完成。
+不建议直接编辑 `/etc/xray-agent/xray/conf` 下的路由和出站文件。它们会从 `egress-policy.json` 重新生成；需要长期保留的出口变更应通过菜单 `6`、`7`、`8` 完成。
