@@ -29,7 +29,7 @@ xray-agent 的目标不是把所有协议简单堆在一起，而是把常用的
 - 支持一键备份/恢复，备份包包含配置、证书和脚本管理的 Nginx 配置，恢复前会先校验。
 - 支持 ACME 证书申请与续签，包含 HTTP-01、DNS-01、Cloudflare、DNSPod、Aliyun 和手动 TXT。
 - 支持 IPv4-only、IPv6-only、双栈、多公网 IP、WARP 专用接口与 WARP 默认路由场景。
-- 支持原生/WARP 四物理出口、三类 TCP 自动出口、独立 UDP 出口、黑名单和 CN IP/域名策略。
+- 支持原生/WARP 四物理出口、TCP/UDP 双栈自动出口、WARP 域名名单及中国大陆域名或 IP 分流开关；UDP 不承诺连接失败后自动回退。
 - 支持 Nginx 网站/反代管理，可优先复用已有本机网站作为浏览器访问时的回落站点；配置写入前会执行检查，失败时回滚。
 - 443 入口会自动选择合适的 PROXY protocol 模式：确认安全时开启，检测到可能影响已有 HTTPS 网站时关闭，并在菜单中提示原因。
 - 按当前 Xray-core 正式版能力启用 VLESS Encryption、XHTTP Vision flow、REALITY ML-DSA-65、TLS ECH、Hysteria2 优化参数等增强能力；内核不支持或配置测试不通过时，会跳过对应高级项并保留可运行配置。
@@ -86,8 +86,8 @@ vasma
 4. 网站/反代管理
 5. 证书管理
 6. IPv4/IPv6出站策略
-7. 黑名单和中国大陆 IP 策略
-8. WARP分流及中国大陆域名+IP
+7. 访问阻断（黑名单/中国大陆）
+8. WARP 分流（域名名单/中国大陆）
 9. 添加新端口
 10. 流量嗅探管理
 11. sockopt 高级选项

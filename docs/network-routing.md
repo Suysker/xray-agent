@@ -1,5 +1,9 @@
 # 网络与路由
 
+> 本页说明当前实现。单栈通过 WARP 补全双栈时的对称规则及验收边界，见[架构方案第 1.2–1.3 节](network-egress-design.md#12-单栈补全的对称出口规则)。
+
+核心目标是：一键开启/关闭中国大陆网站或目标 IP 的 WARP 分流，通过外部 WARP 补全单栈，以及让用户选择默认出口并维护自己的 WARP 名单。中国大陆分流不是强制默认项；这些目标的完整实现状态以架构方案为准。
+
 xray-agent 将“出口提供者”和“地址族”分开建模。WARP 的安装、更新、注册、Endpoint 和基础 WireGuard 模式继续由当前外部脚本提供；xray-agent 自己维护调用适配、实时网络识别、项目自有策略路由、出口目录和 Xray 分流。
 
 实施前问题和十五种系统组合见 [IPv4/IPv6 与 WARP 出站现状基线](network-egress-current-state.md)，架构依据见 [IPv4/IPv6 与 WARP 四出口架构方案](network-egress-design.md)。
@@ -25,10 +29,23 @@ xray-agent 将“出口提供者”和“地址族”分开建模。WARP 的安�
 | 控制层 | 管理入口 | 含义 |
 | --- | --- | --- |
 | Linux 系统 WARP | 菜单 `20` | 调用外部 WARP 脚本改变系统级模式 |
-| Xray 默认出口 | 菜单 `6` | 分别选择 TCP 默认出口、TCP 地址族优先级和 UDP 默认出口 |
+| Xray 默认出口 | 菜单 `6` | 同时设置 TCP/UDP 默认出口和地址族优先级；高级入口可单独覆盖 UDP 出口 |
 | Xray 规则分流 | 菜单 `7`、`8` | 按域名、geosite、IP 或 geoip 使用明确出口 |
 
 系统全局 WARP、Xray 默认出口和 Xray 规则分流互不混用。菜单 `20` 返回后脚本会刷新实时网络状态；如果原策略中的出口变得不可用，只提示用户调整，不自动回退。
+
+系统已配置单栈补全时，默认 TCP/UDP 沿系统路径：原生 IPv6 场景初始 IPv6 优先，原生 IPv4 场景初始 IPv4 优先；缺失地址族使用已验证的 WARP 路径。Xray 名单不影响普通本机程序，Xray 优先级也不保证整机应用的地址排序。
+
+### WARP 名单与中国大陆开关
+
+菜单 `8` 的常用入口：
+
+- `1` 编辑完整 WARP 域名名单，如 `example.com,geosite:netflix`。裸域名匹配主域和子域；裸列表名如 `netflix` 视作 geosite。不要输入 URL。
+- `2` 独立开启/关闭中国大陆网站 **或** 目标 IP 走 WARP。生成器拆分域名/IP 规则，任一命中即可；关闭不清空自定义名单。
+- 名单清空后提交仅移除 `warp-domains`；中国大陆开关使用 `cn-egress`，不要求逐站创建规则。
+- 新建或重设名单时沿用当前默认地址族优先级；后续改变默认策略不会隐式重写已有规则。高级规则入口保留独立选择能力。
+
+WARP 不可用时拒绝启用，不静默改走原生。若已有中国大陆 IP 黑名单，须先关闭该阻断再开启中国大陆 WARP 分流。私网阻断始终先于名单匹配。
 
 ## 策略唯一来源
 
@@ -42,10 +59,10 @@ xray-agent 将“出口提供者”和“地址族”分开建模。WARP 的安�
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "defaultTcpEgress": "system-auto-out",
-  "defaultTcpPreference": "ipv6",
-  "defaultUdpEgress": "native-ipv4-out",
+  "defaultPreference": "ipv6",
+  "defaultUdpEgress": "system-auto-out",
   "rules": [
     {
       "id": "openai-via-warp",
@@ -53,8 +70,8 @@ xray-agent 将“出口提供者”和“地址族”分开建模。WARP 的安�
         "domain": ["geosite:openai"]
       },
       "tcpEgress": "warp-auto-out",
-      "tcpPreference": "ipv4",
-      "udpEgress": "warp-ipv4-out"
+      "preference": "ipv6",
+      "udpEgress": "warp-auto-out"
     }
   ]
 }
@@ -95,7 +112,9 @@ Happy Eyeballs 只解决同一个自动出口内、TCP 双栈域名的地址竞�
 
 ## UDP
 
-UDP 不使用 Happy Eyeballs。菜单只允许选择明确的单地址族物理出口：
+UDP 不使用 Happy Eyeballs。自动出口使用 Freedom `ForceIPv6v4` / `ForceIPv4v6`，优先解析指定地址族，没有该族记录时才使用另一族。IP 字面量保持目标地址族，WARP 名单始终绑定 WARP。**这不是 UDP 不可达后的自动重试或竞速。**
+
+需要强制单族时仍可选择物理出口：
 
 ```text
 native-ipv4-out
@@ -122,6 +141,8 @@ WARP 全局模式下，如果策略明确选择原生出口，xray-agent 会为�
 
 旧安装升级到该架构不在本次实现范围内；需要使用新架构时应先独立备份，再按全新安装流程部署和重新配置出口策略。
 
+当前 schema 为 2，共享 `defaultPreference` / `preference` 替代旧的 `defaultTcpPreference` / `tcpPreference`；schema 1 不会被自动转换。不要只替换脚本后继续使用旧策略或手工维护派生 JSON。
+
 ## 验证
 
 仓库测试：
@@ -131,9 +152,14 @@ bash tests/egress_catalog_test.sh
 bash tests/network_policy_test.sh
 bash tests/egress_policy_test.sh
 XRAY_AGENT_TEST_XRAY_BINARY=/path/to/xray bash tests/xray_freedom_integration_test.sh
+XRAY_AGENT_TEST_XRAY_BINARY=/path/to/xray \
+XRAY_AGENT_TEST_ARTIFACT_DIR=/tmp/egress-verification \
+  bash tests/egress_integration_test.sh
 ```
 
-本地模拟和多版本 Xray 集成测试不能代替真实 VPS 出口核对。“原生 IPv4 + WARP IPv6”和“原生 IPv6 + WARP IPv4”已完成在线验收；发布完成定义仍要求在“原生双栈 + WARP 双栈”节点记录期望出口和实际公网出口，并补齐系统 WARP 模式切换与完整 UDP/IP 字面量矩阵。
+双栈集成测试需要 Linux 网络命名空间权限及 Python 3；它创建隔离网络，不修改主机公网路由。指定的产物目录保留生成配置、Xray 日志和结果 JSON，可用于复核两种优先级下 TCP/UDP、单族域名、字面量、名单或匹配及私网阻断。
+
+本地模拟和多版本 Xray 集成测试不能代替真实 VPS 出口核对。两类单栈补全场景已有局部在线验证，但尚不能视为完整验收；必须按架构方案核对原生地址族优先、名单任一条件命中、UDP/IP 字面量与菜单管理一致性，并补齐原生双栈场景及系统 WARP 模式切换。验证记录应区分期望出口、实际公网出口和是否经过真实客户端入口，不披露具体部署身份或凭据。
 
 ## 本机转发地址
 

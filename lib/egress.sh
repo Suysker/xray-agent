@@ -130,8 +130,13 @@ xray_agent_egress_effective_family_id() {
 xray_agent_egress_outbound_tag() {
     local egress_id="$1"
     local preference="${2:-ipv4}"
+    local network="${3:-tcp}"
     if [[ "${egress_id}" == *-auto-out ]]; then
-        printf '%s-%s-first\n' "${egress_id%-out}" "${preference}"
+        if [[ "${network}" == udp ]]; then
+            printf '%s-udp-%s-first\n' "${egress_id%-out}" "${preference}"
+        else
+            printf '%s-%s-first\n' "${egress_id%-out}" "${preference}"
+        fi
     else
         printf '%s\n' "${egress_id}"
     fi
@@ -140,6 +145,7 @@ xray_agent_egress_outbound_tag() {
 xray_agent_egress_outbound_json_for_id() {
     local egress_id="$1"
     local preference="${2:-ipv4}"
+    local network="${3:-tcp}"
     local entry tag family interface_name source_address
     if [[ "${egress_id}" == "blackhole-out" ]]; then
         xray_agent_egress_blackhole_outbound_json
@@ -147,11 +153,11 @@ xray_agent_egress_outbound_json_for_id() {
     fi
     entry="$(xray_agent_egress_get "${egress_id}")"
     [[ -n "${entry}" && "$(jq -r '.available' <<<"${entry}")" == "true" ]] || return 1
-    tag="$(xray_agent_egress_outbound_tag "${egress_id}" "${preference}")"
+    tag="$(xray_agent_egress_outbound_tag "${egress_id}" "${preference}" "${network}")"
     family="$(jq -r '.family' <<<"${entry}")"
     interface_name="$(jq -r '.interface' <<<"${entry}")"
     source_address="$(jq -r '.sourceAddress' <<<"${entry}")"
-    xray_agent_egress_outbound_json "${tag}" "${family}" "${preference}" "${interface_name}" "${source_address}"
+    xray_agent_egress_outbound_json "${tag}" "${family}" "${preference}" "${interface_name}" "${source_address}" "${network}"
 }
 
 xray_agent_egress_effective_path_label() {
@@ -186,6 +192,8 @@ xray_agent_egress_happy_eyeballs_json() {
 
 xray_agent_egress_freedom_settings_json() {
     local family="$1"
+    local preference="${2:-ipv4}"
+    local network="${3:-tcp}"
     local settings_json
     case "${family}" in
         ipv4)
@@ -196,6 +204,13 @@ xray_agent_egress_freedom_settings_json() {
             ;;
         auto)
             settings_json='{"domainStrategy":"AsIs"}'
+            if [[ "${network}" == udp ]]; then
+                if [[ "${preference}" == ipv6 ]]; then
+                    settings_json='{"domainStrategy":"ForceIPv6v4"}'
+                else
+                    settings_json='{"domainStrategy":"ForceIPv4v6"}'
+                fi
+            fi
             if declare -F xray_agent_xray_supports_freedom_final_rules >/dev/null 2>&1 &&
                 xray_agent_xray_supports_freedom_final_rules; then
                 jq -nc --argjson settings "${settings_json}" '$settings + {finalRules:[{action:"allow"}]}'
@@ -215,6 +230,7 @@ xray_agent_egress_outbound_json() {
     local preference="${3:-ipv4}"
     local interface_name="${4:-}"
     local source_address="${5:-}"
+    local network="${6:-tcp}"
     local settings_json sockopt_json outbound_json happy_eyeballs_json
 
     case "${preference}" in
@@ -227,9 +243,9 @@ xray_agent_egress_outbound_json() {
         xray_agent_xray_supports_safe_happy_eyeballs || return 1
     fi
 
-    settings_json="$(xray_agent_egress_freedom_settings_json "${family}")" || return 1
+    settings_json="$(xray_agent_egress_freedom_settings_json "${family}" "${preference}" "${network}")" || return 1
     sockopt_json='{}'
-    if [[ "${family}" == "auto" ]]; then
+    if [[ "${family}" == "auto" && "${network}" == tcp ]]; then
         happy_eyeballs_json="$(xray_agent_egress_happy_eyeballs_json "${preference}")" || return 1
         sockopt_json="$(jq -nc --argjson happyEyeballs "${happy_eyeballs_json}" '{domainStrategy:"UseIP",happyEyeballs:$happyEyeballs}')" || return 1
     fi
