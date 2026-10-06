@@ -735,10 +735,16 @@ xray_agent_geodata_cron_line() {
 }
 
 xray_agent_write_geodata_update_helper() {
-    {
-        printf '%s\n' '#!/bin/sh'
-        printf '%s\n' 'wget -O /etc/xray-agent/xray/geosite.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat && wget -O /etc/xray-agent/xray/geoip.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat && systemctl restart xray'
-    } >/etc/xray-agent/auto_update_geodata.sh
+    cat >"${XRAY_AGENT_ETC_DIR:-/etc/xray-agent}/auto_update_geodata.sh" <<'EOF'
+#!/usr/bin/env bash
+set -e
+XRAY_AGENT_PROJECT_ROOT="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${XRAY_AGENT_PROJECT_ROOT}/lib/common.sh"
+source "${XRAY_AGENT_PROJECT_ROOT}/lib/core.sh"
+XRAY_AGENT_XRAY_DIR="${XRAY_AGENT_PROJECT_ROOT}/xray"
+xray_agent_download_geodata
+systemctl restart xray
+EOF
 }
 
 auto_update_geodata() {

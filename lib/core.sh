@@ -181,8 +181,8 @@ xray_agent_install_xray_release() {
 }
 
 xray_agent_download_geodata() {
-    local version xray_dir geosite_tmp geoip_tmp
-    xray_dir="/etc/xray-agent/xray"
+    local version xray_dir staging_dir xray_binary
+    xray_dir="${XRAY_AGENT_XRAY_DIR:-/etc/xray-agent/xray}"
     version="$(xray_agent_github_release_tags "Loyalsoldier/v2ray-rules-dat" "" 1)" || return 1
     version="$(printf '%s\n' "${version}" | head -1)"
     if [[ -z "${version}" ]]; then
@@ -191,15 +191,24 @@ xray_agent_download_geodata() {
     fi
 
     mkdir -p "${xray_dir}"
-    geosite_tmp="${xray_dir}/geosite.dat.download"
-    geoip_tmp="${xray_dir}/geoip.dat.download"
-    xray_agent_download_url_to_file "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${version}/geosite.dat" "${geosite_tmp}" "geosite.dat" || return 1
-    xray_agent_download_url_to_file "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${version}/geoip.dat" "${geoip_tmp}" "geoip.dat" || {
-        rm -f "${geosite_tmp}"
+    staging_dir="$(mktemp -d "${xray_dir}/.geodata-update.XXXXXX")" || return 1
+    if ! xray_agent_download_url_to_file "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${version}/geosite.dat" "${staging_dir}/geosite.dat" "geosite.dat" ||
+        ! xray_agent_download_url_to_file "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${version}/geoip.dat" "${staging_dir}/geoip.dat" "geoip.dat"; then
+        rm -rf -- "${staging_dir}"
         return 1
-    }
-    mv "${geosite_tmp}" "${xray_dir}/geosite.dat"
-    mv "${geoip_tmp}" "${xray_dir}/geoip.dat"
+    fi
+    xray_binary="${xray_dir}/xray"
+    if [[ -x "${xray_binary}" ]] && compgen -G "${xray_dir}/conf/*.json" >/dev/null; then
+        if ! XRAY_LOCATION_ASSET="${staging_dir}" "${xray_binary}" run -test -confdir "${xray_dir}/conf" >"${staging_dir}/config-test.log" 2>&1; then
+            echoContent red " ---> 新规则库未通过 Xray 配置校验，保留原有规则库" >&2
+            cat "${staging_dir}/config-test.log" >&2
+            rm -rf -- "${staging_dir}"
+            return 1
+        fi
+    fi
+    mv "${staging_dir}/geosite.dat" "${xray_dir}/geosite.dat" || return 1
+    mv "${staging_dir}/geoip.dat" "${xray_dir}/geoip.dat" || return 1
+    rm -rf -- "${staging_dir}"
     echoContent green " ---> geosite/geoip 已更新到 ${version}"
 }
 

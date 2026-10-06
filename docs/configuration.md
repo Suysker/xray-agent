@@ -29,6 +29,10 @@
 
 WARP 上游脚本生成的 WireGuard 配置和基础路由不属于 xray-agent。xray-agent 只维护自己的出口策略和补充路由；遇到同优先级外部规则时拒绝应用。
 
+## 规则库更新
+
+菜单 `14` 和每周规则库更新任务共用下载入口。`geosite.dat`、`geoip.dat` 先下载到临时目录；已有 Xray 配置时，使用新规则库执行配置校验，通过后才替换文件。下载或校验失败会保留原有规则库，不重启服务，错误写入 `/etc/xray-agent/crontab_geo.log`。
+
 ## 出口策略文件
 
 `/etc/xray-agent/state/egress-policy.json` 是菜单管理网络出口的唯一策略源。`09_routing.json`、`10_outbounds.json` 和 `11_dns.json` 由它生成，启动时发现漂移会重新生成。
