@@ -402,8 +402,7 @@ xray_agent_routing_status_summary() {
 }
 
 xray_agent_egress_print_catalog() {
-    local usage="$1"
-    xray_agent_egress_catalog_json | jq -r --arg usage "${usage}" '
+    xray_agent_egress_catalog_json | jq -r '
       .egresses[]
       | select(.available == true)
       | [.id,.provider,.family,(if .interface == "" then "system" else .interface end)]
@@ -412,14 +411,13 @@ xray_agent_egress_print_catalog() {
 }
 
 xray_agent_egress_select() {
-    local usage="$1"
     local selected
     local -a ids=()
     while IFS= read -r selected; do
         ids+=("${selected}")
     done < <(xray_agent_egress_catalog_json | jq -r '.egresses[] | select(.available == true) | .id')
     [[ "${#ids[@]}" -gt 0 ]] || return 1
-    xray_agent_egress_print_catalog "${usage}"
+    xray_agent_egress_print_catalog
     read -r -p "请选择出口:" selected
     [[ "${selected}" =~ ^[0-9]+$ && "${selected}" -ge 1 && "${selected}" -le "${#ids[@]}" ]] || return 1
     XRAY_AGENT_SELECTED_EGRESS="${ids[$((selected - 1))]}"
@@ -470,12 +468,12 @@ xray_agent_default_egress_menu() {
     policy_json="$(xray_agent_egress_policy_read)"
     case "${selected}" in
         1)
-            xray_agent_egress_select tcp || return 0
+            xray_agent_egress_select || return 0
             xray_agent_egress_select_preference "${XRAY_AGENT_SELECTED_EGRESS}" || return 0
             policy_json="$(jq -c --arg egress "${XRAY_AGENT_SELECTED_EGRESS}" --arg preference "${XRAY_AGENT_SELECTED_PREFERENCE}" '.defaultTcpEgress=$egress | .defaultUdpEgress=$egress | .defaultPreference=$preference' <<<"${policy_json}")"
             ;;
         2)
-            xray_agent_egress_select udp || return 0
+            xray_agent_egress_select || return 0
             policy_json="$(jq -c --arg egress "${XRAY_AGENT_SELECTED_EGRESS}" '.defaultUdpEgress=$egress' <<<"${policy_json}")"
             ;;
         3)
@@ -502,12 +500,12 @@ xray_agent_egress_add_domain_rule() {
     domains_json="$(xray_agent_domain_matches_json "${domain_list}")" || return 1
     [[ "$(jq -r 'length' <<<"${domains_json}")" -gt 0 ]] || return 1
     echoContent yellow "选择 TCP 出口"
-    xray_agent_egress_select tcp || return 1
+    xray_agent_egress_select || return 1
     tcp_egress="${XRAY_AGENT_SELECTED_EGRESS}"
     xray_agent_egress_select_preference "${tcp_egress}" || return 1
     preference="${XRAY_AGENT_SELECTED_PREFERENCE}"
     echoContent yellow "选择 UDP 出口"
-    xray_agent_egress_select udp || return 1
+    xray_agent_egress_select || return 1
     udp_egress="${XRAY_AGENT_SELECTED_EGRESS}"
     rule_json="$(jq -nc --arg id "${rule_id}" --argjson domains "${domains_json}" --arg tcpEgress "${tcp_egress}" --arg preference "${preference}" --arg udpEgress "${udp_egress}" '{id:$id,match:{domain:$domains},tcpEgress:$tcpEgress,preference:$preference,udpEgress:$udpEgress}')"
     XRAY_AGENT_CANDIDATE_POLICY_JSON="$(jq -c --arg id "${rule_id}" --argjson rule "${rule_json}" '.rules = ([.rules[] | select(.id != $id)] + [$rule])' <<<"${policy_json}")"
