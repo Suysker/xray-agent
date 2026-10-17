@@ -401,10 +401,6 @@ checkCPUVendor() {
     fi
 }
 
-xray_agent_run_legacy_migrations() {
-    mkdir -p "${XRAY_AGENT_TLS_DIR}" "${XRAY_AGENT_XRAY_CONF_DIR}"
-}
-
 readInstallType() {
     coreInstallType=
     reuse443=
@@ -680,9 +676,7 @@ xray_agent_tool_status_header() {
 
 xray_agent_bootstrap_state() {
     checkBTPanel
-    if declare -F xray_agent_run_legacy_migrations >/dev/null 2>&1; then
-        xray_agent_run_legacy_migrations
-    fi
+    mkdir -p "${XRAY_AGENT_TLS_DIR}" "${XRAY_AGENT_XRAY_CONF_DIR}"
     if declare -F xray_agent_egress_reconcile_current_policy >/dev/null 2>&1; then
         xray_agent_egress_reconcile_current_policy true || echoContent yellow " ---> 当前出口策略未能完成重新生成或服务刷新；请检查备份和 Xray 日志"
     fi
