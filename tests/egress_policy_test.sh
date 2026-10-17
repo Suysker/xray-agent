@@ -159,7 +159,7 @@ jq -e '
 
 selection_count=0
 xray_agent_egress_select() {
-    if [[ "$1" == "tcp" ]]; then
+    if (( selection_count % 2 == 0 )); then
         XRAY_AGENT_SELECTED_EGRESS=warp-auto-out
     else
         XRAY_AGENT_SELECTED_EGRESS=native-ipv4-out
