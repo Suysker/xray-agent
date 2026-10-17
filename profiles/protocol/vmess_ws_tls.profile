@@ -4,7 +4,6 @@ share_template=vmess_ws.tpl
 protocol=vmess
 transport=ws
 security=tls
-flow=
 address_source=domain
 port_source=Port
 sni_source=domain

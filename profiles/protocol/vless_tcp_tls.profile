@@ -4,7 +4,6 @@ share_template=vless_tcp.tpl
 protocol=vless
 transport=tcp
 security=tls
-flow=xtls-rprx-vision
 address_source=domain
 port_source=Port
 sni_source=domain
