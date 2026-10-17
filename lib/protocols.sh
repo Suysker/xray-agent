@@ -19,7 +19,6 @@ xray_agent_reset_protocol_profile() {
     XRAY_AGENT_PROTOCOL_PROTOCOL=
     XRAY_AGENT_PROTOCOL_TRANSPORT=
     XRAY_AGENT_PROTOCOL_SECURITY=
-    XRAY_AGENT_PROTOCOL_FLOW=
     XRAY_AGENT_PROTOCOL_ADDRESS_SOURCE=
     XRAY_AGENT_PROTOCOL_PORT_SOURCE=
     XRAY_AGENT_PROTOCOL_SNI_SOURCE=
@@ -51,7 +50,6 @@ xray_agent_load_protocol_profile() {
             protocol) XRAY_AGENT_PROTOCOL_PROTOCOL="${value}" ;;
             transport) XRAY_AGENT_PROTOCOL_TRANSPORT="${value}" ;;
             security) XRAY_AGENT_PROTOCOL_SECURITY="${value}" ;;
-            flow) XRAY_AGENT_PROTOCOL_FLOW="${value}" ;;
             address_source) XRAY_AGENT_PROTOCOL_ADDRESS_SOURCE="${value}" ;;
             port_source) XRAY_AGENT_PROTOCOL_PORT_SOURCE="${value}" ;;
             sni_source) XRAY_AGENT_PROTOCOL_SNI_SOURCE="${value}" ;;

@@ -4,7 +4,6 @@ share_template=vless_reality.tpl
 protocol=vless
 transport=tcp
 security=reality
-flow=xtls-rprx-vision
 address_source=public_ip
 port_source=RealityPort
 sni_source=reality_server_name

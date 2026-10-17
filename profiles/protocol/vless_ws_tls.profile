@@ -4,7 +4,6 @@ share_template=vless_ws.tpl
 protocol=vless
 transport=ws
 security=tls
-flow=
 address_source=domain
 port_source=Port
 sni_source=domain

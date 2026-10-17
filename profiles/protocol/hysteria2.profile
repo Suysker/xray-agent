@@ -4,7 +4,6 @@ share_template=hysteria2.tpl
 protocol=hysteria
 transport=hysteria
 security=tls
-flow=
 address_source=domain
 port_source=hysteria2
 sni_source=domain

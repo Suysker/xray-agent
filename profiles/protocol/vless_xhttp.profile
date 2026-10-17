@@ -4,7 +4,6 @@ share_template=vless_xhttp.tpl
 protocol=vless
 transport=xhttp
 security=auto
-flow=
 address_source=auto
 port_source=auto
 sni_source=auto
