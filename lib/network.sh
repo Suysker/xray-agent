@@ -498,17 +498,6 @@ xray_agent_fallback_public_dns() {
     fi
 }
 
-xray_agent_warp_domain_strategy() {
-    xray_agent_detect_network_capabilities
-    if [[ "${warpHasIPv4}" == "true" && "${warpHasIPv6}" != "true" ]]; then
-        printf 'UseIPv4\n'
-    elif [[ "${warpHasIPv6}" == "true" && "${warpHasIPv4}" != "true" ]]; then
-        printf 'UseIPv6\n'
-    else
-        printf 'UseIP\n'
-    fi
-}
-
 xray_agent_export_xray_network_template_vars() {
     export XRAY_PUBLIC_LISTEN_ADDRESS
     export XRAY_INTERNAL_LISTEN_ADDRESS
@@ -743,10 +732,4 @@ xray_agent_network_summary() {
 xray_agent_has_ipv6() {
     xray_agent_detect_network_capabilities
     [[ "${routeIPv6}" == "true" ]]
-}
-
-xray_agent_detect_usable_warp_interface() {
-    xray_agent_detect_network_capabilities
-    [[ -n "${warpInterface}" ]] || return 1
-    printf '%s\n' "${warpInterface}"
 }
